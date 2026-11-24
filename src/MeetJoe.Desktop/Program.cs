@@ -16,9 +16,14 @@ internal static class Program
             .Run();
 
 #if OSX
-        WebViewPlatformHooks.OnWebViewCreated = MacOsWebViewMediaAccess.Attach;
-        WebViewPlatformHooks.RequestOsMediaPermissionAsync = MacOsMediaPermissions.EnsureAsync;
+        if (OperatingSystem.IsMacOS())
+        {
+            WebViewPlatformHooks.OnWebViewCreated = MacOsWebViewMediaAccess.Attach;
+            WebViewPlatformHooks.RequestOsMediaPermissionAsync = MacOsMediaPermissions.EnsureAsync;
+        }
 #endif
+        if (OperatingSystem.IsWindows())
+            WebViewPlatformHooks.OnWebViewCreated = WindowsWebViewMediaAccess.Attach;
         MeetJoe.App.App.UpdateServiceFactory = config => new VelopackAppUpdateService(config);
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }

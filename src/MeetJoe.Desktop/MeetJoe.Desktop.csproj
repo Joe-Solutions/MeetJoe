@@ -10,7 +10,12 @@
     <ApplicationId>com.joesolutions.meetjoe</ApplicationId>
     <ApplicationIcon>Assets\MeetJoe.ico</ApplicationIcon>
   </PropertyGroup>
-  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('osx'))">
+  <!-- Key OSX on the *target* RID: win-x64 is published from a Mac, and a host-OS check
+       compiled the macOS TCC hooks into Windows (mic "denied" before WebView2 ever asked). -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('osx'))">
+    <DefineConstants>$(DefineConstants);OSX</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('osx'))">
     <DefineConstants>$(DefineConstants);OSX</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
