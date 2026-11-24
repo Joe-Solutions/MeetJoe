@@ -88,9 +88,29 @@ internal static class MacOsMediaPermissions
 
         void_objc_msgSend_IntPtr_IntPtr(cls, sel_registerName("requestAccessForMediaType:completionHandler:"), media, block);
 
-        // Safety: if the callback never fires, do not hang call join forever.
-        _ = Task.Delay(TimeSpan.FromSeconds(120)).ContinueWith(_ => Resolve(block, false));
+        // In a GUI app the completion block is not reliably invoked after the user answers
+        // the dialog, so also poll the status until it leaves NotDetermined.
+        _ = PollUntilDecidedAsync(cls, media, block);
         return tcs.Task;
+    }
+
+    private static async Task PollUntilDecidedAsync(IntPtr cls, IntPtr media, IntPtr block)
+    {
+        var statusSel = sel_registerName("authorizationStatusForMediaType:");
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(120);
+        while (Pending.ContainsKey(block) && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(250).ConfigureAwait(false);
+            var status = nint_objc_msgSend_IntPtr(cls, statusSel, media);
+            if (status != StatusNotDetermined)
+            {
+                Resolve(block, status == StatusAuthorized);
+                return;
+            }
+        }
+
+        // Safety: do not hang call join forever.
+        Resolve(block, false);
     }
 
     private static void OnBlockInvoked(IntPtr block, byte granted) => Resolve(block, granted != 0);
