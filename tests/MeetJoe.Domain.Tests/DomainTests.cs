@@ -419,6 +419,11 @@ public class FileObjectTests
             FileObject.Create(Guid.NewGuid(), Guid.NewGuid(), null, null, "a.txt", null, 1, Now));
         Assert.Throws<DomainException>(() =>
             FileObject.Create(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "a.txt", null, 1, Now));
+        Assert.Throws<DomainException>(() =>
+            FileObject.Create(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), null, "a.txt", null, 1, Now,
+                meetingId: Guid.NewGuid()));
+        Assert.NotNull(FileObject.Create(
+            Guid.NewGuid(), Guid.NewGuid(), null, null, "a.txt", null, 1, Now, meetingId: Guid.NewGuid()));
     }
 }
 

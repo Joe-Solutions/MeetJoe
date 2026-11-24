@@ -218,7 +218,8 @@ public record FileDto(
     UserSummaryDto Uploader,
     Guid? ConversationId,
     Guid? ChannelId,
-    string Location);
+    string Location,
+    Guid? MeetingId = null);
 
 // ---- Meetings -------------------------------------------------------------
 

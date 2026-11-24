@@ -163,9 +163,18 @@ public sealed class MeetJoeApi(HttpClient http) : IMeetJoeApi
         GetAsync<IReadOnlyList<FileDto>>($"api/orgs/{organizationId}/files", ct);
 
     public async Task<FileDto> UploadFileAsync(
-        Guid? conversationId, Guid? channelId, string fileName, Stream content, CancellationToken ct = default)
+        Guid? conversationId,
+        Guid? channelId,
+        string fileName,
+        Stream content,
+        CancellationToken ct = default,
+        Guid? meetingId = null)
     {
-        var path = conversationId is { } id ? $"api/conversations/{id}/files" : $"api/channels/{channelId}/files";
+        var path = meetingId is { } mid
+            ? $"api/meetings/{mid}/files"
+            : conversationId is { } id
+                ? $"api/conversations/{id}/files"
+                : $"api/channels/{channelId}/files";
 
         // Buffer so we can sniff magic bytes (Photos often supplies a GUID name with no extension).
         await using var buffer = new MemoryStream();
@@ -228,9 +237,10 @@ public sealed class MeetJoeApi(HttpClient http) : IMeetJoeApi
     public Task<IReadOnlyList<MessageDto>> GetMeetingMessagesAsync(Guid meetingId, CancellationToken ct = default) =>
         GetAsync<IReadOnlyList<MessageDto>>($"api/meetings/{meetingId}/messages", ct);
 
-    public Task<MessageDto> SendMeetingChatAsync(Guid meetingId, string body, CancellationToken ct = default) =>
+    public Task<MessageDto> SendMeetingChatAsync(
+        Guid meetingId, string? body, CancellationToken ct = default, IReadOnlyList<Guid>? attachmentIds = null) =>
         SendAsync<MessageDto>(HttpMethod.Post, $"api/meetings/{meetingId}/messages",
-            new SendMessageRequest(null, null, body, null, null, meetingId), ct);
+            new SendMessageRequest(null, null, body, attachmentIds, null, meetingId), ct);
 
     public Task<MeetingRecordingDto> StartRecordingAsync(Guid meetingId, CancellationToken ct = default) =>
         SendAsync<MeetingRecordingDto>(HttpMethod.Post, $"api/meetings/{meetingId}/recording", null, ct);

@@ -89,7 +89,12 @@ public partial class ShellViewModel : ViewModelBase
         };
         Calendar.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(CalendarViewModel.IsInMeeting)) OnPropertyChanged(nameof(ShowMeetingBanner));
+            if (e.PropertyName is nameof(CalendarViewModel.IsInMeeting)
+                or nameof(CalendarViewModel.Stage))
+            {
+                OnPropertyChanged(nameof(ShowMeetingBanner));
+                OnPropertyChanged(nameof(ShowMeetingPip));
+            }
         };
 
         context.Realtime.PresenceChanged += OnPresenceChanged;
@@ -118,7 +123,7 @@ public partial class ShellViewModel : ViewModelBase
     public string OrganizationName => _context.Organization.Name;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowMeetingBanner), nameof(ShowCallStage), nameof(ShowCallBar))]
+    [NotifyPropertyChangedFor(nameof(ShowMeetingBanner), nameof(ShowMeetingPip), nameof(ShowCallStage), nameof(ShowCallBar))]
     private ViewModelBase _current;
 
     [ObservableProperty] private bool _isConnected;
@@ -137,8 +142,15 @@ public partial class ShellViewModel : ViewModelBase
     /// <summary>Bottom-right toast when a callee declines an outgoing ring.</summary>
     public bool ShowCallDeclinedToast => PendingCallDeclined is not null;
 
-    /// <summary>A reminder, on every other section, that the user is still in a meeting.</summary>
-    public bool ShowMeetingBanner => Calendar.IsInMeeting && !ReferenceEquals(Current, Calendar);
+    /// <summary>Text banner only when the meeting PiP cannot be shown yet.</summary>
+    public bool ShowMeetingBanner =>
+        Calendar.IsInMeeting && !ReferenceEquals(Current, Calendar) && !ShowMeetingPip;
+
+    /// <summary>Teams-style floating PiP while browsing other sections during a live meeting.</summary>
+    public bool ShowMeetingPip =>
+        Calendar.IsInMeeting
+        && Calendar.Stage is { IsMediaOpen: true }
+        && !ReferenceEquals(Current, Calendar);
 
     /// <summary>Incoming ring overlay — visible from any section.</summary>
     public bool ShowIncomingCall => Calls.HasIncoming;
@@ -146,8 +158,11 @@ public partial class ShellViewModel : ViewModelBase
     /// <summary>Full in-app LiveKit stage (Teams-style immersive call).</summary>
     public bool ShowCallStage => Calls.HasMedia && Calls.IsStageExpanded;
 
-    /// <summary>Compact bar while browsing, or Leave chrome for a recovered active call.</summary>
-    public bool ShowCallBar => Calls.IsInCall && !ShowCallStage;
+    /// <summary>
+    /// Compact bar for recovered calls without LiveKit. When media is up, the floating PiP
+    /// replaces this bar while browsing.
+    /// </summary>
+    public bool ShowCallBar => Calls.IsInCall && !ShowCallStage && !Calls.HasMedia;
 
     public async Task InitializeAsync()
     {

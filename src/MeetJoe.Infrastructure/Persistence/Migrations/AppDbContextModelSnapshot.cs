@@ -17,7 +17,7 @@ namespace MeetJoe.Infrastructure.Persistence.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "9.0.23")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -335,6 +335,9 @@ namespace MeetJoe.Infrastructure.Persistence.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
 
+                    b.Property<Guid?>("MeetingId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("uuid");
 
@@ -354,6 +357,8 @@ namespace MeetJoe.Infrastructure.Persistence.Migrations
                     b.HasIndex("ChannelId");
 
                     b.HasIndex("ConversationId");
+
+                    b.HasIndex("MeetingId");
 
                     b.HasIndex("UploaderId");
 
@@ -1234,6 +1239,11 @@ namespace MeetJoe.Infrastructure.Persistence.Migrations
                     b.HasOne("MeetJoe.Domain.Conversation", null)
                         .WithMany()
                         .HasForeignKey("ConversationId");
+
+                    b.HasOne("MeetJoe.Domain.Meeting", null)
+                        .WithMany()
+                        .HasForeignKey("MeetingId")
+                        .OnDelete(DeleteBehavior.Cascade);
 
                     b.HasOne("MeetJoe.Domain.Organization", null)
                         .WithMany()

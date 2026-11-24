@@ -159,15 +159,13 @@ public sealed partial class ChatService(IAppDbContext db, IRealtimePublisher rea
         var files = new List<Domain.FileObject>();
         if (fileIds.Count > 0)
         {
-            if (request.MeetingId is not null)
-                throw AppException.Validation("Meeting chat does not support attachments yet.");
-
             // Only the uploader's own, not-yet-sent files that were uploaded to this same place.
             files = await db.Files
                 .Where(f => fileIds.Contains(f.Id)
                             && f.UploaderId == userId
                             && f.ConversationId == request.ConversationId
                             && f.ChannelId == request.ChannelId
+                            && f.MeetingId == request.MeetingId
                             && !db.Attachments.Any(a => a.FileObjectId == f.Id))
                 .ToListAsync(ct);
             if (files.Count != fileIds.Count)

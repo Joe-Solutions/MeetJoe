@@ -30,5 +30,7 @@
 	<string>MeetJoe uses the camera for video calls and meetings.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>MeetJoe uses the microphone so you can talk in calls and meetings.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>MeetJoe uses screen recording so you can share your screen in calls and meetings.</string>
 </dict>
 </plist>

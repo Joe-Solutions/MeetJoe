@@ -135,9 +135,11 @@ public partial class CallsViewModel : ViewModelBase
 
     public ObservableCollection<CallHistoryItemViewModel> History { get; } = [];
     public ObservableCollection<RoomChatMessageViewModel> ChatMessages { get; } = [];
+    public ObservableCollection<PendingAttachmentViewModel> PendingAttachments { get; } = [];
     public IReadOnlyList<string> EmojiPalette => RoomChatMessageViewModel.EmojiPalette;
 
     [ObservableProperty] private bool _showEmojiPicker;
+    [ObservableProperty] private bool _hasPendingAttachments;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsEmpty))]
@@ -193,6 +195,7 @@ public partial class CallsViewModel : ViewModelBase
 
     [ObservableProperty] private bool _isCameraOn = true;
     [ObservableProperty] private bool _isMicOn = true;
+    [ObservableProperty] private bool _isScreenShareOn;
 
     /// <summary>
     /// True once the LiveKit page reports it is connected and painting. Until then the
@@ -219,6 +222,10 @@ public partial class CallsViewModel : ViewModelBase
     /// <summary>Wired by the shell to the LiveKit WebView host.</summary>
     public Func<Task>? ToggleCameraHandler { get; set; }
     public Func<Task>? ToggleMicHandler { get; set; }
+    public Func<Task>? ToggleScreenShareHandler { get; set; }
+
+    /// <summary>Raised so the call stage can scroll chat to the latest bubble (own send / open chat).</summary>
+    public event Action? ChatFollowRequested;
 
     public void ApplyActiveSpeakers(IReadOnlyCollection<Guid> speakerIds)
     {
@@ -405,6 +412,7 @@ public partial class CallsViewModel : ViewModelBase
         IsLiveKitSurfaceReady = false;
         IsCameraOn = true;
         IsMicOn = true;
+        IsScreenShareOn = false;
         IsStageExpanded = false;
         ShowAddPeople = false;
         ShowPeoplePanel = true;
@@ -412,8 +420,11 @@ public partial class CallsViewModel : ViewModelBase
         ShowEmojiPicker = false;
         ChatDraft = string.Empty;
         ChatMessages.Clear();
+        PendingAttachments.Clear();
+        HasPendingAttachments = false;
         ToggleCameraHandler = null;
         ToggleMicHandler = null;
+        ToggleScreenShareHandler = null;
         if (!keepPeerName) PeerNameHint = "Call";
     }
 
@@ -487,12 +498,19 @@ public partial class CallsViewModel : ViewModelBase
     {
         ShowPeoplePanel = false;
         UnreadChatCount = 0;
+        RequestChatFollow();
     }
 
     partial void OnShowPeoplePanelChanged(bool value)
     {
-        if (!value) UnreadChatCount = 0;
+        if (!value)
+        {
+            UnreadChatCount = 0;
+            RequestChatFollow();
+        }
     }
+
+    private void RequestChatFollow() => ChatFollowRequested?.Invoke();
 
     [RelayCommand]
     private async Task ToggleCameraAsync()
@@ -509,6 +527,14 @@ public partial class CallsViewModel : ViewModelBase
         // OnIsMicOnChanged broadcasts mute state to other participants via SignalR.
         IsMicOn = !IsMicOn;
         if (ToggleMicHandler is not null) await ToggleMicHandler.Invoke();
+    }
+
+    [RelayCommand]
+    private async Task ToggleScreenShareAsync()
+    {
+        // Optimistic chrome update; MediaStateChanged corrects from the WebView.
+        IsScreenShareOn = !IsScreenShareOn;
+        if (ToggleScreenShareHandler is not null) await ToggleScreenShareHandler.Invoke();
     }
 
     private async Task BroadcastMicMutedAsync()
@@ -564,6 +590,13 @@ public partial class CallsViewModel : ViewModelBase
                     try { await _context.Platform.OpenUriAsync(new Uri("x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")); }
                     catch { /* best-effort */ }
                     break;
+                case "share":
+                    await _context.Platform.AlertAsync(
+                        "Screen sharing needed",
+                        "MeetJoe could not share your screen.\n\n1. Open System Settings → Privacy & Security → Screen Recording\n2. Turn on MeetJoe\n3. Try Share screen again.\n\nTip: launch MeetJoe.app (not a raw binary) so macOS can show the screen-recording permission dialog.");
+                    try { await _context.Platform.OpenUriAsync(new Uri("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")); }
+                    catch { /* best-effort */ }
+                    break;
                 default:
                     await _context.Platform.AlertAsync(
                         "Microphone & camera access needed",
@@ -589,23 +622,59 @@ public partial class CallsViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task AttachChatFileAsync()
+    {
+        if (ActiveCall is null) return;
+        try
+        {
+            var picked = await _context.Platform.PickFileAsync();
+            if (picked is null) return;
+            await using var content = await picked.OpenReadAsync();
+            var file = await _context.Api.UploadFileAsync(
+                ActiveCall.ConversationId, null, picked.Name, content);
+            PendingAttachments.Add(new PendingAttachmentViewModel(file));
+            HasPendingAttachments = PendingAttachments.Count > 0;
+        }
+        catch
+        {
+            // Keep composing; attach failures are transient.
+        }
+    }
+
+    [RelayCommand]
+    private void RemoveChatAttachment(PendingAttachmentViewModel attachment)
+    {
+        PendingAttachments.Remove(attachment);
+        HasPendingAttachments = PendingAttachments.Count > 0;
+    }
+
+    [RelayCommand]
     private async Task SendChatAsync()
     {
-        if (string.IsNullOrWhiteSpace(ChatDraft) || ActiveCall is null) return;
+        if (ActiveCall is null) return;
+        if (string.IsNullOrWhiteSpace(ChatDraft) && PendingAttachments.Count == 0) return;
+
         var body = ChatDraft.Trim();
+        var attachments = PendingAttachments.ToList();
         ChatDraft = string.Empty;
+        PendingAttachments.Clear();
+        HasPendingAttachments = false;
         ShowEmojiPicker = false;
         try
         {
-            var request = new SendMessageRequest(ActiveCall.ConversationId, null, body, null);
+            var request = new SendMessageRequest(
+                ActiveCall.ConversationId, null, body, attachments.Select(a => a.FileId).ToList());
             var sent = _context.Realtime.IsConnected
                 ? await _context.Realtime.SendMessageAsync(request)
                 : await _context.Api.SendMessageAsync(request);
             RoomChatMessageViewModel.TryAdd(ChatMessages, sent, _context);
+            RequestChatFollow();
         }
         catch
         {
             ChatDraft = body;
+            foreach (var attachment in attachments) PendingAttachments.Add(attachment);
+            HasPendingAttachments = PendingAttachments.Count > 0;
         }
     }
 
@@ -720,6 +789,7 @@ public partial class CallsViewModel : ViewModelBase
             foreach (var message in messages.OrderBy(m => m.CreatedAt))
                 ChatMessages.Add(new RoomChatMessageViewModel(message, _context));
             RoomChatMessageViewModel.ApplyGrouping(ChatMessages);
+            RequestChatFollow();
         }
         catch
         {
@@ -731,7 +801,9 @@ public partial class CallsViewModel : ViewModelBase
     {
         if (ActiveCall is null || message.ConversationId != ActiveCall.ConversationId) return;
         if (!RoomChatMessageViewModel.TryAdd(ChatMessages, message, _context)) return;
-        if (!ShowChatPanel && message.Sender.Id != _context.People.MyId)
+        if (message.Sender.Id == _context.People.MyId)
+            RequestChatFollow();
+        else if (!ShowChatPanel)
             UnreadChatCount++;
     }
 

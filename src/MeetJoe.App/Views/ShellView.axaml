@@ -88,7 +88,7 @@
         </TransitioningContentControl>
       </Grid>
 
-      <!-- Teams-style floating bar while browsing during an active call -->
+      <!-- Recovered call without LiveKit media (rare) -->
       <Border VerticalAlignment="Top" Margin="16,12,16,0" Padding="12,10" CornerRadius="12" ZIndex="20"
               Background="{StaticResource Brush.PanelRaised}" BoxShadow="0 8 28 0 #66000000"
               BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
@@ -110,6 +110,64 @@
         </DockPanel>
       </Border>
 
+      <!-- Meeting PiP while browsing other sections (active speaker only). -->
+      <Border x:Name="MeetingPipRoot" ZIndex="40" Width="300" Height="248" Margin="16"
+              HorizontalAlignment="Right" VerticalAlignment="Bottom"
+              Background="{StaticResource Brush.Rail}" BorderBrush="{StaticResource Brush.Border}"
+              BorderThickness="1" CornerRadius="12"
+              BoxShadow="0 12 36 0 #88000000" IsVisible="False">
+        <Grid RowDefinitions="Auto,*,Auto">
+          <Border Background="{StaticResource Brush.Panel}" Padding="10,8"
+                  BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,0,1">
+            <DockPanel>
+              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
+                <Button Classes="secondary" Width="36" Height="36" Padding="0" CornerRadius="18"
+                        ToolTip.Tip="Return to meeting" Command="{Binding ReturnToMeetingCommand}">
+                  <c:Icon Data="{StaticResource Icon.Expand}" Size="16" />
+                </Button>
+                <Button Classes="danger" Width="36" Height="36" Padding="0" CornerRadius="18"
+                        ToolTip.Tip="Leave meeting" Command="{Binding Calendar.LeaveCommand}">
+                  <c:Icon Data="{StaticResource Icon.EndCall}" Size="16" />
+                </Button>
+              </StackPanel>
+              <StackPanel Spacing="1" VerticalAlignment="Center" Margin="0,0,8,0">
+                <TextBlock FontWeight="SemiBold" FontSize="13" MaxLines="1" TextTrimming="CharacterEllipsis"
+                           Text="{Binding Calendar.Stage.Meeting.Title}" />
+                <TextBlock Classes="muted small" Text="In meeting" />
+              </StackPanel>
+            </DockPanel>
+          </Border>
+          <Panel x:Name="MeetingPipMediaHost" Grid.Row="1" IsHitTestVisible="False" />
+          <Border Grid.Row="2" Background="{StaticResource Brush.Panel}" Padding="10,8"
+                  BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,1,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10">
+              <Button Classes="secondary" Width="40" Height="40" Padding="0" CornerRadius="20"
+                      ToolTip.Tip="Turn camera on or off" Command="{Binding Calendar.Stage.ToggleCameraCommand}">
+                <Panel>
+                  <c:Icon Data="{StaticResource Icon.Video}" Size="18"
+                          IsVisible="{Binding Calendar.Stage.IsCameraOn}" />
+                  <c:Icon Data="{StaticResource Icon.VideoOff}" Size="18"
+                          IsVisible="{Binding !Calendar.Stage.IsCameraOn}" />
+                </Panel>
+              </Button>
+              <Button Classes="secondary" Width="40" Height="40" Padding="0" CornerRadius="20"
+                      ToolTip.Tip="Mute or unmute" Command="{Binding Calendar.Stage.ToggleMicCommand}">
+                <Panel>
+                  <c:Icon Data="{StaticResource Icon.Mic}" Size="18"
+                          IsVisible="{Binding Calendar.Stage.IsMicOn}" />
+                  <c:Icon Data="{StaticResource Icon.MicOff}" Size="18"
+                          IsVisible="{Binding !Calendar.Stage.IsMicOn}" />
+                </Panel>
+              </Button>
+              <Button Classes="danger" Width="40" Height="40" Padding="0" CornerRadius="20"
+                      ToolTip.Tip="Leave meeting" Command="{Binding Calendar.LeaveCommand}">
+                <c:Icon Data="{StaticResource Icon.EndCall}" Size="16" />
+              </Button>
+            </StackPanel>
+          </Border>
+        </Grid>
+      </Border>
+
       <!--
         Single LiveKit host for the active call. Expanded = full stage; minimized = 1×1 keep-alive
         so navigating away from Calls does not tear down the WebView (audio stays up).
@@ -120,11 +178,11 @@
                 BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,0,1">
           <DockPanel>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-              <Button Classes="secondary" Width="40" Height="40" Padding="0" CornerRadius="20"
+              <Button x:Name="CallHeaderPeopleButton" Classes="secondary" Width="40" Height="40" Padding="0" CornerRadius="20"
                       ToolTip.Tip="People" Command="{Binding Calls.ShowPeopleCommand}">
                 <c:Icon Data="{StaticResource Icon.Users}" Size="18" />
               </Button>
-              <Button Classes="secondary" Width="40" Height="40" Padding="0" CornerRadius="20"
+              <Button x:Name="CallHeaderChatButton" Classes="secondary" Width="40" Height="40" Padding="0" CornerRadius="20"
                       ToolTip.Tip="Chat" Command="{Binding Calls.ShowChatCommand}">
                 <Panel>
                   <c:Icon Data="{StaticResource Icon.ChatBubble}" Size="18" />
@@ -137,20 +195,34 @@
                   </Border>
                 </Panel>
               </Button>
-              <Button Classes="secondary" Width="40" Height="40" Padding="0" CornerRadius="20"
+              <Button x:Name="CallHeaderAddPeopleButton" Classes="secondary" Width="40" Height="40" Padding="0" CornerRadius="20"
                       ToolTip.Tip="Add people" Command="{Binding Calls.BeginAddPeopleCommand}">
                 <c:Icon Data="{StaticResource Icon.UserPlus}" Size="18" />
               </Button>
-              <Button Classes="secondary" Content="Minimize" Command="{Binding Calls.MinimizeStageCommand}"
+              <Button x:Name="CallHeaderMinimizeButton" Classes="secondary" Content="Minimize"
+                      Command="{Binding Calls.MinimizeStageCommand}"
                       ToolTip.Tip="Keep the call and return to MeetJoe" />
-              <Button Classes="danger" Content="Leave" Command="{Binding Calls.HangUpCommand}" />
+              <Button x:Name="CallHeaderExpandButton" Classes="secondary" Width="40" Height="40" Padding="0"
+                      CornerRadius="20" IsVisible="False"
+                      ToolTip.Tip="Return to call" Command="{Binding Calls.ExpandStageCommand}">
+                <c:Icon Data="{StaticResource Icon.Expand}" Size="18" />
+              </Button>
+              <Button Classes="danger" Content="Leave" Command="{Binding Calls.HangUpCommand}"
+                      IsVisible="{Binding Calls.IsStageExpanded}" />
+              <Button Classes="danger" Width="40" Height="40" Padding="0" CornerRadius="20"
+                      ToolTip.Tip="Leave call" Command="{Binding Calls.HangUpCommand}"
+                      IsVisible="{Binding !Calls.IsStageExpanded}">
+                <c:Icon Data="{StaticResource Icon.EndCall}" Size="18" />
+              </Button>
             </StackPanel>
             <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
               <c:Avatar Width="40" Height="40"
                         DisplayName="{Binding Calls.ActivePeerName}"
-                        Photo="{Binding Calls.ActivePeerPerson.Photo}" />
+                        Photo="{Binding Calls.ActivePeerPerson.Photo}"
+                        IsVisible="{Binding Calls.IsStageExpanded}" />
               <StackPanel Spacing="1" VerticalAlignment="Center">
-                <TextBlock Classes="h2" Text="{Binding Calls.ActivePeerName}" />
+                <TextBlock Classes="h2" Text="{Binding Calls.ActivePeerName}"
+                           FontSize="14" MaxLines="1" TextTrimming="CharacterEllipsis" />
                 <TextBlock Classes="muted small" Text="{Binding Calls.CallStatusLabel}" />
               </StackPanel>
             </StackPanel>
@@ -256,6 +328,20 @@
                         IsVisible="{Binding !Calls.IsMicOn}" />
               </Panel>
             </Button>
+            <Button Classes="secondary" Width="52" Height="52" Padding="0" CornerRadius="26"
+                    ToolTip.Tip="Share or stop sharing your screen"
+                    Command="{Binding Calls.ToggleScreenShareCommand}">
+              <Panel>
+                <c:Icon Data="{StaticResource Icon.ScreenShare}" Size="22"
+                        IsVisible="{Binding !Calls.IsScreenShareOn}" />
+                <Border IsVisible="{Binding Calls.IsScreenShareOn}"
+                        Background="{StaticResource Brush.Accent}" CornerRadius="18"
+                        Padding="8" HorizontalAlignment="Center" VerticalAlignment="Center">
+                  <c:Icon Data="{StaticResource Icon.ScreenShare}" Size="22"
+                          TextElement.Foreground="{StaticResource Brush.OnAccent}" />
+                </Border>
+              </Panel>
+            </Button>
             <Button Classes="danger" Width="52" Height="52" Padding="0" CornerRadius="26"
                     ToolTip.Tip="Leave call" Command="{Binding Calls.HangUpCommand}">
               <c:Icon Data="{StaticResource Icon.Leave}" Size="22" />
@@ -264,7 +350,8 @@
         </Border>
 
         <!-- People / chat rail -->
-        <Border Grid.Row="1" Grid.RowSpan="1" Grid.Column="1" BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
+        <Border x:Name="CallStageRail" Grid.Row="1" Grid.RowSpan="1" Grid.Column="1"
+                BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
                 Background="{StaticResource Brush.Panel}">
           <Grid RowDefinitions="Auto,*">
             <StackPanel Orientation="Horizontal" Spacing="6" Margin="10,10,10,0">
@@ -339,12 +426,37 @@
             <Grid Grid.Row="1" RowDefinitions="Auto,*,Auto" Margin="0,8,0,0"
                   IsVisible="{Binding Calls.ShowChatPanel}">
               <TextBlock Classes="h2" Margin="14,4,14,8" Text="Chat" />
-              <ScrollViewer Grid.Row="1" Margin="8,0,8,0">
+              <ScrollViewer x:Name="CallChatScroller" Grid.Row="1" Margin="8,0,8,0">
                 <ItemsControl ItemsSource="{Binding Calls.ChatMessages}"
                               ItemTemplate="{StaticResource RoomChatMessageTemplate}"
                               VerticalAlignment="Bottom" />
               </ScrollViewer>
               <StackPanel Grid.Row="2" Margin="8,6,8,8" Spacing="4">
+                <ItemsControl ItemsSource="{Binding Calls.PendingAttachments}"
+                              IsVisible="{Binding Calls.HasPendingAttachments}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <WrapPanel />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:PendingAttachmentViewModel">
+                      <Border Background="{StaticResource Brush.PanelRaised}" CornerRadius="10"
+                              Padding="10,4,4,4" Margin="0,0,6,6">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <c:Icon Data="{StaticResource Icon.File}" Size="14" VerticalAlignment="Center" />
+                          <TextBlock Text="{Binding FileName}" FontSize="12" MaxWidth="120"
+                                     TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                          <Button Classes="ghost square" Width="24" Height="24" MinHeight="24" ToolTip.Tip="Remove"
+                                  Command="{Binding $parent[UserControl].((vm:ShellViewModel)DataContext).Calls.RemoveChatAttachmentCommand}"
+                                  CommandParameter="{Binding}">
+                            <c:Icon Data="{StaticResource Icon.Close}" Size="12" />
+                          </Button>
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
                 <Border Classes="emojipicker" IsVisible="{Binding Calls.ShowEmojiPicker}">
                   <ItemsControl ItemsSource="{Binding Calls.EmojiPalette}">
                     <ItemsControl.ItemsPanel>
@@ -361,15 +473,19 @@
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
                 </Border>
-                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
-                  <Button Classes="ghost square" VerticalAlignment="Center" ToolTip.Tip="Emoji"
+                <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="4">
+                  <Button Classes="ghost square" VerticalAlignment="Center" ToolTip.Tip="Attach a file"
+                          Command="{Binding Calls.AttachChatFileCommand}">
+                    <c:Icon Data="{StaticResource Icon.Attach}" Size="16" />
+                  </Button>
+                  <Button Grid.Column="1" Classes="ghost square" VerticalAlignment="Center" ToolTip.Tip="Emoji"
                           Command="{Binding Calls.ToggleEmojiPickerCommand}">
                     <c:Icon Data="{StaticResource Icon.Smile}" Size="16" />
                   </Button>
-                  <TextBox x:Name="CallChatComposer" Grid.Column="1" Classes="roomcomposer"
+                  <TextBox x:Name="CallChatComposer" Grid.Column="2" Classes="roomcomposer"
                            Text="{Binding Calls.ChatDraft}"
                            Watermark="Message everyone on the call" />
-                  <Button Grid.Column="2" Classes="primary" Content="Send" VerticalAlignment="Center"
+                  <Button Grid.Column="3" Classes="primary" Content="Send" VerticalAlignment="Center"
                           ToolTip.Tip="Send (Enter)" Command="{Binding Calls.SendChatCommand}" />
                 </Grid>
               </StackPanel>

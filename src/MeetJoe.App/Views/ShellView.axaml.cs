@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.Threading;
 using MeetJoe.App.Controls;
 using MeetJoe.App.ViewModels;
 
@@ -14,6 +15,7 @@ namespace MeetJoe.App.Views;
 public partial class ShellView : UserControl
 {
     private ShellViewModel? _vm;
+    private bool _callPipActive;
 
     public ShellView()
     {
@@ -37,6 +39,9 @@ public partial class ShellView : UserControl
             _vm.PropertyChanged -= OnShellPropertyChanged;
             _vm.Calls.PropertyChanged -= OnCallsPropertyChanged;
             _vm.Calls.CallChromeChanged -= SyncCallStage;
+            _vm.Calls.ChatFollowRequested -= OnCallChatFollowRequested;
+            _vm.Calendar.PropertyChanged -= OnCalendarPropertyChanged;
+            MeetingMediaParking.Changed -= OnMeetingMediaParkingChanged;
         }
 
         _vm = vm;
@@ -45,17 +50,42 @@ public partial class ShellView : UserControl
             _vm.PropertyChanged += OnShellPropertyChanged;
             _vm.Calls.PropertyChanged += OnCallsPropertyChanged;
             _vm.Calls.CallChromeChanged += SyncCallStage;
+            _vm.Calls.ChatFollowRequested += OnCallChatFollowRequested;
+            _vm.Calendar.PropertyChanged += OnCalendarPropertyChanged;
+            MeetingMediaParking.Changed += OnMeetingMediaParkingChanged;
         }
 
         SyncCallStage();
+        SyncMeetingPip();
     }
+
+    private void OnCalendarPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(CalendarViewModel.IsInMeeting)
+            or nameof(CalendarViewModel.Stage))
+            SyncMeetingPip();
+    }
+
+    private void OnMeetingMediaParkingChanged() =>
+        Dispatcher.UIThread.Post(SyncMeetingPip, DispatcherPriority.Loaded);
+
+    private void OnCallChatFollowRequested() =>
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (CallChatScroller.IsEffectivelyVisible)
+                CallChatScroller.ScrollToEnd();
+        }, DispatcherPriority.Loaded);
 
     private void OnShellPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(ShellViewModel.ShowCallStage)
             or nameof(ShellViewModel.ShowCallBar)
-            or nameof(ShellViewModel.Current))
+            or nameof(ShellViewModel.Current)
+            or nameof(ShellViewModel.ShowMeetingPip))
+        {
             SyncCallStage();
+            SyncMeetingPip();
+        }
     }
 
     private void OnCallsPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -81,24 +111,50 @@ public partial class ShellView : UserControl
         {
             CallStageRoot.ClearValue(WidthProperty);
             CallStageRoot.ClearValue(HeightProperty);
+            CallStageRoot.ClearValue(MarginProperty);
             CallStageRoot.HorizontalAlignment = HorizontalAlignment.Stretch;
             CallStageRoot.VerticalAlignment = VerticalAlignment.Stretch;
             CallStageRoot.Opacity = 1;
             CallStageRoot.IsHitTestVisible = true;
             CallStageHeader.IsVisible = true;
             CallStageControls.IsVisible = true;
+            CallStageRail.IsVisible = true;
+            CallHeaderPeopleButton.IsVisible = true;
+            CallHeaderChatButton.IsVisible = true;
+            CallHeaderAddPeopleButton.IsVisible = true;
+            CallHeaderMinimizeButton.IsVisible = true;
+            CallHeaderExpandButton.IsVisible = false;
+            if (CallStageRoot.ColumnDefinitions.Count > 1)
+                CallStageRoot.ColumnDefinitions[1].Width = new GridLength(280);
         }
         else
         {
-            // Keep a real WebView surface alive while browsing. A 1×1 host kills WKWebView audio.
-            CallStageRoot.Width = 320;
-            CallStageRoot.Height = 180;
-            CallStageRoot.HorizontalAlignment = HorizontalAlignment.Left;
+            // Teams-style floating PiP: visible single-speaker surface while browsing.
+            CallStageRoot.Width = 300;
+            CallStageRoot.Height = 248;
+            CallStageRoot.Margin = new Thickness(16);
+            CallStageRoot.HorizontalAlignment = HorizontalAlignment.Right;
             CallStageRoot.VerticalAlignment = VerticalAlignment.Bottom;
-            CallStageRoot.Opacity = 0.01;
-            CallStageRoot.IsHitTestVisible = false;
-            CallStageHeader.IsVisible = false;
-            CallStageControls.IsVisible = false;
+            CallStageRoot.Opacity = 1;
+            CallStageRoot.IsHitTestVisible = true;
+            CallStageHeader.IsVisible = true;
+            CallStageControls.IsVisible = true;
+            CallStageRail.IsVisible = false;
+            CallHeaderPeopleButton.IsVisible = false;
+            CallHeaderChatButton.IsVisible = false;
+            CallHeaderAddPeopleButton.IsVisible = false;
+            CallHeaderMinimizeButton.IsVisible = false;
+            CallHeaderExpandButton.IsVisible = true;
+            if (CallStageRoot.ColumnDefinitions.Count > 1)
+                CallStageRoot.ColumnDefinitions[1].Width = new GridLength(0);
+            CallStageHeader.Padding = new Thickness(10, 8);
+            CallStageControls.Padding = new Thickness(10, 8);
+        }
+
+        if (_vm.ShowCallStage)
+        {
+            CallStageHeader.Padding = new Thickness(16, 10);
+            CallStageControls.Padding = new Thickness(16, 12);
         }
 
         OpenCallMedia(uri);
@@ -133,19 +189,29 @@ public partial class ShellView : UserControl
 
         CallMediaHost.IsVisible = !inviting;
 
-        if (_vm is { ShowCallStage: true })
+        CallMediaHost.ClearValue(WidthProperty);
+        CallMediaHost.ClearValue(HeightProperty);
+        CallMediaHost.ClearValue(MarginProperty);
+        CallMediaHost.HorizontalAlignment = HorizontalAlignment.Stretch;
+        CallMediaHost.VerticalAlignment = VerticalAlignment.Stretch;
+
+        var pip = _vm is { ShowCallStage: false };
+        var leavingPip = _callPipActive && !pip;
+        _callPipActive = pip;
+        _ = ApplyCallMediaModeAsync(host, pip, syncPreferred: leavingPip);
+    }
+
+    private static async Task ApplyCallMediaModeAsync(InAppMediaHost host, bool pip, bool syncPreferred)
+    {
+        try
         {
-            CallMediaHost.ClearValue(WidthProperty);
-            CallMediaHost.ClearValue(HeightProperty);
-            CallMediaHost.ClearValue(MarginProperty);
-            CallMediaHost.HorizontalAlignment = HorizontalAlignment.Stretch;
-            CallMediaHost.VerticalAlignment = VerticalAlignment.Stretch;
+            await host.SetPipModeAsync(pip);
+            // Only when expanding from PiP — never on every layout/media-state tick.
+            if (syncPreferred) await host.SyncPreferredMediaToPageAsync();
         }
-        else
+        catch
         {
-            // Minimized floating keep-alive (~320×180 stage root already).
-            CallMediaHost.HorizontalAlignment = HorizontalAlignment.Stretch;
-            CallMediaHost.VerticalAlignment = VerticalAlignment.Stretch;
+            // Best-effort — LiveKit page may still be connecting.
         }
     }
 
@@ -163,9 +229,11 @@ public partial class ShellView : UserControl
             host.MediaStateChanged += () =>
             {
                 if (_vm is null) return;
+                // Do not call LayoutCallMediaHost here — it used to re-apply preferred media and
+                // race user cam/mic clicks (often undoing the toggle).
                 _vm.Calls.IsCameraOn = host.IsCameraEnabled;
                 _vm.Calls.IsMicOn = host.IsMicEnabled;
-                LayoutCallMediaHost();
+                _vm.Calls.IsScreenShareOn = host.IsScreenShareEnabled;
             };
             host.ActiveSpeakersChanged += ids =>
             {
@@ -194,9 +262,12 @@ public partial class ShellView : UserControl
 
         if (_vm is not null)
         {
+            // Keep last cam/mic choice across PiP ↔ expanded (and any LiveKit reconnect).
+            host.ApplyPreferredMedia(_vm.Calls.IsCameraOn, _vm.Calls.IsMicOn);
             // Re-bind every open so hang-up clearing handlers cannot leave buttons dead.
             _vm.Calls.ToggleCameraHandler = () => host.ToggleCameraAsync();
             _vm.Calls.ToggleMicHandler = () => host.ToggleMicAsync();
+            _vm.Calls.ToggleScreenShareHandler = () => host.ToggleScreenShareAsync();
         }
 
         host.Show(uri);
@@ -213,5 +284,89 @@ public partial class ShellView : UserControl
         }
 
         CallMediaHost.Children.Clear();
+    }
+
+    /// <summary>
+    /// Teams-style meeting PiP: show parked (or recreated) LiveKit surface while browsing,
+    /// hide it when the user returns to Calendar / leaves the meeting.
+    /// </summary>
+    private void SyncMeetingPip()
+    {
+        var stage = _vm?.Calendar.Stage;
+        var showPip = _vm?.ShowMeetingPip == true
+                      && stage is { IsMediaOpen: true, MediaPageUri: not null };
+
+        if (!showPip || stage?.MediaPageUri is not { } uri)
+        {
+            MeetingPipRoot.IsVisible = false;
+            // Return host to parking (MeetingStage will Take on reopen) or shut down if meeting ended.
+            if (MeetingPipMediaHost.Children.OfType<InAppMediaHost>().FirstOrDefault() is { } hosted)
+            {
+                MeetingPipMediaHost.Children.Remove(hosted);
+                if (_vm?.Calendar.IsInMeeting == true && stage is { IsMediaOpen: true })
+                    MeetingMediaParking.Park(hosted);
+                else
+                    _ = ShutdownMeetingHostAsync(hosted);
+            }
+            else if (_vm?.Calendar.IsInMeeting != true)
+            {
+                _ = MeetingMediaParking.ShutdownAsync();
+            }
+
+            return;
+        }
+
+        MeetingPipRoot.IsVisible = true;
+
+        var host = MeetingPipMediaHost.Children.OfType<InAppMediaHost>().FirstOrDefault()
+                   ?? MeetingMediaParking.Take();
+        if (host is null)
+        {
+            host = new InAppMediaHost();
+            host.SetLeaveHandler(() =>
+            {
+                if (_vm?.Calendar.LeaveCommand.CanExecute(null) == true)
+                    _ = _vm.Calendar.LeaveCommand.ExecuteAsync(null);
+            });
+            host.MediaStateChanged += () =>
+            {
+                if (_vm?.Calendar.Stage is not { } s) return;
+                s.IsCameraOn = host.IsCameraEnabled;
+                s.IsMicOn = host.IsMicEnabled;
+                s.IsScreenShareOn = host.IsScreenShareEnabled;
+            };
+            host.ActiveSpeakersChanged += ids => _vm?.Calendar.Stage?.ApplyActiveSpeakers(ids);
+            host.MutedParticipantsChanged += ids => _vm?.Calendar.Stage?.ApplyMutedParticipants(ids);
+            host.PermissionNeeded += kind =>
+            {
+                if (_vm?.Calendar.Stage is { } s)
+                    _ = s.NotifyMediaPermissionNeededAsync(kind);
+            };
+        }
+
+        if (!MeetingPipMediaHost.Children.Contains(host))
+        {
+            // Reparent from wherever the host currently lives (stage or parking).
+            if (host.Parent is Panel previous)
+                previous.Children.Remove(host);
+            MeetingPipMediaHost.Children.Clear();
+            MeetingPipMediaHost.Children.Add(host);
+        }
+
+        stage.ToggleCameraHandler = () => host.ToggleCameraAsync();
+        stage.ToggleMicHandler = () => host.ToggleMicAsync();
+        stage.ToggleScreenShareHandler = () => host.ToggleScreenShareAsync();
+        host.Show(uri);
+        host.HorizontalAlignment = HorizontalAlignment.Stretch;
+        host.VerticalAlignment = VerticalAlignment.Stretch;
+        host.IsHitTestVisible = false;
+        // PiP layout only — do not SyncPreferredMedia here (races cam/mic clicks).
+        _ = host.SetPipModeAsync(true);
+    }
+
+    private static async Task ShutdownMeetingHostAsync(InAppMediaHost host)
+    {
+        try { await host.ShutdownAsync(); }
+        catch { /* ignore */ }
     }
 }

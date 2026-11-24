@@ -117,7 +117,13 @@ public interface IMeetJoeApi
     Task<SearchResultDto> SearchAsync(Guid organizationId, string query, CancellationToken ct = default);
 
     Task<IReadOnlyList<FileDto>> GetFilesAsync(Guid organizationId, CancellationToken ct = default);
-    Task<FileDto> UploadFileAsync(Guid? conversationId, Guid? channelId, string fileName, Stream content, CancellationToken ct = default);
+    Task<FileDto> UploadFileAsync(
+        Guid? conversationId,
+        Guid? channelId,
+        string fileName,
+        Stream content,
+        CancellationToken ct = default,
+        Guid? meetingId = null);
     Task DownloadFileAsync(Guid fileId, Stream destination, CancellationToken ct = default);
 
     Task<IReadOnlyList<MeetingDto>> GetMeetingsAsync(Guid organizationId, CancellationToken ct = default);
@@ -130,7 +136,8 @@ public interface IMeetJoeApi
     Task<MeetingDto> RespondToInviteAsync(Guid meetingId, InviteStatus status, CancellationToken ct = default);
     Task<MeetingDto> InviteParticipantsAsync(Guid meetingId, IReadOnlyList<Guid> userIds, CancellationToken ct = default);
     Task<IReadOnlyList<MessageDto>> GetMeetingMessagesAsync(Guid meetingId, CancellationToken ct = default);
-    Task<MessageDto> SendMeetingChatAsync(Guid meetingId, string body, CancellationToken ct = default);
+    Task<MessageDto> SendMeetingChatAsync(
+        Guid meetingId, string? body, CancellationToken ct = default, IReadOnlyList<Guid>? attachmentIds = null);
     Task<MeetingRecordingDto> StartRecordingAsync(Guid meetingId, CancellationToken ct = default);
 
     Task<IReadOnlyList<CallDto>> GetCallsAsync(Guid organizationId, CancellationToken ct = default);
@@ -185,7 +192,7 @@ public interface IRealtimeClient
     Task RejectAsync(Guid meetingId, Guid userId);
     Task RemoveParticipantAsync(Guid meetingId, Guid userId);
     Task MuteParticipantAsync(Guid meetingId, Guid userId);
-    Task<MessageDto> SendMeetingChatAsync(Guid meetingId, string body);
+    Task<MessageDto> SendMeetingChatAsync(Guid meetingId, string? body, IReadOnlyList<Guid>? attachmentIds = null);
     Task<CallJoinDto> AnswerCallAsync(Guid callId);
     Task DeclineCallAsync(Guid callId);
     Task HangUpCallAsync(Guid callId);

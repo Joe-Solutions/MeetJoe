@@ -230,6 +230,11 @@ internal static class ApiEndpoints
                     UploadAsync(null, id, file, user, files, ct))
             .DisableAntiforgery();
 
+        api.MapPost("/meetings/{id:guid}/files",
+                (Guid id, IFormFile file, ClaimsPrincipal user, FileService files, CancellationToken ct) =>
+                    UploadAsync(null, null, file, user, files, ct, id))
+            .DisableAntiforgery();
+
         api.MapGet("/files/{id:guid}/content",
             async (Guid id, ClaimsPrincipal user, FileService files, HttpContext http, CancellationToken ct) =>
             {
@@ -246,11 +251,18 @@ internal static class ApiEndpoints
     }
 
     private static async Task<FileDto> UploadAsync(
-        Guid? conversationId, Guid? channelId, IFormFile file, ClaimsPrincipal user, FileService files, CancellationToken ct)
+        Guid? conversationId,
+        Guid? channelId,
+        IFormFile file,
+        ClaimsPrincipal user,
+        FileService files,
+        CancellationToken ct,
+        Guid? meetingId = null)
     {
         await using var content = file.OpenReadStream();
         return await files.UploadAsync(
-            user.GetUserId(), conversationId, channelId, file.FileName, file.ContentType, file.Length, content, ct);
+            user.GetUserId(), conversationId, channelId, file.FileName, file.ContentType, file.Length, content, ct,
+            meetingId);
     }
 
     private static void MapMeetings(RouteGroupBuilder api)
@@ -299,7 +311,7 @@ internal static class ApiEndpoints
 
         api.MapPost("/meetings/{id:guid}/messages",
             (Guid id, SendMessageRequest request, ClaimsPrincipal user, MeetingService meetings, CancellationToken ct) =>
-                meetings.SendMeetingChatAsync(user.GetUserId(), id, request.Body, ct));
+                meetings.SendMeetingChatAsync(user.GetUserId(), id, request.Body, ct, request.AttachmentIds));
 
         api.MapPost("/meetings/{id:guid}/recording",
             (Guid id, ClaimsPrincipal user, MeetingService meetings, CancellationToken ct) =>
