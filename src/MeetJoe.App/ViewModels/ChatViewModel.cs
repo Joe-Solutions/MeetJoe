@@ -35,6 +35,11 @@ public partial class ConversationViewModel : ObservableObject
     /// <summary>The other person in a direct chat, whose presence the list shows.</summary>
     public PersonViewModel? Other { get; }
 
+    /// <summary>Person whose photo/initials represent this conversation in the list.</summary>
+    public PersonViewModel ListAvatar =>
+        Other ?? Members.FirstOrDefault(m => !m.IsMe) ?? Members.FirstOrDefault()
+        ?? new PersonViewModel(Guid.Empty, Title, false);
+
     [ObservableProperty] private string _preview = string.Empty;
     [ObservableProperty] private string _timeText = string.Empty;
     [ObservableProperty] private DateTimeOffset? _lastMessageAt;

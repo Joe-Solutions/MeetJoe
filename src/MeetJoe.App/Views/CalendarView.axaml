@@ -95,42 +95,6 @@
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
-
-            <Border Classes="separator" Margin="0,28,0,24" />
-
-            <TextBlock Classes="h2" Text="Upcoming" />
-            <ItemsControl ItemsSource="{Binding Upcoming}" Margin="0,6,0,0">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:MeetingViewModel">
-                  <Border BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,0,1" Padding="0,14">
-                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
-                      <StackPanel Spacing="3" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="15"
-                                   MaxLines="1" TextTrimming="CharacterEllipsis" />
-                        <TextBlock Classes="muted small" Text="{Binding WhenText}" />
-                        <TextBlock Classes="muted small" Text="{Binding Summary}" />
-                      </StackPanel>
-                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                        <Button Classes="ghost" Content="Accept"
-                                IsVisible="{Binding MyInviteStatus, Converter={x:Static ObjectConverters.IsNotNull}}"
-                                Command="{Binding $parent[UserControl].((vm:CalendarViewModel)DataContext).RespondAcceptCommand}"
-                                CommandParameter="{Binding}" />
-                        <Button Classes="ghost" Content="Decline"
-                                IsVisible="{Binding MyInviteStatus, Converter={x:Static ObjectConverters.IsNotNull}}"
-                                Command="{Binding $parent[UserControl].((vm:CalendarViewModel)DataContext).RespondDeclineCommand}"
-                                CommandParameter="{Binding}" />
-                        <Button Classes="secondary" Content="Join"
-                                IsVisible="{Binding CanJoin}"
-                                Command="{Binding $parent[UserControl].((vm:CalendarViewModel)DataContext).JoinCommand}"
-                                CommandParameter="{Binding}" />
-                        <TextBlock Classes="muted small" Text="Meeting Ended" VerticalAlignment="Center"
-                                   IsVisible="{Binding HasEnded}" />
-                      </StackPanel>
-                    </Grid>
-                  </Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
           </StackPanel>
         </ScrollViewer>
 

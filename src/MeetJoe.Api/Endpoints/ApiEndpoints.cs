@@ -3,6 +3,7 @@ using MeetJoe.Api.Common;
 using MeetJoe.Application.Activity;
 using MeetJoe.Application.Calls;
 using MeetJoe.Application.Chat;
+using MeetJoe.Application.Common;
 using MeetJoe.Application.Files;
 using MeetJoe.Application.Meetings;
 using MeetJoe.Application.Organizations;
@@ -45,6 +46,30 @@ internal static class ApiEndpoints
 
         api.MapPut("/me/presence", (SetPresenceRequest request, ClaimsPrincipal user, PresenceService presence, CancellationToken ct) =>
             presence.SetAvailabilityAsync(user.GetUserId(), request.Availability, ct));
+
+        api.MapPost("/me/avatar", async (HttpRequest http, ClaimsPrincipal user, ProfileService profiles, CancellationToken ct) =>
+        {
+            if (!http.HasFormContentType) throw AppException.Validation("Expected a multipart image upload.");
+            var form = await http.ReadFormAsync(ct);
+            var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault()
+                       ?? throw AppException.Validation("Choose an image to upload.");
+            await using var stream = file.OpenReadStream();
+            return await profiles.UploadAvatarAsync(
+                user.GetUserId(), file.FileName, file.ContentType, file.Length, stream, ct);
+        }).DisableAntiforgery();
+
+        api.MapDelete("/me/avatar", (ClaimsPrincipal user, ProfileService profiles, CancellationToken ct) =>
+            profiles.ClearAvatarAsync(user.GetUserId(), ct));
+
+        api.MapGet("/users/{id:guid}/avatar",
+            async (Guid id, ClaimsPrincipal user, ProfileService profiles, IFileStorage storage, CancellationToken ct) =>
+            {
+                var (contentType, key) = await profiles.GetAvatarAsync(user.GetUserId(), id, ct);
+                var stream = new MemoryStream();
+                await storage.CopyToAsync(key, stream, ct);
+                stream.Position = 0;
+                return Results.File(stream, contentType);
+            });
     }
 
     private static void MapOrganizations(RouteGroupBuilder api)

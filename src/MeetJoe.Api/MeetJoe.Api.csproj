@@ -6,8 +6,13 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="OpenIddict.AspNetCore" />
+    <PackageReference Include="NuGet.Versioning" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="MeetJoe.Api.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Velopack release packages served at /updates/desktop/{rid}/ -->
+    <Content Include="releases\desktop\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

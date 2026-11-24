@@ -1,0 +1,42 @@
+<Project>
+  <!--
+    Assemble MeetJoe.app so macOS TCC can show Camera/Microphone prompts.
+    Raw `dotnet run` binaries have no CFBundleIdentifier — the OS never prompts.
+  -->
+  <Target Name="CreateMacAppBundle"
+          AfterTargets="Build"
+          Condition="$([MSBuild]::IsOSPlatform('osx')) And '$(IsInnerBuild)' != 'true'">
+    <PropertyGroup>
+      <_MacAppDir>$(OutputPath)MeetJoe.app</_MacAppDir>
+      <_MacContents>$(_MacAppDir)/Contents</_MacContents>
+      <_MacMacOS>$(_MacContents)/MacOS</_MacMacOS>
+      <_MacResources>$(_MacContents)/Resources</_MacResources>
+    </PropertyGroup>
+
+    <MakeDir Directories="$(_MacMacOS);$(_MacResources)" />
+
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/Info.plist"
+          DestinationFiles="$(_MacContents)/Info.plist"
+          SkipUnchangedFiles="true" />
+
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/Assets/AppIcon.icns"
+          DestinationFiles="$(_MacResources)/AppIcon.icns"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(MSBuildProjectDirectory)/Assets/AppIcon.icns')" />
+
+    <ItemGroup>
+      <_BundlePayload Include="$(OutputPath)**/*.*"
+                      Exclude="$(OutputPath)MeetJoe.app/**/*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_BundlePayload)"
+          DestinationFolder="$(_MacMacOS)/%(_BundlePayload.RecursiveDir)"
+          SkipUnchangedFiles="true" />
+
+    <Exec Command="chmod +x &quot;$(_MacMacOS)/MeetJoe&quot;"
+          Condition="Exists('$(_MacMacOS)/MeetJoe')"
+          IgnoreExitCode="true" />
+
+    <Message Importance="high"
+             Text="Created macOS app bundle: $(_MacAppDir) (use this for Camera/Mic permission prompts)" />
+  </Target>
+</Project>

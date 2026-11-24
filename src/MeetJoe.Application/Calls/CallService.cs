@@ -205,6 +205,16 @@ public sealed class CallService(
         if (missed.Count > 0) await realtime.ActivityChangedAsync(missed, ct);
     }
 
+    /// <summary>Broadcasts whether this participant's mic is muted so every client can show the badge.</summary>
+    public async Task SetMicMutedAsync(Guid userId, Guid callId, bool muted, CancellationToken ct = default)
+    {
+        var call = await RequireParticipantAsync(userId, callId, ct);
+        if (!call.IsActive) return;
+
+        var ids = call.Participants.Select(p => p.UserId).Distinct().ToList();
+        await realtime.CallMicMutedAsync(ids, callId, userId, muted, ct);
+    }
+
     private async Task<CallJoinDto> IssueJoinAsync(Guid userId, Domain.Call call, CancellationToken ct)
     {
         var displayName = await db.Users.Where(u => u.Id == userId).Select(u => u.DisplayName).FirstAsync(ct);
@@ -237,7 +247,7 @@ public sealed class CallService(
         new(call.Id,
             call.ConversationId,
             call.Kind == Domain.CallKind.Direct ? CallKind.Direct : CallKind.Group,
-            new UserSummaryDto(call.InitiatorId, call.Initiator.DisplayName),
+            call.Initiator.ToSummary(),
             call.CreatedAt,
             call.ConnectedAt,
             call.EndedAt,

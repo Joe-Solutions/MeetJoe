@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -125,6 +126,80 @@ public sealed class AvaloniaPlatformServices : IPlatformServices
 
         await dialog.ShowDialog(owner);
         return confirmed;
+    }
+
+    public async Task AlertAsync(string title, string message, string okLabel = "OK")
+    {
+        var owner = ResolveOwnerWindow();
+
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 460,
+            MinHeight = 200,
+            SizeToContent = SizeToContent.Height,
+            WindowStartupLocation = owner is null
+                ? WindowStartupLocation.CenterScreen
+                : WindowStartupLocation.CenterOwner,
+            CanResize = false,
+            SystemDecorations = SystemDecorations.BorderOnly,
+            Background = Brush.Parse("#122A40"),
+            Foreground = Brush.Parse("#E8F1F5"),
+        };
+
+        var ok = new Button
+        {
+            Content = okLabel,
+            Classes = { "primary" },
+            MinWidth = 120,
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        ok.Click += (_, _) => dialog.Close();
+
+        dialog.Content = new Border
+        {
+            Padding = new Thickness(24),
+            Child = new StackPanel
+            {
+                Spacing = 16,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = title,
+                        FontSize = 18,
+                        FontWeight = FontWeight.Bold,
+                    },
+                    new TextBlock
+                    {
+                        Text = message,
+                        TextWrapping = TextWrapping.Wrap,
+                        Opacity = 0.85,
+                        LineHeight = 21,
+                    },
+                    ok,
+                },
+            },
+        };
+
+        if (owner is not null)
+            await dialog.ShowDialog(owner);
+        else
+        {
+            dialog.Show();
+            var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            dialog.Closed += (_, _) => tcs.TrySetResult();
+            await tcs.Task;
+        }
+    }
+
+    private Window? ResolveOwnerWindow()
+    {
+        if (TopLevelAccessor() is Window fromAccessor) return fromAccessor;
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
+            && desktop.MainWindow is { } main)
+            return main;
+        return null;
     }
 
     public Task ShowImageAsync(Bitmap image) =>

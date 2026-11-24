@@ -3,15 +3,19 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using MeetJoe.Contracts;
 
 namespace MeetJoe.App.Controls;
 
-/// <summary>A person's initials in a circle, with an optional presence dot.</summary>
+/// <summary>Profile photo (when set) or initials in a circle, with an optional presence dot.</summary>
 public sealed class Avatar : Control
 {
     public static readonly StyledProperty<string?> DisplayNameProperty =
         AvaloniaProperty.Register<Avatar, string?>(nameof(DisplayName));
+
+    public static readonly StyledProperty<IImage?> PhotoProperty =
+        AvaloniaProperty.Register<Avatar, IImage?>(nameof(Photo));
 
     public static readonly StyledProperty<PresenceStatus> StatusProperty =
         AvaloniaProperty.Register<Avatar, PresenceStatus>(nameof(Status));
@@ -23,7 +27,6 @@ public sealed class Avatar : Control
     public static readonly StyledProperty<IBrush?> SurfaceProperty =
         AvaloniaProperty.Register<Avatar, IBrush?>(nameof(Surface));
 
-    // Muted tones that sit on the navy surfaces without competing with the teal accent.
     private static readonly IBrush[] Fills =
     [
         new SolidColorBrush(Color.Parse("#2B5F8A")).ToImmutable(),
@@ -43,7 +46,7 @@ public sealed class Avatar : Control
 
     static Avatar()
     {
-        AffectsRender<Avatar>(DisplayNameProperty, StatusProperty, ShowStatusProperty, SurfaceProperty);
+        AffectsRender<Avatar>(DisplayNameProperty, PhotoProperty, StatusProperty, ShowStatusProperty, SurfaceProperty);
         WidthProperty.OverrideDefaultValue<Avatar>(36);
         HeightProperty.OverrideDefaultValue<Avatar>(36);
     }
@@ -52,6 +55,12 @@ public sealed class Avatar : Control
     {
         get => GetValue(DisplayNameProperty);
         set => SetValue(DisplayNameProperty, value);
+    }
+
+    public IImage? Photo
+    {
+        get => GetValue(PhotoProperty);
+        set => SetValue(PhotoProperty, value);
     }
 
     public PresenceStatus Status
@@ -74,7 +83,12 @@ public sealed class Avatar : Control
 
     internal static string InitialsOf(string? name)
     {
-        var parts = (name ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var cleaned = System.Text.RegularExpressions.Regex.Replace(
+            name ?? string.Empty, @"\([^)]*\)", " ", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        var parts = cleaned
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(p => p.Any(char.IsLetterOrDigit))
+            .ToArray();
         return parts.Length switch
         {
             0 => "?",
@@ -82,7 +96,14 @@ public sealed class Avatar : Control
             _ => First(parts[0]) + First(parts[^1]),
         };
 
-        static string First(string part) => StringInfo.GetNextTextElement(part).ToUpperInvariant();
+        static string First(string part)
+        {
+            var i = 0;
+            while (i < part.Length && !char.IsLetterOrDigit(part, i))
+                i += char.IsSurrogatePair(part, i) ? 2 : 1;
+            if (i >= part.Length) return "?";
+            return StringInfo.GetNextTextElement(part, i).ToUpperInvariant();
+        }
     }
 
     public override void Render(DrawingContext context)
@@ -93,16 +114,33 @@ public sealed class Avatar : Control
         var name = DisplayName ?? string.Empty;
         var radius = size / 2;
         var center = new Point(radius, radius);
-        context.DrawEllipse(Fills[StableIndex(name, Fills.Length)], null, center, radius, radius);
-
-        var text = new FormattedText(
-            InitialsOf(name),
-            CultureInfo.CurrentUICulture,
-            FlowDirection.LeftToRight,
-            new Typeface(TextElement.GetFontFamily(this), FontStyle.Normal, FontWeight.SemiBold),
-            size * 0.38,
-            InitialsBrush);
-        context.DrawText(text, new Point(center.X - text.Width / 2, center.Y - text.Height / 2));
+        if (Photo is { } photo)
+        {
+            using (context.PushGeometryClip(new EllipseGeometry(new Rect(0, 0, size, size))))
+            {
+                var src = photo.Size;
+                if (src.Width > 0 && src.Height > 0)
+                {
+                    var scale = Math.Max(size / src.Width, size / src.Height);
+                    var w = src.Width * scale;
+                    var h = src.Height * scale;
+                    var dest = new Rect((size - w) / 2, (size - h) / 2, w, h);
+                    context.DrawImage(photo, dest);
+                }
+            }
+        }
+        else
+        {
+            context.DrawEllipse(Fills[StableIndex(name, Fills.Length)], null, center, radius, radius);
+            var text = new FormattedText(
+                InitialsOf(name),
+                CultureInfo.CurrentUICulture,
+                FlowDirection.LeftToRight,
+                new Typeface(TextElement.GetFontFamily(this), FontStyle.Normal, FontWeight.SemiBold),
+                size * 0.38,
+                InitialsBrush);
+            context.DrawText(text, new Point(center.X - text.Width / 2, center.Y - text.Height / 2));
+        }
 
         if (!ShowStatus) return;
 
@@ -113,7 +151,6 @@ public sealed class Avatar : Control
 
         if (Status == PresenceStatus.Offline)
         {
-            // Hollow, so "offline" reads without relying on colour alone.
             context.DrawEllipse(null, new Pen(OfflineBrush, 1.6), dotCenter, dot - 0.8, dot - 0.8);
             return;
         }
@@ -133,7 +170,6 @@ public sealed class Avatar : Control
         }
     }
 
-    /// <summary>The same name always gets the same colour, on every device.</summary>
     private static int StableIndex(string name, int count)
     {
         var hash = 17u;

@@ -105,6 +105,10 @@ public sealed class CallHub(CallService calls) : Hub
     [HubMethodName(CallHubMethods.HangUp)]
     public Task HangUp(Guid callId) =>
         calls.HangUpAsync(Context.User.GetUserId(), callId, Context.ConnectionAborted);
+
+    [HubMethodName(CallHubMethods.SetMicMuted)]
+    public Task SetMicMuted(Guid callId, bool muted) =>
+        calls.SetMicMutedAsync(Context.User.GetUserId(), callId, muted, Context.ConnectionAborted);
 }
 
 internal sealed class SignalRRealtimePublisher(
@@ -170,6 +174,10 @@ internal sealed class SignalRRealtimePublisher(
 
     public Task CallsChangedAsync(IReadOnlyCollection<Guid> userIds, CancellationToken ct = default) =>
         NotifyAsync(userIds, NotificationHubEvents.CallsChanged, ct);
+
+    public Task CallMicMutedAsync(
+        IReadOnlyCollection<Guid> userIds, Guid callId, Guid userId, bool muted, CancellationToken ct = default) =>
+        calls.Clients.Users(Ids(userIds)).SendAsync(CallHubEvents.MicMuted, callId, userId, muted, ct);
 
     private Task NotifyAsync(IReadOnlyCollection<Guid> userIds, string eventName, CancellationToken ct) =>
         notifications.Clients.Users(Ids(userIds)).SendAsync(eventName, ct);

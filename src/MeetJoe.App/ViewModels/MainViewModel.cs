@@ -1,4 +1,3 @@
-using System.Reflection;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MeetJoe.App.Services;
@@ -22,22 +21,7 @@ public partial class LoginViewModel(IAuthService auth, IMeetJoeApi api, Func<Tas
     public string TogglePrompt => IsRegistering ? "Already have an account?" : "New to MeetJoe?";
     public string ToggleText => IsRegistering ? "Sign in" : "Create an account";
 
-    public string VersionText { get; } = FormatVersion();
-
-    static string FormatVersion()
-    {
-        var asm = typeof(LoginViewModel).Assembly;
-        var informational = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-            ?? asm.GetName().Version?.ToString(3)
-            ?? "0.0.0";
-        var version = informational.Split('+', 2)[0];
-        var file = asm.GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version
-            ?? asm.GetName().Version?.ToString()
-            ?? version;
-        var build = Version.TryParse(file, out var parsed) ? parsed.Revision.ToString() : file;
-        if (build is "-1") build = file;
-        return $"Version {version}  ·  Build {build}";
-    }
+    public string VersionText { get; } = $"Version {AppVersion.Current}";
 
     [RelayCommand]
     private void ToggleMode()
@@ -131,6 +115,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly IRealtimeClient _realtime;
     private readonly IPlatformServices _platform;
     private readonly ICallTonePlayer _callTones;
+    private readonly IAppUpdateService _updates;
     private ShellViewModel? _shell;
 
     public MainViewModel(
@@ -139,7 +124,8 @@ public partial class MainViewModel : ViewModelBase
         IMeetJoeApi api,
         IRealtimeClient realtime,
         IPlatformServices platform,
-        ICallTonePlayer? callTones = null)
+        ICallTonePlayer? callTones = null,
+        IAppUpdateService? updates = null)
     {
         _config = config;
         _auth = auth;
@@ -147,6 +133,7 @@ public partial class MainViewModel : ViewModelBase
         _realtime = realtime;
         _platform = platform;
         _callTones = callTones ?? new NullCallTonePlayer();
+        _updates = updates ?? new NullAppUpdateService();
         _current = NewLogin();
 
         auth.SessionExpired += () => Avalonia.Threading.Dispatcher.UIThread.Post(() => _ = SignOutAsync(
@@ -154,6 +141,11 @@ public partial class MainViewModel : ViewModelBase
     }
 
     [ObservableProperty] private ViewModelBase _current;
+
+    public IAppUpdateService Updates => _updates;
+
+    /// <summary>Runs once at startup — downloads and applies a newer semver release when installed.</summary>
+    public Task StartUpdateCheckAsync() => _updates.CheckAsync(applyAutomatically: true);
 
     /// <summary>Loads the signed-in user and opens the right screen for them.</summary>
     public async Task EnterAsync()
@@ -169,11 +161,11 @@ public partial class MainViewModel : ViewModelBase
         // One organization at a time; switching between several is not built yet.
         var organization = organizations[0];
         var people = new PeopleStore(me.Id);
-        people.Get(me.Id, me.DisplayName);
+        people.Get(me.Id, me.DisplayName).ApplyAvatar(me.AvatarUrl);
 
         var shell = new ShellViewModel(
             new SessionContext(_api, _realtime, _platform, _config, organization, people, _callTones),
-            me, _config, () => SignOutAsync(), LeftOrganizationAsync);
+            me, _config, () => SignOutAsync(), LeftOrganizationAsync, _updates);
         _shell = shell;
         Current = shell;
         await shell.InitializeAsync();
@@ -203,6 +195,40 @@ public partial class MainViewModel : ViewModelBase
         var login = NewLogin();
         login.ErrorMessage = message;
         Current = login;
+    }
+
+    /// <summary>Ask before quitting so LiveKit/WebView can shut down cleanly.</summary>
+    public Task<bool> ConfirmExitAsync()
+    {
+        var inCall = _shell?.Calls.HasMedia == true || _shell?.Calendar.IsInMeeting == true;
+        var message = inCall
+            ? "You are still in a call or meeting. Quit MeetJoe? Any open media will end first so the app can close safely."
+            : "Quit MeetJoe? Open media sessions will end first so the app can close safely.";
+
+        return _platform.ConfirmAsync("Quit MeetJoe?", message, "Quit", "Cancel");
+    }
+
+    /// <summary>Hang up media and detach hubs before the process exits (avoids WKWebView crash on quit).</summary>
+    public async Task PrepareForExitAsync()
+    {
+        if (_shell is not { } shell) return;
+
+        try
+        {
+            if (shell.Calls.HangUpCommand.CanExecute(null))
+                await shell.Calls.HangUpCommand.ExecuteAsync(null);
+        }
+        catch { /* best-effort */ }
+
+        try
+        {
+            if (shell.Calendar.LeaveCommand.CanExecute(null))
+                await shell.Calendar.LeaveCommand.ExecuteAsync(null);
+        }
+        catch { /* best-effort */ }
+
+        try { await shell.ShutdownAsync(); }
+        catch { /* best-effort */ }
     }
 
     private LoginViewModel NewLogin() => new(_auth, _api, EnterAsync);

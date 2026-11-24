@@ -64,6 +64,7 @@ public sealed class OrganizationService(
                 m.Role,
                 m.User.Availability,
                 m.User.StatusMessage,
+                m.User.AvatarStorageKey,
             })
             .ToListAsync(ct);
 
@@ -71,7 +72,13 @@ public sealed class OrganizationService(
         return members
             .OrderBy(m => m.DisplayName, StringComparer.OrdinalIgnoreCase)
             .Select(m => new OrgMemberDto(
-                m.UserId, m.DisplayName, m.Email ?? string.Empty, m.Role.ToContract(), statuses[m.UserId], m.StatusMessage))
+                m.UserId,
+                m.DisplayName,
+                m.Email ?? string.Empty,
+                m.Role.ToContract(),
+                statuses[m.UserId],
+                m.StatusMessage,
+                Mapping.AvatarUrl(m.UserId, m.AvatarStorageKey)))
             .ToList();
     }
 

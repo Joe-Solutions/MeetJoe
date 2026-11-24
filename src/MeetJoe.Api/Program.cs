@@ -8,12 +8,14 @@ using MeetJoe.Application;
 using MeetJoe.Application.Common;
 using MeetJoe.Contracts;
 using MeetJoe.Domain;
+using MeetJoe.Api.Updates;
 using MeetJoe.Infrastructure;
 using MeetJoe.Infrastructure.Persistence;
 using MeetJoe.Infrastructure.Presence;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,6 +30,8 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddMeetJoeAuth(builder.Configuration, builder.Environment);
+builder.Services.Configure<DesktopUpdatesOptions>(builder.Configuration.GetSection(DesktopUpdatesOptions.SectionName));
+builder.Services.AddSingleton<IDesktopUpdateFeed, DesktopUpdateFeed>();
 
 builder.Services.AddScoped<IRealtimePublisher, SignalRRealtimePublisher>();
 builder.Services.AddSingleton<IUserIdProvider, SubjectUserIdProvider>();
@@ -52,12 +56,28 @@ app.UseExceptionHandler();
 app.UseRateLimiter();
 app.UseDefaultFiles();
 app.UseStaticFiles();
+
+// Velopack release packages (semver nupkgs + releases.*.json) per RID.
+var updateOpts = app.Configuration.GetSection(DesktopUpdatesOptions.SectionName).Get<DesktopUpdatesOptions>()
+    ?? new DesktopUpdatesOptions();
+var updateRoot = Path.IsPathRooted(updateOpts.RootPath)
+    ? updateOpts.RootPath
+    : Path.GetFullPath(Path.Combine(app.Environment.ContentRootPath, updateOpts.RootPath));
+Directory.CreateDirectory(updateRoot);
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(updateRoot),
+    RequestPath = updateOpts.UrlPath.TrimEnd('/'),
+    ServeUnknownFileTypes = true,
+});
+
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapAuthEndpoints();
 app.MapApiEndpoints();
+app.MapDesktopUpdateEndpoints();
 app.MapHub<ChatHub>(HubPaths.Chat);
 app.MapHub<PresenceHub>(HubPaths.Presence);
 app.MapHub<NotificationHub>(HubPaths.Notifications);

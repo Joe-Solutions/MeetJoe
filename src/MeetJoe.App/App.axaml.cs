@@ -12,6 +12,9 @@ namespace MeetJoe.App;
 
 public partial class App : Application
 {
+    /// <summary>Desktop host plugs Velopack (or another installer) in before the UI starts.</summary>
+    public static Func<AppConfig, IAppUpdateService>? UpdateServiceFactory { get; set; }
+
     public override void RegisterServices()
     {
         base.RegisterServices();
@@ -32,7 +35,14 @@ public partial class App : Application
                 var window = new MainWindow { DataContext = main };
                 platform.TopLevelAccessor = () => window;
                 desktop.MainWindow = window;
-                desktop.Exit += (_, _) => services.Dispose();
+                desktop.Exit += (_, _) =>
+                {
+                    // RealtimeClient is IAsyncDisposable-only; sync Dispose() aborts on exit.
+                    if (services is IAsyncDisposable asyncDisposable)
+                        asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                    else
+                        services.Dispose();
+                };
                 break;
 
             // Mobile hosts (Phase 7) show the same root view without a window.
@@ -44,6 +54,7 @@ public partial class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+        _ = main.StartUpdateCheckAsync();
     }
 
     internal static ServiceProvider BuildServices(AppConfig config, IPlatformServices platform)
@@ -52,6 +63,9 @@ public partial class App : Application
         services.AddSingleton(config);
         services.AddSingleton(platform);
         services.AddSingleton<ICallTonePlayer, CallTonePlayer>();
+        services.AddSingleton<IAppUpdateService>(sp =>
+            UpdateServiceFactory?.Invoke(sp.GetRequiredService<AppConfig>())
+            ?? new NullAppUpdateService());
 
         services.AddSingleton<IAuthService>(_ => new AuthService(
             new HttpClient { BaseAddress = config.ApiBaseUri, Timeout = TimeSpan.FromSeconds(30) }));
@@ -68,7 +82,10 @@ public partial class App : Application
             }));
 
         services.AddSingleton<IRealtimeClient, RealtimeClient>();
+        services.AddSingleton<AvatarCache>();
         services.AddSingleton<MainViewModel>();
-        return services.BuildServiceProvider();
+        var provider = services.BuildServiceProvider();
+        AvatarImages.Current = provider.GetRequiredService<AvatarCache>();
+        return provider;
     }
 }

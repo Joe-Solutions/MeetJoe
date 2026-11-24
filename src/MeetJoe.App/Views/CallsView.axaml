@@ -38,7 +38,8 @@
             <DataTemplate x:DataType="vm:CallHistoryItemViewModel">
               <Border BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,0,1" Padding="0,12">
                 <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="14">
-                  <c:Avatar DisplayName="{Binding Title}" Width="36" Height="36" />
+                  <c:Avatar DisplayName="{Binding Peer.DisplayName}" Photo="{Binding Peer.Photo}"
+                            Width="36" Height="36" />
                   <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                     <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
                     <TextBlock Classes="small callstatus"

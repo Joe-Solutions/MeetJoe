@@ -33,6 +33,7 @@ public sealed class RealtimeClient(AppConfig config, IAuthService auth) : IRealt
     public event Action<Guid, Guid, bool>? HandRaised;
     public event Action<CallDto>? IncomingCall;
     public event Action<CallDto>? CallUpdated;
+    public event Action<Guid, Guid, bool>? CallMicMuted;
     public event Action? CallsChanged;
     public event Action<bool>? ConnectionChanged;
 
@@ -69,6 +70,8 @@ public sealed class RealtimeClient(AppConfig config, IAuthService auth) : IRealt
         _meeting.On<Guid, Guid, bool>(MeetingHubEvents.HandRaised, (mid, uid, raised) => Post(() => HandRaised?.Invoke(mid, uid, raised)));
         _call.On<CallDto>(CallHubEvents.IncomingCall, c => Post(() => IncomingCall?.Invoke(c)));
         _call.On<CallDto>(CallHubEvents.CallUpdated, c => Post(() => CallUpdated?.Invoke(c)));
+        _call.On<Guid, Guid, bool>(CallHubEvents.MicMuted, (callId, userId, muted) =>
+            Post(() => CallMicMuted?.Invoke(callId, userId, muted)));
 
         foreach (var connection in Connections)
         {
@@ -180,6 +183,9 @@ public sealed class RealtimeClient(AppConfig config, IAuthService auth) : IRealt
 
     public Task HangUpCallAsync(Guid callId) =>
         Require(_call).SendAsync(CallHubMethods.HangUp, callId);
+
+    public Task SetCallMicMutedAsync(Guid callId, bool muted) =>
+        Require(_call).SendAsync(CallHubMethods.SetMicMuted, callId, muted);
 
     public async ValueTask DisposeAsync() => await StopAsync();
 

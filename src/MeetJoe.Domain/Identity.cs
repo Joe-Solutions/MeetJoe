@@ -6,10 +6,15 @@ public class User : IdentityUser<Guid>
 {
     public const int MaxDisplayNameLength = 80;
     public const int MaxStatusMessageLength = 140;
+    public const int MaxAvatarContentTypeLength = 100;
+    public const long MaxAvatarBytes = 5 * 1024 * 1024;
 
     public string DisplayName { get; private set; } = string.Empty;
     public Availability Availability { get; private set; } = Availability.Available;
     public string? StatusMessage { get; private set; }
+    /// <summary>MinIO object key for the profile photo, or null when using initials.</summary>
+    public string? AvatarStorageKey { get; private set; }
+    public string? AvatarContentType { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
 
     public static User Create(string email, string displayName, DateTimeOffset now)
@@ -31,7 +36,21 @@ public class User : IdentityUser<Guid>
         StatusMessage = Guard.Optional(statusMessage, "Status message", MaxStatusMessageLength);
     }
 
+    public void SetAvatar(string storageKey, string contentType)
+    {
+        AvatarStorageKey = Guard.Required(storageKey, "Avatar storage key", 200);
+        AvatarContentType = Guard.Required(contentType, "Avatar content type", MaxAvatarContentTypeLength);
+    }
+
+    public void ClearAvatar()
+    {
+        AvatarStorageKey = null;
+        AvatarContentType = null;
+    }
+
     public void SetAvailability(Availability availability) => Availability = availability;
+
+    public static string AvatarObjectKey(Guid userId) => $"avatars/{userId:N}";
 }
 
 public class Organization

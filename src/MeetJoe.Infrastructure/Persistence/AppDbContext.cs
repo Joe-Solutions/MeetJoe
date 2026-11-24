@@ -44,6 +44,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
         {
             e.Property(x => x.DisplayName).HasMaxLength(User.MaxDisplayNameLength);
             e.Property(x => x.StatusMessage).HasMaxLength(User.MaxStatusMessageLength);
+            e.Property(x => x.AvatarStorageKey).HasMaxLength(200);
+            e.Property(x => x.AvatarContentType).HasMaxLength(User.MaxAvatarContentTypeLength);
         });
 
         builder.Entity<Organization>(e =>

@@ -9,6 +9,7 @@
 | SSH | `ssh -i barter_keys/barter_key.pem ubuntu@13.215.225.98` |
 | App dir | `/opt/meetjoe` |
 | Secrets | server `/opt/meetjoe/deploy/prod/.env` + local `barter_keys/meetjoe-prod.env` (not in git) |
+| LiveKit | `network_mode: host` — RTC TCP **7881**, UDP **7882**, TURN **3478** + relay **40000–40100** UDP |
 
 ## DNS (`joesolutions.ph`) — add these now
 

@@ -121,7 +121,7 @@ public partial class ReactionChipViewModel(Guid messageId, ReactionSummaryDto re
 
 public partial class MessageViewModel : ObservableObject
 {
-    public static readonly string[] QuickReactions = ["👍", "❤️", "😂", "🎉", "👀", "🙏", "✅", "🔥"];
+    public static readonly string[] QuickReactions = ["👍", "❤️", "😂", "🎉", "🔥"];
 
     private MessageThreadViewModel? _thread;
 
@@ -276,9 +276,15 @@ public partial class MessageThreadViewModel : ViewModelBase
     /// <summary>Raised after a message is appended so the view can keep the newest in sight.</summary>
     public event Action? MessageAppended;
 
+    /// <summary>Raised when the user taps the “New messages” chip — view scrolls to the latest.</summary>
+    public event Action? ScrollToLatestRequested;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsEmpty))]
     private bool _isLoading;
+
+    /// <summary>Floating chip above the composer when new messages arrived while scrolled up.</summary>
+    [ObservableProperty] private bool _showNewMessagesHint;
 
     [ObservableProperty] private bool _hasOlder;
     [ObservableProperty] private string? _errorMessage;
@@ -527,6 +533,12 @@ public partial class MessageThreadViewModel : ViewModelBase
         SendCommand.NotifyCanExecuteChanged();
     }
 
+    /// <summary>View should focus the main composer (after Reply).</summary>
+    public event Action? FocusComposerRequested;
+
+    /// <summary>View should focus the in-place edit box for the message being edited.</summary>
+    public event Action? FocusEditRequested;
+
     [RelayCommand]
     private void BeginReply(MessageViewModel message)
     {
@@ -534,10 +546,23 @@ public partial class MessageThreadViewModel : ViewModelBase
         ReplyTarget = message;
         OpenThread = message;
         _ = OpenRepliesAsync(message);
+        FocusComposerRequested?.Invoke();
     }
 
     [RelayCommand]
     private void CancelReply() => ReplyTarget = null;
+
+    /// <summary>Called by the view when a live message arrived while the reader was scrolled up.</summary>
+    public void NotifyUnseenMessages() => ShowNewMessagesHint = true;
+
+    public void ClearNewMessagesHint() => ShowNewMessagesHint = false;
+
+    [RelayCommand]
+    private void JumpToLatest()
+    {
+        ShowNewMessagesHint = false;
+        ScrollToLatestRequested?.Invoke();
+    }
 
     [RelayCommand]
     private async Task OpenRepliesAsync(MessageViewModel message)
@@ -575,7 +600,11 @@ public partial class MessageThreadViewModel : ViewModelBase
     private void BeginEdit(MessageViewModel message)
     {
         if (!message.CanMutate) return;
+        // Only one message edits at a time.
+        foreach (var other in Messages.Where(m => m.IsEditing && !ReferenceEquals(m, message)))
+            other.EditDraft = null;
         message.EditDraft = message.Body;
+        FocusEditRequested?.Invoke();
     }
 
     [RelayCommand]

@@ -14,21 +14,40 @@ public enum CallHistoryStatusKind
 }
 
 /// <summary>One row in the live call people roster (Teams/Zoom-style).</summary>
-public sealed class CallRosterItemViewModel(CallParticipantDto participant, bool isMe)
+public partial class CallRosterItemViewModel : ObservableObject
 {
-    public Guid UserId { get; } = participant.UserId;
-    public string DisplayName { get; } = isMe ? $"{participant.DisplayName} (you)" : participant.DisplayName;
-    public string StatusText { get; } = participant.Status switch
+    public CallRosterItemViewModel(CallParticipantDto participant, PeopleStore people)
     {
-        CallParticipantStatus.Joined => "In the call",
-        CallParticipantStatus.Ringing => "Calling…",
-        CallParticipantStatus.Declined => "Declined",
-        CallParticipantStatus.Missed => "Missed",
-        CallParticipantStatus.Left => "Left",
-        _ => participant.Status.ToString(),
-    };
-    public bool IsJoined { get; } = participant.Status == CallParticipantStatus.Joined;
-    public bool IsRinging { get; } = participant.Status == CallParticipantStatus.Ringing;
+        UserId = participant.UserId;
+        Person = people.Get(participant.UserId, participant.DisplayName);
+        Name = participant.DisplayName;
+        IsMe = participant.UserId == people.MyId;
+        DisplayName = IsMe ? $"{participant.DisplayName} (you)" : participant.DisplayName;
+        StatusText = participant.Status switch
+        {
+            CallParticipantStatus.Joined => "In the call",
+            CallParticipantStatus.Ringing => "Calling…",
+            CallParticipantStatus.Declined => "Declined",
+            CallParticipantStatus.Missed => "Missed",
+            CallParticipantStatus.Left => "Left",
+            _ => participant.Status.ToString(),
+        };
+        IsJoined = participant.Status == CallParticipantStatus.Joined;
+        IsRinging = participant.Status == CallParticipantStatus.Ringing;
+    }
+
+    public Guid UserId { get; }
+    public PersonViewModel Person { get; }
+    /// <summary>Clean name for avatars / initials (no “(you)” suffix).</summary>
+    public string Name { get; }
+    public string DisplayName { get; }
+    public string StatusText { get; }
+    public bool IsJoined { get; }
+    public bool IsRinging { get; }
+    public bool IsMe { get; }
+
+    [ObservableProperty] private bool _isSpeaking;
+    [ObservableProperty] private bool _isMicMuted;
 }
 
 public partial class CallHistoryItemViewModel : ObservableObject
@@ -39,10 +58,13 @@ public partial class CallHistoryItemViewModel : ObservableObject
         ConversationId = call.ConversationId;
         Kind = call.Kind;
         Initiator = people.Get(call.Initiator);
+        var peer = call.Participants.FirstOrDefault(p => p.UserId != people.MyId);
+        Peer = peer is null
+            ? Initiator
+            : people.Get(peer.UserId, peer.DisplayName);
         IsActive = call.IsActive;
         Title = call.Kind == CallKind.Direct
-            ? (call.Participants.FirstOrDefault(p => p.UserId != people.MyId)?.DisplayName
-               ?? call.Initiator.DisplayName)
+            ? Peer.DisplayName
             : $"Group call ({call.Participants.Count})";
         TimeText = Describe.Time(call.CreatedAt);
         (StatusText, StatusKind) = DescribeStatus(call);
@@ -52,6 +74,8 @@ public partial class CallHistoryItemViewModel : ObservableObject
     public Guid ConversationId { get; }
     public CallKind Kind { get; }
     public PersonViewModel Initiator { get; }
+    /// <summary>Other party for direct calls; initiator for group history avatar.</summary>
+    public PersonViewModel Peer { get; }
     public bool IsActive { get; }
     public string Title { get; }
     public string StatusText { get; }
@@ -84,6 +108,9 @@ public partial class CallHistoryItemViewModel : ObservableObject
     }
 }
 
+/// <summary>Toast payload when a callee declines while the local user is still ringing out.</summary>
+public sealed record CallDeclinedNotice(string PeerName, string Message);
+
 /// <summary>Call history and the active ringing / in-call stage.</summary>
 public partial class CallsViewModel : ViewModelBase
 {
@@ -92,6 +119,9 @@ public partial class CallsViewModel : ViewModelBase
 
     private readonly SessionContext _context;
     private CancellationTokenSource? _ringTimeout;
+    /// <summary>Prevents LoadAsync recovery from resurrecting a call we just left/ended.</summary>
+    private Guid? _suppressRecoverCallId;
+    private readonly HashSet<(Guid CallId, Guid UserId)> _notifiedDeclines = [];
 
     public CallsViewModel(SessionContext context)
     {
@@ -99,9 +129,12 @@ public partial class CallsViewModel : ViewModelBase
         context.Realtime.IncomingCall += OnIncomingCall;
         context.Realtime.CallUpdated += OnCallUpdated;
         context.Realtime.CallsChanged += OnCallsChanged;
+        context.Realtime.CallMicMuted += OnCallMicMuted;
+        context.Realtime.MessageReceived += OnConversationMessage;
     }
 
     public ObservableCollection<CallHistoryItemViewModel> History { get; } = [];
+    public ObservableCollection<MessageDto> ChatMessages { get; } = [];
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsEmpty))]
@@ -110,15 +143,17 @@ public partial class CallsViewModel : ViewModelBase
     [ObservableProperty] private string? _errorMessage;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasIncoming), nameof(IsInCall), nameof(ActivePeerName))]
+    [NotifyPropertyChangedFor(nameof(HasIncoming), nameof(IsInCall), nameof(ActivePeerName), nameof(ActivePeerPerson))]
     private CallDto? _incoming;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsInCall), nameof(HasMedia))]
+    [NotifyPropertyChangedFor(nameof(IsInCall), nameof(HasMedia), nameof(IsRinging), nameof(CallStatusLabel))]
     private CallJoinDto? _activeJoin;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ActivePeerName), nameof(CallStatusLabel), nameof(IsRinging), nameof(RosterTitle))]
+    [NotifyPropertyChangedFor(
+        nameof(ActivePeerName), nameof(CallStatusLabel), nameof(IsRinging),
+        nameof(RosterTitle), nameof(IsInCall))]
     private CallDto? _activeCall;
 
     [ObservableProperty]
@@ -139,13 +174,62 @@ public partial class CallsViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(HasInviteSuggestions))]
     private string _inviteQuery = string.Empty;
 
-    /// <summary>Right rail on the call stage: people vs (reserved) chat-style list.</summary>
-    [ObservableProperty] private bool _showPeoplePanel = true;
+    /// <summary>Right rail on the call stage: people roster vs in-call chat.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowChatPanel))]
+    private bool _showPeoplePanel = true;
+
+    [ObservableProperty] private string _chatDraft = string.Empty;
+
+    [ObservableProperty] private bool _isCameraOn = true;
+    [ObservableProperty] private bool _isMicOn = true;
+
+    /// <summary>
+    /// True once the LiveKit page reports it is connected and painting. Until then the
+    /// Avalonia roster grid stays visible so the stage is never blank.
+    /// </summary>
+    [ObservableProperty] private bool _isLiveKitSurfaceReady;
 
     public ObservableCollection<PersonViewModel> InviteSuggestions { get; } = [];
     public ObservableCollection<CallRosterItemViewModel> Roster { get; } = [];
 
     public bool HasInviteSuggestions => InviteSuggestions.Count > 0;
+    public bool ShowChatPanel => !ShowPeoplePanel;
+
+    /// <summary>Wired by the shell to the LiveKit WebView host.</summary>
+    public Func<Task>? ToggleCameraHandler { get; set; }
+    public Func<Task>? ToggleMicHandler { get; set; }
+
+    public void ApplyActiveSpeakers(IReadOnlyCollection<Guid> speakerIds)
+    {
+        var set = speakerIds as HashSet<Guid> ?? speakerIds.ToHashSet();
+        foreach (var person in Roster)
+            person.IsSpeaking = set.Contains(person.UserId);
+    }
+
+    /// <summary>Apply LiveKit mute badges for everyone in the call (local + remote).</summary>
+    public void ApplyMutedParticipants(IReadOnlyCollection<Guid> mutedIds)
+    {
+        var set = mutedIds as HashSet<Guid> ?? mutedIds.ToHashSet();
+        foreach (var person in Roster)
+        {
+            // Prefer LiveKit's mute list for remotes; keep toolbar state for "you".
+            if (person.IsMe)
+                person.IsMicMuted = !IsMicOn || set.Contains(person.UserId);
+            else
+                person.IsMicMuted = set.Contains(person.UserId);
+        }
+    }
+
+    public void MarkLiveKitSurfaceReady() => IsLiveKitSurfaceReady = true;
+
+    partial void OnIsMicOnChanged(bool value)
+    {
+        foreach (var person in Roster.Where(p => p.IsMe))
+            person.IsMicMuted = !value;
+        // Keep other participants' mute badges in sync via SignalR (LiveKit-only path was unreliable).
+        _ = BroadcastMicMutedAsync();
+    }
 
     partial void OnInviteQueryChanged(string value) => RefreshInviteSuggestions();
 
@@ -157,16 +241,32 @@ public partial class CallsViewModel : ViewModelBase
             var n => $"People · {n}",
         };
 
-    partial void OnActiveCallChanged(CallDto? value) => RefreshRoster();
+    /// <summary>Meet-style tile columns for the center participant grid.</summary>
+    public int RosterGridColumns =>
+        Roster.Count switch
+        {
+            <= 1 => 1,
+            <= 4 => 2,
+            <= 9 => 3,
+            _ => 4,
+        };
+
+    partial void OnActiveCallChanged(CallDto? value)
+    {
+        RefreshRoster();
+        _ = LoadChatAsync();
+    }
 
     partial void OnIsStageExpandedChanged(bool value) => NotifyCallChrome();
 
     public bool IsEmpty => !IsLoading && History.Count == 0 && ErrorMessage is null;
     public bool HasIncoming => Incoming is not null && ActiveJoin is null;
     /// <summary>Local media session or a server-side active call recovered after restart.</summary>
-    public bool IsInCall => ActiveJoin is not null || ActiveCall is { IsActive: true };
+    public bool IsInCall =>
+        ActiveJoin is not null
+        || (ActiveCall is { IsActive: true } && ActiveCall.Id != _suppressRecoverCallId);
     public bool HasMedia => MediaPageUri is not null && ActiveJoin is not null;
-    public bool IsRinging => IsInCall && ActiveCall?.ConnectedAt is null;
+    public bool IsRinging => ActiveJoin is not null && ActiveCall?.ConnectedAt is null;
 
     public string ActivePeerName
     {
@@ -178,6 +278,16 @@ public partial class CallsViewModel : ViewModelBase
         }
     }
 
+    /// <summary>Best-effort person for call chrome avatars (photo when known).</summary>
+    public PersonViewModel? ActivePeerPerson =>
+        Roster.FirstOrDefault(r => !r.IsMe)?.Person
+        ?? Roster.FirstOrDefault()?.Person
+        ?? (ActiveCall is { } call
+            ? _context.People.Get(call.Initiator)
+            : Incoming is { } incoming
+                ? _context.People.Get(incoming.Initiator)
+                : null);
+
     public string CallStatusLabel =>
         !IsInCall ? string.Empty
         : IsRinging ? "Calling…"
@@ -187,6 +297,9 @@ public partial class CallsViewModel : ViewModelBase
 
     /// <summary>Fired when media / expand / peer chrome changes so the shell can sync overlays.</summary>
     public event Action? CallChromeChanged;
+
+    /// <summary>Caller-side: someone declined while we were still ringing.</summary>
+    public event Action<CallDeclinedNotice>? CallDeclined;
 
     /// <summary>Opens the chat for a conversation (wired by the shell).</summary>
     public Func<Guid, Task>? OpenConversationHandler { get; set; }
@@ -198,6 +311,8 @@ public partial class CallsViewModel : ViewModelBase
         _context.Realtime.IncomingCall -= OnIncomingCall;
         _context.Realtime.CallUpdated -= OnCallUpdated;
         _context.Realtime.CallsChanged -= OnCallsChanged;
+        _context.Realtime.CallMicMuted -= OnCallMicMuted;
+        _context.Realtime.MessageReceived -= OnConversationMessage;
     }
 
     public async Task LoadAsync()
@@ -234,33 +349,50 @@ public partial class CallsViewModel : ViewModelBase
     /// </summary>
     private void ReconcileActiveCall(CallDto? serverActive)
     {
+        if (serverActive is not null
+            && (_suppressRecoverCallId == serverActive.Id || !serverActive.IsActive))
+            serverActive = null;
+
+        if (serverActive is null)
+            _suppressRecoverCallId = null;
+
         if (ActiveJoin is { } join)
         {
             if (serverActive is null || serverActive.Id != join.CallId)
-            {
-                CancelRingTimeout();
-                ActiveJoin = null;
-                ActiveCall = null;
-                MediaPageUri = null;
-                IsStageExpanded = false;
-            }
+                ClearCallSession(keepPeerName: false);
             else
-            {
                 ActiveCall = serverActive;
-            }
         }
         else if (serverActive is not null)
         {
             ActiveCall = serverActive;
             PeerNameHint = PeerNameFrom(serverActive);
         }
-        else if (ActiveCall is not null)
+        else if (ActiveCall is not null || MediaPageUri is not null || IsStageExpanded)
         {
-            ActiveCall = null;
-            IsStageExpanded = false;
+            ClearCallSession(keepPeerName: false);
         }
 
         NotifyCallChrome();
+    }
+
+    private void ClearCallSession(bool keepPeerName)
+    {
+        CancelRingTimeout();
+        ActiveJoin = null;
+        ActiveCall = null;
+        MediaPageUri = null;
+        IsLiveKitSurfaceReady = false;
+        IsCameraOn = true;
+        IsMicOn = true;
+        IsStageExpanded = false;
+        ShowAddPeople = false;
+        ShowPeoplePanel = true;
+        ChatDraft = string.Empty;
+        ChatMessages.Clear();
+        ToggleCameraHandler = null;
+        ToggleMicHandler = null;
+        if (!keepPeerName) PeerNameHint = "Call";
     }
 
     public async Task StartFromConversationAsync(Guid conversationId, string? peerName = null)
@@ -295,15 +427,11 @@ public partial class CallsViewModel : ViewModelBase
         try
         {
             await _context.Api.EndCallAsync(item.Id);
-            if (ActiveJoin?.CallId == item.Id)
+            if (ActiveJoin?.CallId == item.Id || ActiveCall?.Id == item.Id)
             {
-                CancelRingTimeout();
-                ActiveJoin = null;
-                MediaPageUri = null;
-                IsStageExpanded = false;
+                _suppressRecoverCallId = item.Id;
+                ClearCallSession(keepPeerName: false);
             }
-            if (ActiveCall?.Id == item.Id) ActiveCall = null;
-            PeerNameHint = "Call";
             NotifyCallChrome();
             await LoadAsync();
         }
@@ -331,6 +459,112 @@ public partial class CallsViewModel : ViewModelBase
 
     [RelayCommand]
     private void ShowPeople() => ShowPeoplePanel = true;
+
+    [RelayCommand]
+    private void ShowChat() => ShowPeoplePanel = false;
+
+    [RelayCommand]
+    private async Task ToggleCameraAsync()
+    {
+        // Optimistic chrome update; MediaStateChanged corrects from the WebView.
+        IsCameraOn = !IsCameraOn;
+        if (ToggleCameraHandler is not null) await ToggleCameraHandler.Invoke();
+    }
+
+    [RelayCommand]
+    private async Task ToggleMicAsync()
+    {
+        // Optimistic chrome update; MediaStateChanged corrects from the WebView.
+        // OnIsMicOnChanged broadcasts mute state to other participants via SignalR.
+        IsMicOn = !IsMicOn;
+        if (ToggleMicHandler is not null) await ToggleMicHandler.Invoke();
+    }
+
+    private async Task BroadcastMicMutedAsync()
+    {
+        if (ActiveCall is null) return;
+        try
+        {
+            if (_context.Realtime.IsConnected)
+                await _context.Realtime.SetCallMicMutedAsync(ActiveCall.Id, !IsMicOn);
+        }
+        catch
+        {
+            // Mute badge sync is best-effort; local chrome already updated.
+        }
+    }
+
+    private void OnCallMicMuted(Guid callId, Guid userId, bool muted)
+    {
+        if (ActiveCall?.Id != callId && ActiveJoin?.CallId != callId) return;
+
+        if (userId == _context.People.MyId)
+        {
+            // Another device / echo of our own broadcast — keep toolbar as source of truth.
+            foreach (var person in Roster.Where(p => p.IsMe))
+                person.IsMicMuted = !IsMicOn;
+            return;
+        }
+
+        foreach (var person in Roster.Where(p => p.UserId == userId))
+            person.IsMicMuted = muted;
+    }
+
+    private bool _permissionDialogOpen;
+
+    public async Task NotifyMediaPermissionNeededAsync(string kind)
+    {
+        // Avoid stacking duplicate dialogs from connect + toggle races.
+        if (_permissionDialogOpen) return;
+        _permissionDialogOpen = true;
+        try
+        {
+            switch (kind)
+            {
+                case "mic":
+                    await _context.Platform.AlertAsync(
+                        "Microphone access needed",
+                        "MeetJoe is not allowed to use your microphone.\n\n1. Open System Settings → Privacy & Security → Microphone\n2. Turn on MeetJoe (or “dotnet” if listed while debugging)\n3. Leave this call and join again.");
+                    break;
+                case "camera":
+                    await _context.Platform.AlertAsync(
+                        "Camera access needed",
+                        "MeetJoe is not allowed to use your camera, so video cannot turn on.\n\n1. Open System Settings → Privacy & Security → Camera\n2. Turn on MeetJoe\n3. Leave this call and join again.\n\nTip: launch MeetJoe.app (not a raw binary) so macOS can show the camera permission dialog.");
+                    try { await _context.Platform.OpenUriAsync(new Uri("x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")); }
+                    catch { /* best-effort */ }
+                    break;
+                default:
+                    await _context.Platform.AlertAsync(
+                        "Microphone & camera access needed",
+                        "MeetJoe needs permission to use your microphone and camera.\n\n1. Open System Settings → Privacy & Security\n2. Enable MeetJoe under Microphone and Camera\n3. Leave this call and join again.");
+                    break;
+            }
+        }
+        finally
+        {
+            _permissionDialogOpen = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task SendChatAsync()
+    {
+        if (string.IsNullOrWhiteSpace(ChatDraft) || ActiveCall is null) return;
+        var body = ChatDraft.Trim();
+        ChatDraft = string.Empty;
+        try
+        {
+            var request = new SendMessageRequest(ActiveCall.ConversationId, null, body, null);
+            var sent = _context.Realtime.IsConnected
+                ? await _context.Realtime.SendMessageAsync(request)
+                : await _context.Api.SendMessageAsync(request);
+            if (ChatMessages.All(m => m.Id != sent.Id)) ChatMessages.Add(sent);
+        }
+        catch
+        {
+            ChatDraft = body;
+        }
+    }
 
     [RelayCommand]
     private void BeginAddPeople()
@@ -433,12 +667,37 @@ public partial class CallsViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasInviteSuggestions));
     }
 
+    private async Task LoadChatAsync()
+    {
+        ChatMessages.Clear();
+        if (ActiveCall is null) return;
+        try
+        {
+            var messages = await _context.Api.GetMessagesAsync(ActiveCall.ConversationId, null, null);
+            foreach (var message in messages.OrderBy(m => m.CreatedAt))
+                ChatMessages.Add(message);
+        }
+        catch
+        {
+            // In-call chat is optional if history cannot load.
+        }
+    }
+
+    private void OnConversationMessage(MessageDto message)
+    {
+        if (ActiveCall is null || message.ConversationId != ActiveCall.ConversationId) return;
+        if (ChatMessages.All(m => m.Id != message.Id)) ChatMessages.Add(message);
+    }
+
     private void RefreshRoster()
     {
         Roster.Clear();
         if (ActiveCall is null)
         {
             OnPropertyChanged(nameof(RosterTitle));
+            OnPropertyChanged(nameof(RosterGridColumns));
+            OnPropertyChanged(nameof(ActivePeerPerson));
+            OnPropertyChanged(nameof(ActivePeerName));
             return;
         }
 
@@ -447,10 +706,15 @@ public partial class CallsViewModel : ViewModelBase
                      .OrderBy(p => p.Status == CallParticipantStatus.Joined ? 0 : 1)
                      .ThenBy(p => p.DisplayName, StringComparer.OrdinalIgnoreCase))
         {
-            Roster.Add(new CallRosterItemViewModel(participant, participant.UserId == _context.People.MyId));
+            var item = new CallRosterItemViewModel(participant, _context.People);
+            if (item.IsMe) item.IsMicMuted = !IsMicOn;
+            Roster.Add(item);
         }
 
         OnPropertyChanged(nameof(RosterTitle));
+        OnPropertyChanged(nameof(RosterGridColumns));
+        OnPropertyChanged(nameof(ActivePeerPerson));
+        OnPropertyChanged(nameof(ActivePeerName));
     }
 
     [RelayCommand]
@@ -519,24 +783,20 @@ public partial class CallsViewModel : ViewModelBase
     {
         var callId = ActiveJoin?.CallId ?? ActiveCall?.Id;
         if (callId is null) return;
-        CancelRingTimeout();
-        ActiveJoin = null;
-        ActiveCall = null;
-        MediaPageUri = null;
-        IsStageExpanded = false;
-        ShowAddPeople = false;
-        PeerNameHint = "Call";
+        _suppressRecoverCallId = callId;
+        ClearCallSession(keepPeerName: false);
         NotifyCallChrome();
         try
         {
             // End (not hang up) so a recovered orphaned session always clears the server lock.
             await _context.Api.EndCallAsync(callId.Value);
-            await LoadAsync();
         }
         catch (Exception ex)
         {
             ErrorMessage = Describe.Error(ex);
         }
+
+        await LoadAsync();
     }
 
     private void WatchRingTimeout(Guid callId)
@@ -583,8 +843,11 @@ public partial class CallsViewModel : ViewModelBase
     internal static Uri BuildMediaPageUri(Uri apiBase, CallJoinDto join)
     {
         // Query string (not hash): some embedded WebViews drop the URL fragment on navigate.
+        // embed=1 hides the HTML toolbar — Avalonia owns call chrome.
         var page = new Uri(apiBase, "meet/");
-        var query = "u=" + Uri.EscapeDataString(join.ServerUrl) + "&t=" + Uri.EscapeDataString(join.Token);
+        var query = "u=" + Uri.EscapeDataString(join.ServerUrl)
+            + "&t=" + Uri.EscapeDataString(join.Token)
+            + "&embed=1";
         return new UriBuilder(page) { Query = query }.Uri;
     }
 
@@ -632,23 +895,51 @@ public partial class CallsViewModel : ViewModelBase
             IncomingChanged?.Invoke();
         }
 
-        if (ActiveJoin?.CallId == call.Id)
+        var isCurrent =
+            ActiveJoin?.CallId == call.Id
+            || ActiveCall?.Id == call.Id;
+
+        if (isCurrent)
         {
-            ActiveCall = call;
-            PeerNameHint = PeerNameFrom(call);
-            if (call.ConnectedAt is not null) CancelRingTimeout();
             if (!call.IsActive)
             {
-                CancelRingTimeout();
-                ActiveJoin = null;
-                ActiveCall = null;
-                MediaPageUri = null;
-                IsStageExpanded = false;
+                MaybeNotifyCallDeclined(call);
+                _suppressRecoverCallId = call.Id;
+                ClearCallSession(keepPeerName: false);
+            }
+            else
+            {
+                ActiveCall = call;
+                PeerNameHint = PeerNameFrom(call);
+                if (call.ConnectedAt is not null) CancelRingTimeout();
+                // Group calls can stay active after one person declines.
+                MaybeNotifyCallDeclined(call, requireInactive: false);
             }
         }
 
         NotifyCallChrome();
         _ = LoadAsync();
+    }
+
+    private void MaybeNotifyCallDeclined(CallDto call, bool requireInactive = true)
+    {
+        // Only the ringing caller should see this — not the person who pressed Decline.
+        if (call.Initiator.Id != _context.People.MyId) return;
+        if (requireInactive && call.IsActive) return;
+        // Already connected: hang-up / leave is not a decline toast.
+        if (ActiveCall?.ConnectedAt is not null || call.ConnectedAt is not null) return;
+        if (ActiveJoin is null && ActiveCall is null) return;
+
+        var decliner = call.Participants.FirstOrDefault(p =>
+            p.UserId != _context.People.MyId
+            && p.Status == CallParticipantStatus.Declined
+            && _notifiedDeclines.Add((call.Id, p.UserId)));
+        if (decliner is null) return;
+
+        var name = string.IsNullOrWhiteSpace(decliner.DisplayName) ? "Someone" : decliner.DisplayName;
+        CallDeclined?.Invoke(new CallDeclinedNotice(
+            name,
+            $"{name} declined your call."));
     }
 
     private void OnCallsChanged() => _ = LoadAsync();
