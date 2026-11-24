@@ -67,12 +67,15 @@ public sealed class InAppMediaHost : Panel
 
     private async Task ShowAfterOsMediaAsync(Uri url)
     {
+        // Teams model: ask the OS for mic, then camera, *before* the WebView
+        // connects to LiveKit. That is what registers MeetJoe under
+        // System Settings → Privacy → Microphone / Camera.
         if (WebViewPlatformHooks.RequestOsMediaPermissionAsync is { } requestOs)
         {
             try
             {
-                var micOk = await requestOs("mic");
-                var camOk = await requestOs("camera");
+                var micOk = await requestOs("mic").ConfigureAwait(true);
+                var camOk = await requestOs("camera").ConfigureAwait(true);
                 if (!micOk) RaisePermissionNeeded("mic");
                 if (!camOk) RaisePermissionNeeded("camera");
             }

@@ -4,7 +4,7 @@
 
 !define APP_NAME "MeetJoe"
 !define APP_PUBLISHER "Joe Solutions"
-!define APP_VERSION "0.1.2"
+!define APP_VERSION "0.1.3"
 !define APP_URL "https://meetjoe.joesolutions.ph"
 !define APP_EXE "MeetJoe.exe"
 

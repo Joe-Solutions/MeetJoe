@@ -7,19 +7,23 @@ using ObjCRuntime;
 namespace MeetJoe.Desktop;
 
 /// <summary>
-/// Triggers the real macOS TCC camera/mic dialog via AVFoundation.
-/// WKWebView Grant alone is not enough — the host process must be authorized,
-/// and the process must run from an .app bundle that includes Info.plist usage strings
-/// plus camera/mic entitlements when signed with hardened runtime.
+/// Teams-style macOS TCC: call AVCaptureDevice.requestAccessForMediaType so the
+/// system dialog appears and MeetJoe shows up under Privacy → Microphone / Camera.
+/// WKWebView UIDelegate Grant alone does not register the host app with TCC.
 /// </summary>
 internal static class MacOsMediaPermissions
 {
     private const nint StatusNotDetermined = 0;
     private const nint StatusAuthorized = 3;
+    // AVMediaType* FourCCs used by AVFoundation.
     private const string MediaVideo = "vide";
     private const string MediaAudio = "soun";
 
-    private delegate void AccessCallback(bool granted);
+    // ObjC BOOL is a signed byte — a C# bool block signature will not be invoked correctly.
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void AccessCallback(byte granted);
+
+    private static int _avFoundationLoaded;
 
     public static Task<bool> EnsureAsync(string kind)
     {
@@ -39,15 +43,39 @@ internal static class MacOsMediaPermissions
         return tcs.Task;
     }
 
+    private static void EnsureAvFoundationLoaded()
+    {
+        if (Interlocked.Exchange(ref _avFoundationLoaded, 1) == 1) return;
+        // Without this, Class.GetHandle("AVCaptureDevice") is often null in a .NET host.
+        Dlfcn.dlopen("/System/Library/Frameworks/AVFoundation.framework/AVFoundation", 0);
+    }
+
     private static Task<bool> BeginRequest(string mediaType)
     {
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        BlockLiteral block = default;
+        AccessCallback? callback = null;
+        var cleaned = 0;
+
+        void Complete(bool granted)
+        {
+            if (Interlocked.Exchange(ref cleaned, 1) == 0)
+            {
+                try { block.CleanupBlock(); }
+                catch { /* ignore */ }
+            }
+
+            tcs.TrySetResult(granted);
+        }
+
         try
         {
+            EnsureAvFoundationLoaded();
+
             var cls = Class.GetHandle("AVCaptureDevice");
             if (cls == IntPtr.Zero)
             {
-                tcs.TrySetResult(false);
+                Complete(false);
                 return tcs.Task;
             }
 
@@ -57,35 +85,38 @@ internal static class MacOsMediaPermissions
 
             if (status == StatusAuthorized)
             {
-                tcs.TrySetResult(true);
+                Complete(true);
                 return tcs.Task;
             }
 
             if (status != StatusNotDetermined)
             {
-                // Denied / Restricted — macOS will not show another dialog.
-                tcs.TrySetResult(false);
+                // Denied / Restricted — System Settings is the only remaining path.
+                Complete(false);
                 return tcs.Task;
             }
 
-            AccessCallback callback = granted => tcs.TrySetResult(granted);
-            var block = new BlockLiteral();
-#pragma warning disable CS8625 // SetupBlock's second arg is an optional copy/dispose helper.
+            // Keep the block alive until macOS invokes the completion handler.
+            // Cleaning it up in a finally (previous bug) prevented the system dialog
+            // and left MeetJoe absent from Privacy → Microphone / Camera.
+            callback = granted => Complete(granted != 0);
+            block = new BlockLiteral();
+#pragma warning disable CS8625
             block.SetupBlock(callback, null);
 #pragma warning restore CS8625
-            try
-            {
-                var requestSel = Selector.GetHandle("requestAccessForMediaType:completionHandler:");
-                void_objc_msgSend_IntPtr_Block(cls, requestSel, media.Handle, ref block);
-            }
-            finally
-            {
-                block.CleanupBlock();
-            }
+
+            var requestSel = Selector.GetHandle("requestAccessForMediaType:completionHandler:");
+            void_objc_msgSend_IntPtr_Block(cls, requestSel, media.Handle, ref block);
+
+            // Safety: if the callback never fires, do not hang call join forever.
+            _ = Task.Delay(TimeSpan.FromSeconds(120)).ContinueWith(_ => Complete(false));
+
+            // Keep callback rooted for the lifetime of the request.
+            GC.KeepAlive(callback);
         }
         catch
         {
-            tcs.TrySetResult(false);
+            Complete(false);
         }
 
         return tcs.Task;
