@@ -51,8 +51,9 @@ jobs:
           tags: |
             ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
             ${{ steps.meta.outputs.image }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # ignore-error: GHA cache often 503s ("no healthy upstream") and must not fail the push.
+          cache-from: type=gha,ignore-error=true
+          cache-to: type=gha,mode=max,ignore-error=true
 
   deploy:
     name: Deploy to EC2

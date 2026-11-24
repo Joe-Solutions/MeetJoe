@@ -86,5 +86,6 @@ jobs:
           file: deploy/prod/Dockerfile
           push: false
           tags: meetjoe-api:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # ignore-error: GHA cache 503s ("no healthy upstream") should not fail the image build.
+          cache-from: type=gha,ignore-error=true
+          cache-to: type=gha,mode=max,ignore-error=true
