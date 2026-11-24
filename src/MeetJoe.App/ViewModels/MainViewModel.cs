@@ -147,6 +147,26 @@ public partial class MainViewModel : ViewModelBase
     /// <summary>Runs once at startup — downloads and applies a newer semver release when installed.</summary>
     public Task StartUpdateCheckAsync() => _updates.CheckAsync(applyAutomatically: true);
 
+    /// <summary>At startup: sign in silently with the saved session, if any.</summary>
+    public async Task ResumeSessionAsync()
+    {
+        if (Current is not LoginViewModel login) return;
+        login.IsBusy = true;
+        try
+        {
+            if (!await _auth.TryResumeAsync()) return;
+            await EnterAsync();
+        }
+        catch (Exception ex)
+        {
+            await SignOutAsync(Describe.Error(ex));
+        }
+        finally
+        {
+            login.IsBusy = false;
+        }
+    }
+
     /// <summary>Loads the signed-in user and opens the right screen for them.</summary>
     public async Task EnterAsync()
     {

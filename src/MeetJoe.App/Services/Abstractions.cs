@@ -32,6 +32,25 @@ public sealed class ApiException(string message, int? statusCode = null) : Excep
     public int? StatusCode { get; } = statusCode;
 }
 
+/// <summary>
+/// Keeps the refresh token between launches in the OS credential store (macOS Keychain,
+/// Windows DPAPI). Implementations must not throw; a failed save just means signing in again.
+/// </summary>
+public interface ISessionStore
+{
+    string? LoadRefreshToken();
+    void SaveRefreshToken(string refreshToken);
+    void Clear();
+}
+
+/// <summary>Memory only: the user signs in on every launch (tests, unsupported platforms).</summary>
+public sealed class NullSessionStore : ISessionStore
+{
+    public string? LoadRefreshToken() => null;
+    public void SaveRefreshToken(string refreshToken) { }
+    public void Clear() { }
+}
+
 public interface IAuthService
 {
     bool IsSignedIn { get; }
@@ -40,6 +59,12 @@ public interface IAuthService
     event Action? SessionExpired;
 
     Task SignInAsync(string email, string password, CancellationToken ct = default);
+
+    /// <summary>
+    /// Signs in silently with the refresh token saved by a previous launch. False when there is
+    /// none, the server rejected it, or the server is unreachable.
+    /// </summary>
+    Task<bool> TryResumeAsync(CancellationToken ct = default);
 
     /// <summary>A valid access token, refreshed if needed, or null when signed out.</summary>
     Task<string?> GetAccessTokenAsync();
