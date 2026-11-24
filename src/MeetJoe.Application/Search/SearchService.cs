@@ -28,7 +28,12 @@ public sealed class SearchService(IAppDbContext db)
                         || (m.User.Email != null && m.User.Email.ToLower().Contains(needle)))
             .OrderBy(m => m.User.DisplayName)
             .Take(take)
-            .Select(m => new UserSummaryDto(m.UserId, m.User.DisplayName))
+            .Select(m => new UserSummaryDto(
+                m.UserId,
+                m.User.DisplayName,
+                m.User.AvatarStorageKey != null
+                    ? "api/users/" + m.UserId.ToString() + "/avatar"
+                    : null))
             .ToListAsync(ct);
 
         var conversationIds = await db.ConversationMembers.AsNoTracking()
@@ -62,7 +67,12 @@ public sealed class SearchService(IAppDbContext db)
                 m.ChannelId,
                 m.Body,
                 m.CreatedAt,
-                Sender = new UserSummaryDto(m.SenderId, m.Sender.DisplayName),
+                Sender = new UserSummaryDto(
+                    m.SenderId,
+                    m.Sender.DisplayName,
+                    m.Sender.AvatarStorageKey != null
+                        ? "api/users/" + m.SenderId.ToString() + "/avatar"
+                        : null),
             })
             .ToListAsync(ct);
 

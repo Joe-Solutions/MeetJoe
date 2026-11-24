@@ -1,5 +1,15 @@
 namespace MeetJoe.Contracts;
 
+/// <summary>Public desktop update feed (semver). Clients use FeedUrl with Velopack for delta installs.</summary>
+public record DesktopUpdateInfoDto(
+    string Version,
+    string Channel,
+    string Rid,
+    string FeedUrl,
+    string? ReleaseNotes,
+    bool Mandatory,
+    DateTimeOffset? PublishedAt);
+
 // Wire contracts shared by the API and every client. Enums travel as their string names.
 
 public enum PresenceStatus { Offline, Available, Away, Busy, DoNotDisturb }
@@ -32,9 +42,15 @@ public enum RecordingStatus { Unavailable, Starting, Recording, Ready, Failed }
 
 public record RegisterRequest(string Email, string Password, string DisplayName);
 
-public record UserSummaryDto(Guid Id, string DisplayName);
+public record UserSummaryDto(Guid Id, string DisplayName, string? AvatarUrl = null);
 
-public record MeDto(Guid Id, string Email, string DisplayName, PresenceStatus Availability, string? StatusMessage);
+public record MeDto(
+    Guid Id,
+    string Email,
+    string DisplayName,
+    PresenceStatus Availability,
+    string? StatusMessage,
+    string? AvatarUrl = null);
 
 public record UpdateProfileRequest(string DisplayName, string? StatusMessage);
 
@@ -52,7 +68,13 @@ public record CreateOrganizationRequest(string Name);
 public record JoinOrganizationRequest(string JoinCode);
 
 public record OrgMemberDto(
-    Guid UserId, string DisplayName, string Email, OrgRole Role, PresenceStatus Status, string? StatusMessage);
+    Guid UserId,
+    string DisplayName,
+    string Email,
+    OrgRole Role,
+    PresenceStatus Status,
+    string? StatusMessage,
+    string? AvatarUrl = null);
 
 // ---- Chat -----------------------------------------------------------------
 

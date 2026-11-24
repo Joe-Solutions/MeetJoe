@@ -414,51 +414,114 @@
   <Style Selector="StackPanel.messagemeta.mine">
     <Setter Property="HorizontalAlignment" Value="Right" />
   </Style>
-  <Style Selector="Panel.messagechrome">
+  <Style Selector="StackPanel.messagechrome">
     <Setter Property="HorizontalAlignment" Value="Left" />
   </Style>
-  <Style Selector="Panel.messagechrome.mine">
+  <Style Selector="StackPanel.messagechrome.mine">
     <Setter Property="HorizontalAlignment" Value="Right" />
   </Style>
 
-  <!-- Floating hover toolbar sits above the bubble; no layout jump -->
+  <!--
+    Teams-style: reaction pill lives in the header row (name/time band), not over bubble text.
+    Others → upper-right; mine → upper-left. Hidden until the message is hovered.
+    Continuations collapse the header to 0 until hover, then open a slim toolbar row above the bubble.
+  -->
+  <Style Selector="Grid.messageheader">
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="ClipToBounds" Value="False" />
+  </Style>
+  <Style Selector="Grid.messageheader.mine">
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+  </Style>
+  <!-- Continuations: no name row — collapse until hover so bubbles stay tight. -->
+  <Style Selector="Grid.messageheader.continuation">
+    <Setter Property="MaxHeight" Value="0" />
+    <Setter Property="Margin" Value="0" />
+  </Style>
+  <Style Selector="DockPanel.message:pointerover Grid.messageheader.continuation">
+    <Setter Property="MaxHeight" Value="40" />
+    <Setter Property="MinHeight" Value="36" />
+    <Setter Property="Margin" Value="0,0,0,4" />
+  </Style>
+
   <Style Selector="Border.message-hoverbar">
-    <Setter Property="Background" Value="{DynamicResource Brush.Panel}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
+    <Setter Property="Background" Value="{DynamicResource Brush.PanelRaised}" />
+    <Setter Property="BorderBrush" Value="#2C5273" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="10" />
-    <Setter Property="Padding" Value="4,2" />
-    <Setter Property="HorizontalAlignment" Value="Left" />
-    <Setter Property="Margin" Value="0,0,0,0" />
+    <Setter Property="CornerRadius" Value="999" />
+    <Setter Property="Padding" Value="4" />
+    <Setter Property="HorizontalAlignment" Value="Right" />
+    <Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="Opacity" Value="0" />
     <Setter Property="IsHitTestVisible" Value="False" />
   </Style>
   <Style Selector="Border.message-hoverbar.mine">
-    <Setter Property="HorizontalAlignment" Value="Right" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
   </Style>
   <Style Selector="DockPanel.message:pointerover Border.message-hoverbar">
     <Setter Property="Opacity" Value="1" />
     <Setter Property="IsHitTestVisible" Value="True" />
   </Style>
-  <!-- Keep toolbar usable while the pointer moves onto it -->
   <Style Selector="Border.message-hoverbar:pointerover">
     <Setter Property="Opacity" Value="1" />
     <Setter Property="IsHitTestVisible" Value="True" />
   </Style>
 
-  <Style Selector="Button.hoveraction">
+  <Style Selector="Border.hoverbardivider">
+    <Setter Property="Width" Value="1" />
+    <Setter Property="Height" Value="16" />
+    <Setter Property="Margin" Value="3,0" />
+    <Setter Property="Background" Value="{DynamicResource Brush.Border}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Opacity" Value="0.85" />
+  </Style>
+
+  <Style Selector="Button.hoverreact">
     <Setter Property="Background" Value="Transparent" />
-    <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
-    <Setter Property="FontWeight" Value="SemiBold" />
-    <Setter Property="FontSize" Value="12.5" />
-    <Setter Property="Padding" Value="8,4" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Width" Value="28" />
+    <Setter Property="Height" Value="28" />
     <Setter Property="MinHeight" Value="28" />
-    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="CornerRadius" Value="999" />
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
   </Style>
-  <Style Selector="Button.hoveraction:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+  <Style Selector="Button.hoverreact:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Brush.AccentSoft}" />
+  </Style>
+  <Style Selector="Button.hoverreact:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Brush.PanelHover}" />
+  </Style>
+
+  <Style Selector="Button.hovericon">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Width" Value="28" />
+    <Setter Property="Height" Value="28" />
+    <Setter Property="MinHeight" Value="28" />
+    <Setter Property="CornerRadius" Value="999" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Button.hovericon:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Brush.AccentSoft}" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+  </Style>
+  <Style Selector="Button.hovericon:pressed /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="{DynamicResource Brush.PanelHover}" />
     <Setter Property="Foreground" Value="{DynamicResource Brush.AccentHover}" />
+  </Style>
+  <Style Selector="Button.hovericon.danger:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Brush.DangerSoft}" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
+  </Style>
+  <Style Selector="Button.hovericon.danger:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Brush.DangerSoft}" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
   </Style>
 
   <Style Selector="ItemsControl.messagereactions.mine">
@@ -504,11 +567,56 @@
     <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
   </Style>
 
+  <!-- Floating “New messages” chip above the composer -->
+  <Style Selector="Button.newmessages">
+    <Setter Property="Background" Value="{DynamicResource Brush.Accent}" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.OnAccent}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="999" />
+    <Setter Property="Padding" Value="14,7" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="ZIndex" Value="5" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Button.newmessages:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Brush.AccentHover}" />
+  </Style>
+  <Style Selector="Button.newmessages:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Brush.AccentPressed}" />
+  </Style>
+
+  <!-- Soft reply chip under the bubble (Slack/Teams-style thread affordance) -->
+  <Style Selector="Button.replychip">
+    <Setter Property="Background" Value="{DynamicResource Brush.AccentSoft}" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+    <Setter Property="CornerRadius" Value="999" />
+    <Setter Property="Padding" Value="10,5" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.replychip.mine">
+    <Setter Property="HorizontalAlignment" Value="Right" />
+  </Style>
+  <Style Selector="Button.replychip:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="#401EC8C8" />
+  </Style>
+  <Style Selector="Button.replychip:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="#551EC8C8" />
+  </Style>
+
   <Style Selector="Border.messagebubble">
     <Setter Property="Background" Value="{DynamicResource Brush.PanelRaised}" />
     <Setter Property="CornerRadius" Value="14,14,14,4" />
     <Setter Property="Padding" Value="12,8" />
     <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="Margin" Value="0,0,0,0" />
   </Style>
   <Style Selector="Border.messagebubble.continuation">
     <Setter Property="CornerRadius" Value="4,14,14,4" />
@@ -583,6 +691,39 @@
   </Style>
   <Style Selector="Ellipse.calendar-day-dot">
     <Setter Property="Fill" Value="Transparent" />
+  </Style>
+
+  <!-- Active-speaker pulse around call/meeting avatars -->
+  <Style Selector="Ellipse.speak-pulse">
+    <Setter Property="Opacity" Value="0" />
+    <Setter Property="IsHitTestVisible" Value="False" />
+  </Style>
+  <Style Selector="Ellipse.speak-pulse.speaking">
+    <Setter Property="Opacity" Value="1" />
+    <Style.Animations>
+      <Animation Duration="0:0:1.1" IterationCount="Infinite" Easing="CubicEaseInOut">
+        <KeyFrame Cue="0%">
+          <Setter Property="Opacity" Value="0.95" />
+          <Setter Property="ScaleTransform.ScaleX" Value="1" />
+          <Setter Property="ScaleTransform.ScaleY" Value="1" />
+        </KeyFrame>
+        <KeyFrame Cue="50%">
+          <Setter Property="Opacity" Value="0.35" />
+          <Setter Property="ScaleTransform.ScaleX" Value="1.12" />
+          <Setter Property="ScaleTransform.ScaleY" Value="1.12" />
+        </KeyFrame>
+        <KeyFrame Cue="100%">
+          <Setter Property="Opacity" Value="0.95" />
+          <Setter Property="ScaleTransform.ScaleX" Value="1" />
+          <Setter Property="ScaleTransform.ScaleY" Value="1" />
+        </KeyFrame>
+      </Animation>
+    </Style.Animations>
+  </Style>
+
+  <Style Selector="Border.meet-tile.speaking">
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+    <Setter Property="BorderThickness" Value="2" />
   </Style>
 
   <!-- Meeting join: the stage settles in from slightly small -->

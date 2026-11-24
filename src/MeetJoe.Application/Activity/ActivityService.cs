@@ -22,7 +22,12 @@ public sealed class ActivityService(IAppDbContext db, TimeProvider time)
             .Select(a => new ActivityDto(
                 a.Id,
                 a.Kind.ToContract(),
-                new UserSummaryDto(a.ActorId, a.Actor.DisplayName),
+                new UserSummaryDto(
+                    a.ActorId,
+                    a.Actor.DisplayName,
+                    a.Actor.AvatarStorageKey != null
+                        ? "api/users/" + a.ActorId.ToString() + "/avatar"
+                        : null),
                 a.Summary,
                 a.MessageId,
                 a.ConversationId,

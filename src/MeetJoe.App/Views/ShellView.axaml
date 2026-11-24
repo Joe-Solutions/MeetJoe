@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:MeetJoe.App.ViewModels"
              xmlns:c="using:MeetJoe.App.Controls"
+             xmlns:contracts="using:MeetJoe.Contracts"
              x:Class="MeetJoe.App.Views.ShellView"
              x:DataType="vm:ShellViewModel">
   <UserControl.Resources>
@@ -41,7 +42,8 @@
         <StackPanel DockPanel.Dock="Bottom" Spacing="10">
           <ContentControl Content="{Binding SettingsItem}" ContentTemplate="{StaticResource RailItemTemplate}" />
           <c:Avatar Width="34" Height="34" HorizontalAlignment="Center"
-                    DisplayName="{Binding Me.DisplayName}" Status="{Binding Me.Status}" ShowStatus="True"
+                    DisplayName="{Binding Me.DisplayName}" Photo="{Binding Me.Photo}"
+                    Status="{Binding Me.Status}" ShowStatus="True"
                     Surface="{StaticResource Brush.Rail}" ToolTip.Tip="{Binding Me.DisplayName}" />
         </StackPanel>
 
@@ -97,7 +99,9 @@
             <Button Classes="danger" Content="Leave" Command="{Binding Calls.HangUpCommand}" />
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-            <c:Avatar Width="36" Height="36" DisplayName="{Binding Calls.ActivePeerName}" />
+            <c:Avatar Width="36" Height="36"
+                      DisplayName="{Binding Calls.ActivePeerName}"
+                      Photo="{Binding Calls.ActivePeerPerson.Photo}" />
             <StackPanel Spacing="1" VerticalAlignment="Center">
               <TextBlock FontWeight="SemiBold" Text="{Binding Calls.ActivePeerName}" />
               <TextBlock Classes="muted small" Text="{Binding Calls.CallStatusLabel}" />
@@ -111,7 +115,7 @@
         so navigating away from Calls does not tear down the WebView (audio stays up).
       -->
       <Grid x:Name="CallStageRoot" ZIndex="30" IsVisible="False" Background="{StaticResource Brush.Rail}"
-            ColumnDefinitions="*,280" RowDefinitions="Auto,*">
+            ColumnDefinitions="*,280" RowDefinitions="Auto,*,Auto">
         <Border x:Name="CallStageHeader" Grid.ColumnSpan="2" Background="{StaticResource Brush.Panel}" Padding="16,10"
                 BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,0,1">
           <DockPanel>
@@ -119,6 +123,10 @@
               <Button Classes="secondary" Width="40" Height="40" Padding="0" CornerRadius="20"
                       ToolTip.Tip="People" Command="{Binding Calls.ShowPeopleCommand}">
                 <c:Icon Data="{StaticResource Icon.Users}" Size="18" />
+              </Button>
+              <Button Classes="secondary" Width="40" Height="40" Padding="0" CornerRadius="20"
+                      ToolTip.Tip="Chat" Command="{Binding Calls.ShowChatCommand}">
+                <c:Icon Data="{StaticResource Icon.ChatBubble}" Size="18" />
               </Button>
               <Button Classes="secondary" Width="40" Height="40" Padding="0" CornerRadius="20"
                       ToolTip.Tip="Add people" Command="{Binding Calls.BeginAddPeopleCommand}">
@@ -129,7 +137,9 @@
               <Button Classes="danger" Content="Leave" Command="{Binding Calls.HangUpCommand}" />
             </StackPanel>
             <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-              <c:Avatar Width="40" Height="40" DisplayName="{Binding Calls.ActivePeerName}" />
+              <c:Avatar Width="40" Height="40"
+                        DisplayName="{Binding Calls.ActivePeerName}"
+                        Photo="{Binding Calls.ActivePeerPerson.Photo}" />
               <StackPanel Spacing="1" VerticalAlignment="Center">
                 <TextBlock Classes="h2" Text="{Binding Calls.ActivePeerName}" />
                 <TextBlock Classes="muted small" Text="{Binding Calls.CallStatusLabel}" />
@@ -138,47 +148,201 @@
           </DockPanel>
         </Border>
 
-        <ContentControl x:Name="CallMediaHost" Grid.Row="1" />
-
-        <!-- People in this call -->
-        <Border Grid.Row="1" Grid.Column="1" BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
-                Background="{StaticResource Brush.Panel}" IsVisible="{Binding Calls.ShowPeoplePanel}">
-          <DockPanel>
-            <TextBlock DockPanel.Dock="Top" Classes="h2" Margin="14,12" Text="{Binding Calls.RosterTitle}" />
-            <TextBlock DockPanel.Dock="Top" Classes="muted small" Margin="14,0,14,8"
-                       Text="Everyone currently in this call." />
-            <ScrollViewer Margin="8,0,8,12">
-              <ItemsControl ItemsSource="{Binding Calls.Roster}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="vm:CallRosterItemViewModel">
-                    <Border Padding="8,8" Margin="0,0,0,4" CornerRadius="8"
-                            Background="{StaticResource Brush.PanelRaised}">
-                      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                        <c:Avatar Width="36" Height="36" DisplayName="{Binding DisplayName}" />
-                        <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
-                          <TextBlock FontWeight="SemiBold" Text="{Binding DisplayName}"
-                                     MaxLines="1" TextTrimming="CharacterEllipsis" />
-                          <TextBlock Classes="muted small" Text="{Binding StatusText}" />
-                        </StackPanel>
-                        <Border Grid.Column="2" VerticalAlignment="Center" Padding="8,3" CornerRadius="8"
-                                Background="{StaticResource Brush.AccentSoft}"
-                                IsVisible="{Binding IsJoined}">
-                          <TextBlock FontSize="11" FontWeight="SemiBold" Text="Live"
-                                     Foreground="{StaticResource Brush.Accent}" />
-                        </Border>
-                        <Border Grid.Column="2" VerticalAlignment="Center" Padding="8,3" CornerRadius="8"
-                                Background="{StaticResource Brush.Panel}"
-                                BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
-                                IsVisible="{Binding IsRinging}">
-                          <TextBlock FontSize="11" FontWeight="SemiBold" Classes="muted" Text="Ringing" />
-                        </Border>
-                      </Grid>
+        <!--
+          Avalonia Meet tiles own the stage (never hide — WebView blank-out looked like “no grid”).
+          LiveKit WKWebView sits in an uncovered PiP so macOS capture/playback is not occluded.
+        -->
+        <Panel Grid.Row="1" Background="{StaticResource Brush.Rail}">
+          <ItemsControl x:Name="CallRosterTiles" ItemsSource="{Binding Calls.Roster}" Margin="16"
+                        VerticalAlignment="Center" HorizontalAlignment="Stretch"
+                        IsHitTestVisible="False" ZIndex="1">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <UniformGrid Columns="{Binding $parent[UserControl].((vm:ShellViewModel)DataContext).Calls.RosterGridColumns}" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:CallRosterItemViewModel">
+                <Border Classes="meet-tile" Classes.speaking="{Binding IsSpeaking}"
+                        Margin="6" MinHeight="180" MaxWidth="420" MinWidth="160"
+                        HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                        CornerRadius="16"
+                        Background="{StaticResource Brush.PanelRaised}"
+                        BorderBrush="{StaticResource Brush.Border}" BorderThickness="1">
+                  <Grid>
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="14">
+                      <Panel Width="112" Height="112">
+                        <Ellipse Classes="speak-pulse" Classes.speaking="{Binding IsSpeaking}"
+                                 Width="112" Height="112"
+                                 Stroke="{StaticResource Brush.Accent}" StrokeThickness="3"
+                                 Fill="Transparent">
+                          <Ellipse.RenderTransform>
+                            <ScaleTransform />
+                          </Ellipse.RenderTransform>
+                        </Ellipse>
+                        <c:Avatar Width="96" Height="96" DisplayName="{Binding Name}"
+                                  Photo="{Binding Person.Photo}"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      </Panel>
+                      <TextBlock FontWeight="SemiBold" FontSize="15" HorizontalAlignment="Center"
+                                 Text="{Binding DisplayName}" MaxLines="1" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Classes="muted small" HorizontalAlignment="Center" Text="{Binding StatusText}" />
+                    </StackPanel>
+                    <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12"
+                            Padding="8,3" CornerRadius="8"
+                            Background="{StaticResource Brush.AccentSoft}"
+                            IsVisible="{Binding IsJoined}">
+                      <TextBlock FontSize="11" FontWeight="SemiBold" Text="Live"
+                                 Foreground="{StaticResource Brush.Accent}" />
                     </Border>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </ScrollViewer>
-          </DockPanel>
+                    <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12"
+                            Padding="8,3" CornerRadius="8"
+                            Background="{StaticResource Brush.Panel}"
+                            BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
+                            IsVisible="{Binding IsRinging}">
+                      <TextBlock FontSize="11" FontWeight="SemiBold" Classes="muted" Text="Ringing" />
+                    </Border>
+                    <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12"
+                            Width="28" Height="28" CornerRadius="14"
+                            Background="#C43B3B"
+                            IsVisible="{Binding IsMicMuted}">
+                      <c:Icon Data="{StaticResource Icon.MicOff}" Size="14"
+                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <!-- Uncovered LiveKit surface (PiP). Must not sit under Avalonia tiles on macOS. -->
+          <Panel x:Name="CallMediaHost"
+                 Width="320" Height="180"
+                 HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                 Margin="12" ZIndex="5"
+                 IsHitTestVisible="False" />
+        </Panel>
+
+        <!-- Camera / mic controls -->
+        <Border x:Name="CallStageControls" Grid.Row="2" Grid.ColumnSpan="2"
+                Background="{StaticResource Brush.Panel}" BorderBrush="{StaticResource Brush.Border}"
+                BorderThickness="0,1,0,0" Padding="16,12">
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="14">
+            <Button Classes="secondary" Width="52" Height="52" Padding="0" CornerRadius="26"
+                    ToolTip.Tip="Turn camera on or off" Command="{Binding Calls.ToggleCameraCommand}">
+              <Panel>
+                <c:Icon Data="{StaticResource Icon.Video}" Size="22"
+                        IsVisible="{Binding Calls.IsCameraOn}" />
+                <c:Icon Data="{StaticResource Icon.VideoOff}" Size="22"
+                        IsVisible="{Binding !Calls.IsCameraOn}" />
+              </Panel>
+            </Button>
+            <Button Classes="secondary" Width="52" Height="52" Padding="0" CornerRadius="26"
+                    ToolTip.Tip="Mute or unmute" Command="{Binding Calls.ToggleMicCommand}">
+              <Panel>
+                <c:Icon Data="{StaticResource Icon.Mic}" Size="22"
+                        IsVisible="{Binding Calls.IsMicOn}" />
+                <c:Icon Data="{StaticResource Icon.MicOff}" Size="22"
+                        IsVisible="{Binding !Calls.IsMicOn}" />
+              </Panel>
+            </Button>
+            <Button Classes="danger" Width="52" Height="52" Padding="0" CornerRadius="26"
+                    ToolTip.Tip="Leave call" Command="{Binding Calls.HangUpCommand}">
+              <c:Icon Data="{StaticResource Icon.Leave}" Size="22" />
+            </Button>
+          </StackPanel>
+        </Border>
+
+        <!-- People / chat rail -->
+        <Border Grid.Row="1" Grid.RowSpan="1" Grid.Column="1" BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
+                Background="{StaticResource Brush.Panel}">
+          <Grid RowDefinitions="Auto,*">
+            <StackPanel Orientation="Horizontal" Spacing="6" Margin="10,10,10,0">
+              <Button Classes="secondary" Padding="12,6" MinHeight="32"
+                      Command="{Binding Calls.ShowPeopleCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <c:Icon Data="{StaticResource Icon.Users}" Size="15" />
+                  <TextBlock Text="People" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+              <Button Classes="secondary" Padding="12,6" MinHeight="32"
+                      Command="{Binding Calls.ShowChatCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <c:Icon Data="{StaticResource Icon.ChatBubble}" Size="15" />
+                  <TextBlock Text="Chat" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+            </StackPanel>
+
+            <DockPanel Grid.Row="1" Margin="0,8,0,0" IsVisible="{Binding Calls.ShowPeoplePanel}">
+              <TextBlock DockPanel.Dock="Top" Classes="h2" Margin="14,4,14,0" Text="{Binding Calls.RosterTitle}" />
+              <TextBlock DockPanel.Dock="Top" Classes="muted small" Margin="14,0,14,8"
+                         Text="Everyone currently in this call." />
+              <ScrollViewer Margin="8,0,8,12">
+                <ItemsControl ItemsSource="{Binding Calls.Roster}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:CallRosterItemViewModel">
+                      <Border Padding="8,8" Margin="0,0,0,4" CornerRadius="8"
+                              Background="{StaticResource Brush.PanelRaised}">
+                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
+                          <c:Avatar Width="36" Height="36" DisplayName="{Binding Name}"
+                                    Photo="{Binding Person.Photo}" />
+                          <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                            <TextBlock FontWeight="SemiBold" Text="{Binding DisplayName}"
+                                       MaxLines="1" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Classes="muted small" Text="{Binding StatusText}" />
+                          </StackPanel>
+                          <Border Grid.Column="2" VerticalAlignment="Center"
+                                  Width="26" Height="26" CornerRadius="13"
+                                  Background="#C43B3B"
+                                  IsVisible="{Binding IsMicMuted}"
+                                  ToolTip.Tip="Muted">
+                            <c:Icon Data="{StaticResource Icon.MicOff}" Size="13"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
+                          </Border>
+                          <Border Grid.Column="3" VerticalAlignment="Center" Padding="8,3" CornerRadius="8"
+                                  Background="{StaticResource Brush.AccentSoft}"
+                                  IsVisible="{Binding IsJoined}">
+                            <TextBlock FontSize="11" FontWeight="SemiBold" Text="Live"
+                                       Foreground="{StaticResource Brush.Accent}" />
+                          </Border>
+                          <Border Grid.Column="3" VerticalAlignment="Center" Padding="8,3" CornerRadius="8"
+                                  Background="{StaticResource Brush.Panel}"
+                                  BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
+                                  IsVisible="{Binding IsRinging}">
+                            <TextBlock FontSize="11" FontWeight="SemiBold" Classes="muted" Text="Ringing" />
+                          </Border>
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </DockPanel>
+
+            <Grid Grid.Row="1" RowDefinitions="Auto,*,Auto" Margin="0,8,0,0"
+                  IsVisible="{Binding Calls.ShowChatPanel}">
+              <TextBlock Classes="h2" Margin="14,4,14,8" Text="Chat" />
+              <ScrollViewer Grid.Row="1" Margin="12,0,12,0">
+                <ItemsControl ItemsSource="{Binding Calls.ChatMessages}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="contracts:MessageDto">
+                      <StackPanel Margin="0,0,0,10" Spacing="2">
+                        <TextBlock FontWeight="SemiBold" FontSize="12" Text="{Binding Sender.DisplayName}" />
+                        <TextBlock TextWrapping="Wrap" FontSize="13" Text="{Binding Body}" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+              <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="10">
+                <TextBox x:Name="CallChatComposer" Text="{Binding Calls.ChatDraft}"
+                         Watermark="Message everyone on the call" />
+                <Button Grid.Column="1" Classes="primary" Margin="6,0,0,0" Content="Send"
+                        ToolTip.Tip="Send (Enter)" Command="{Binding Calls.SendChatCommand}" />
+              </Grid>
+            </Grid>
+          </Grid>
         </Border>
       </Grid>
 
@@ -241,6 +405,64 @@
         </Border>
       </Border>
 
+      <!-- Meeting invite toast — join from any section -->
+      <Border ZIndex="35" Width="360" Margin="0,0,20,20" Padding="16"
+              HorizontalAlignment="Right" VerticalAlignment="Bottom"
+              CornerRadius="14" Background="{StaticResource Brush.PanelRaised}"
+              BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
+              BoxShadow="0 12 40 0 #80000000"
+              IsVisible="{Binding ShowMeetingInviteToast}">
+        <StackPanel Spacing="12">
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Left" Classes="muted small" FontWeight="SemiBold"
+                       Foreground="{StaticResource Brush.Accent}" Text="Meeting invite" />
+            <TextBlock Classes="muted small" HorizontalAlignment="Right"
+                       Text="{Binding PendingMeetingInvite.TimeText}" />
+          </DockPanel>
+          <DockPanel LastChildFill="True">
+            <c:Avatar DockPanel.Dock="Left" Width="40" Height="40" Margin="0,0,12,0"
+                      DisplayName="{Binding PendingMeetingInvite.ActorName}" />
+            <StackPanel Spacing="2" VerticalAlignment="Center">
+              <TextBlock FontWeight="SemiBold" TextWrapping="Wrap"
+                         Text="{Binding PendingMeetingInvite.Summary}" />
+              <TextBlock Classes="muted small" Text="{Binding PendingMeetingInvite.ActorName}" />
+            </StackPanel>
+          </DockPanel>
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+            <Button Classes="ghost" MinWidth="88" Content="Cancel"
+                    Command="{Binding DismissMeetingInviteCommand}" />
+            <Button Classes="primary" MinWidth="88" Content="Join"
+                    Command="{Binding JoinMeetingInviteCommand}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- Call declined toast — notify the caller -->
+      <Border ZIndex="36" Width="360" Margin="0,0,20,20" Padding="16"
+              HorizontalAlignment="Right" VerticalAlignment="Bottom"
+              CornerRadius="14" Background="{StaticResource Brush.PanelRaised}"
+              BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
+              BoxShadow="0 12 40 0 #80000000"
+              IsVisible="{Binding ShowCallDeclinedToast}">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="muted small" FontWeight="SemiBold"
+                     Foreground="{StaticResource Brush.Danger}" Text="Call declined" />
+          <DockPanel LastChildFill="True">
+            <c:Avatar DockPanel.Dock="Left" Width="40" Height="40" Margin="0,0,12,0"
+                      DisplayName="{Binding PendingCallDeclined.PeerName}" />
+            <StackPanel Spacing="2" VerticalAlignment="Center">
+              <TextBlock FontWeight="SemiBold" TextWrapping="Wrap"
+                         Text="{Binding PendingCallDeclined.Message}" />
+              <TextBlock Classes="muted small" Text="They declined the incoming call." />
+            </StackPanel>
+          </DockPanel>
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+            <Button Classes="ghost" MinWidth="88" Content="Dismiss"
+                    Command="{Binding DismissCallDeclinedCommand}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
       <!-- Incoming call — answer from any section -->
       <Border ZIndex="40" Background="#CC050D16" IsVisible="{Binding ShowIncomingCall}">
         <Border Width="420" Padding="28" CornerRadius="16"
@@ -251,7 +473,8 @@
           <StackPanel Spacing="18">
             <TextBlock Classes="muted small" HorizontalAlignment="Center" Text="Incoming call" />
             <c:Avatar Width="72" Height="72" HorizontalAlignment="Center"
-                      DisplayName="{Binding Calls.ActivePeerName}" />
+                      DisplayName="{Binding Calls.ActivePeerName}"
+                      Photo="{Binding Calls.ActivePeerPerson.Photo}" />
             <StackPanel Spacing="4" HorizontalAlignment="Center">
               <TextBlock Classes="h1" FontSize="28" HorizontalAlignment="Center"
                          Text="{Binding Calls.ActivePeerName}" />

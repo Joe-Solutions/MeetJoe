@@ -85,6 +85,9 @@ public static class CallHubMethods
     public const string Answer = "Answer";
     public const string Decline = "Decline";
     public const string HangUp = "HangUp";
+
+    /// <summary>Client → server. Args: callId, muted. Broadcasts mic mute state to everyone on the call.</summary>
+    public const string SetMicMuted = "SetMicMuted";
 }
 
 public static class CallHubEvents
@@ -94,6 +97,9 @@ public static class CallHubEvents
 
     /// <summary>Server → client. Payload: <see cref="CallDto"/>.</summary>
     public const string CallUpdated = "CallUpdated";
+
+    /// <summary>Server → client. Args: callId, userId, muted.</summary>
+    public const string MicMuted = "MicMuted";
 }
 
 public static class NotificationHubEvents

@@ -610,6 +610,8 @@ public class FormattingTests
     [InlineData("Ana Reyes", "AR")]
     [InlineData("ana", "A")]
     [InlineData("  Mary  Jane   Watson ", "MW")]
+    [InlineData("Test Account Three (you)", "TT")]
+    [InlineData("Test Account Three (You)", "TT")]
     [InlineData("", "?")]
     [InlineData(null, "?")]
     public void Initials_come_from_the_first_and_last_names(string? name, string expected) =>

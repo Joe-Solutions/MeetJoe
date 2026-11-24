@@ -29,7 +29,12 @@ public partial class ShellViewModel : ViewModelBase
     private readonly SessionContext _context;
 
     public ShellViewModel(
-        SessionContext context, MeDto me, AppConfig config, Func<Task> signOut, Func<Task> onLeftOrganization)
+        SessionContext context,
+        MeDto me,
+        AppConfig config,
+        Func<Task> signOut,
+        Func<Task> onLeftOrganization,
+        IAppUpdateService? updates = null)
     {
         _context = context;
 
@@ -38,7 +43,7 @@ public partial class ShellViewModel : ViewModelBase
         Workspaces = new WorkspacesViewModel(context);
         Calendar = new CalendarViewModel(context);
         Files = new FilesViewModel(context);
-        Settings = new SettingsViewModel(context, me, config, signOut, onLeftOrganization);
+        Settings = new SettingsViewModel(context, me, config, signOut, onLeftOrganization, updates);
 
         Calls = new CallsViewModel(context);
 
@@ -63,12 +68,14 @@ public partial class ShellViewModel : ViewModelBase
         _isConnected = true;
 
         Activity.UnreadChanged += () => _activityItem.Badge = Activity.UnreadCount;
+        Activity.IncomingMeetingInvite += OnIncomingMeetingInvite;
         Chat.UnreadChanged += () => _chatItem.Badge = Chat.UnreadTotal;
         Calls.IncomingChanged += () =>
         {
             _callsItem.Badge = Calls.HasIncoming ? 1 : 0;
             OnPropertyChanged(nameof(ShowIncomingCall));
         };
+        Calls.CallDeclined += OnCallDeclined;
         Calls.CallChromeChanged += OnCallChromeChanged;
         Chat.StartCallHandler = async conversationId =>
         {
@@ -115,6 +122,20 @@ public partial class ShellViewModel : ViewModelBase
     private ViewModelBase _current;
 
     [ObservableProperty] private bool _isConnected;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowMeetingInviteToast))]
+    private MeetingInvitePrompt? _pendingMeetingInvite;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowCallDeclinedToast))]
+    private CallDeclinedNotice? _pendingCallDeclined;
+
+    /// <summary>Bottom-right toast when someone invites the user into a meeting.</summary>
+    public bool ShowMeetingInviteToast => PendingMeetingInvite is not null;
+
+    /// <summary>Bottom-right toast when a callee declines an outgoing ring.</summary>
+    public bool ShowCallDeclinedToast => PendingCallDeclined is not null;
 
     /// <summary>A reminder, on every other section, that the user is still in a meeting.</summary>
     public bool ShowMeetingBanner => Calendar.IsInMeeting && !ReferenceEquals(Current, Calendar);
@@ -179,6 +200,46 @@ public partial class ShellViewModel : ViewModelBase
 
     [RelayCommand]
     private void ReturnToCall() => Calls.ExpandStageCommand.Execute(null);
+
+    [RelayCommand]
+    private void DismissMeetingInvite()
+    {
+        var prompt = PendingMeetingInvite;
+        PendingMeetingInvite = null;
+        if (prompt is null) return;
+        var item = Activity.Items.FirstOrDefault(i => i.Id == prompt.ActivityId);
+        if (item is not null && item.IsUnread && Activity.MarkReadCommand.CanExecute(item))
+            Activity.MarkReadCommand.Execute(item);
+    }
+
+    [RelayCommand]
+    private async Task JoinMeetingInviteAsync()
+    {
+        var prompt = PendingMeetingInvite;
+        if (prompt is null) return;
+
+        PendingMeetingInvite = null;
+        var item = Activity.Items.FirstOrDefault(i => i.Id == prompt.ActivityId);
+        if (item is not null && item.IsUnread && Activity.MarkReadCommand.CanExecute(item))
+            Activity.MarkReadCommand.Execute(item);
+
+        Navigate(_calendarItem);
+        await Calendar.JoinFromInviteAsync(prompt.MeetingId);
+    }
+
+    private void OnIncomingMeetingInvite(MeetingInvitePrompt prompt)
+    {
+        // Newest invite wins; keep a single toast so the corner stays uncluttered.
+        PendingMeetingInvite = prompt;
+    }
+
+    [RelayCommand]
+    private void DismissCallDeclined() => PendingCallDeclined = null;
+
+    private void OnCallDeclined(CallDeclinedNotice notice)
+    {
+        PendingCallDeclined = notice;
+    }
 
     private void OnCallChromeChanged()
     {

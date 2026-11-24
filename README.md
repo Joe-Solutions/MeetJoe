@@ -76,6 +76,12 @@ dotnet run --project src/MeetJoe.Desktop
 # MEETJOE_API_URL=http://localhost:5080
 ```
 
+Installed builds auto-update via **semver + Velopack** (delta packages from the API). See [docs/DESKTOP_UPDATES.md](docs/DESKTOP_UPDATES.md). Publish a release with:
+
+```bash
+./scripts/pack-desktop-update.sh 0.2.0 osx-arm64
+```
+
 ### Tests
 
 ```bash

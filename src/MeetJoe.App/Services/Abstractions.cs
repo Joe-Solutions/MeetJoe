@@ -53,6 +53,9 @@ public interface IMeetJoeApi
 
     Task<MeDto> GetMeAsync(CancellationToken ct = default);
     Task<MeDto> UpdateProfileAsync(UpdateProfileRequest request, CancellationToken ct = default);
+    Task<MeDto> UploadAvatarAsync(string fileName, Stream content, CancellationToken ct = default);
+    Task<MeDto> ClearAvatarAsync(CancellationToken ct = default);
+    Task<Stream> DownloadAvatarAsync(Guid userId, CancellationToken ct = default);
 
     Task<IReadOnlyList<OrganizationDto>> GetOrganizationsAsync(CancellationToken ct = default);
     Task<OrganizationDto> CreateOrganizationAsync(string name, CancellationToken ct = default);
@@ -134,6 +137,8 @@ public interface IRealtimeClient
     event Action<Guid, Guid, bool>? HandRaised;
     event Action<CallDto>? IncomingCall;
     event Action<CallDto>? CallUpdated;
+    /// <summary>Args: callId, userId, muted.</summary>
+    event Action<Guid, Guid, bool>? CallMicMuted;
     event Action? CallsChanged;
 
     /// <summary>True when connected, false while reconnecting. A change to true means events may have been missed.</summary>
@@ -159,6 +164,7 @@ public interface IRealtimeClient
     Task<CallJoinDto> AnswerCallAsync(Guid callId);
     Task DeclineCallAsync(Guid callId);
     Task HangUpCallAsync(Guid callId);
+    Task SetCallMicMutedAsync(Guid callId, bool muted);
 }
 
 public sealed record PickedFile(string Name, Func<Task<Stream>> OpenReadAsync);
@@ -175,6 +181,9 @@ public interface IPlatformServices
 
     /// <summary>Shows a modal yes/no confirmation. Returns true when the user confirms.</summary>
     Task<bool> ConfirmAsync(string title, string message, string confirmLabel = "Confirm", string cancelLabel = "Cancel");
+
+    /// <summary>Shows a modal notice with a single dismiss action.</summary>
+    Task AlertAsync(string title, string message, string okLabel = "OK");
 
     /// <summary>Shows an image full-window with a close control; dismisses when the user closes it.</summary>
     Task ShowImageAsync(Avalonia.Media.Imaging.Bitmap image);

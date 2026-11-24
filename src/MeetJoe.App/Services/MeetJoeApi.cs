@@ -32,6 +32,38 @@ public sealed class MeetJoeApi(HttpClient http) : IMeetJoeApi
     public Task<MeDto> UpdateProfileAsync(UpdateProfileRequest request, CancellationToken ct = default) =>
         SendAsync<MeDto>(HttpMethod.Put, "api/me", request, ct);
 
+    public async Task<MeDto> UploadAvatarAsync(string fileName, Stream content, CancellationToken ct = default)
+    {
+        await using var buffer = new MemoryStream();
+        await content.CopyToAsync(buffer, ct);
+        buffer.Position = 0;
+        var contentType = FileTypes.ResolveContentType(fileName, buffer);
+        buffer.Position = 0;
+
+        using var form = new MultipartFormDataContent();
+        var file = new StreamContent(buffer);
+        file.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        form.Add(file, "file", fileName);
+
+        using var response = await http.PostAsync("api/me/avatar", form, ct);
+        await EnsureSuccessAsync(response, ct);
+        return await ReadAsync<MeDto>(response, ct);
+    }
+
+    public Task<MeDto> ClearAvatarAsync(CancellationToken ct = default) =>
+        SendAsync<MeDto>(HttpMethod.Delete, "api/me/avatar", null, ct);
+
+    public async Task<Stream> DownloadAvatarAsync(Guid userId, CancellationToken ct = default)
+    {
+        using var response = await http.GetAsync(
+            $"api/users/{userId:D}/avatar", HttpCompletionOption.ResponseHeadersRead, ct);
+        await EnsureSuccessAsync(response, ct);
+        var copy = new MemoryStream();
+        await response.Content.CopyToAsync(copy, ct);
+        copy.Position = 0;
+        return copy;
+    }
+
     public Task<IReadOnlyList<OrganizationDto>> GetOrganizationsAsync(CancellationToken ct = default) =>
         GetAsync<IReadOnlyList<OrganizationDto>>("api/orgs", ct);
 

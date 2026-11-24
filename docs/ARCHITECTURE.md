@@ -12,7 +12,7 @@
 | Media data plane | **LiveKit** SFU (**WebRTC**); coturn STUN/TURN when leaving localhost |
 | Data | PostgreSQL (EF Core), Redis, MinIO (S3-compatible; Chainguard image locally) |
 | Local infra | Docker Compose (`deploy/`); Postgres host port **5433**, API **5080** |
-| Packaging (later) | MSIX/WiX (Windows), `.app`/DMG (macOS) |
+| Packaging / updates | Velopack installers + semver auto-update feed on the API (`/updates/desktop/{rid}`) |
 | Early production hosting | Single small AWS EC2 (target ≤ $20/month total) |
 
 ### WebRTC vs EasyRTC

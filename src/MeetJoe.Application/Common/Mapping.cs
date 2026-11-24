@@ -6,6 +6,13 @@ namespace MeetJoe.Application.Common;
 
 internal static class Mapping
 {
+    /// <summary>Relative API path clients resolve against the MeetJoe API base.</summary>
+    public static string? AvatarUrl(Guid userId, string? storageKey) =>
+        storageKey is null ? null : $"api/users/{userId:D}/avatar";
+
+    public static Contract.UserSummaryDto ToSummary(this User user) =>
+        new(user.Id, user.DisplayName, AvatarUrl(user.Id, user.AvatarStorageKey));
+
     public static Contract.OrgRole ToContract(this OrgRole role) => role switch
     {
         OrgRole.Owner => Contract.OrgRole.Owner,

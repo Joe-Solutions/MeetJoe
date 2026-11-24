@@ -29,10 +29,20 @@ public partial class ActivityItemViewModel(ActivityDto item, PeopleStore people)
     [ObservableProperty] private bool _isUnread = item.IsUnread;
 }
 
+/// <summary>Payload for a shell toast when someone invites the user to a meeting.</summary>
+public sealed record MeetingInvitePrompt(
+    Guid ActivityId,
+    Guid MeetingId,
+    string Summary,
+    string ActorName,
+    string TimeText);
+
 /// <summary>Mentions, replies, and reactions aimed at the signed-in user.</summary>
 public partial class ActivityViewModel : ViewModelBase
 {
     private readonly SessionContext _context;
+    private readonly HashSet<Guid> _knownMeetingInviteIds = [];
+    private bool _meetingInvitesSeeded;
 
     public ActivityViewModel(SessionContext context)
     {
@@ -57,6 +67,9 @@ public partial class ActivityViewModel : ViewModelBase
 
     public event Action? UnreadChanged;
 
+    /// <summary>Fired for newly arrived unread meeting invites (not historical ones from first load).</summary>
+    public event Action<MeetingInvitePrompt>? IncomingMeetingInvite;
+
     public void Detach() => _context.Realtime.ActivityChanged -= OnActivityChanged;
 
     public async Task LoadAsync()
@@ -70,6 +83,7 @@ public partial class ActivityViewModel : ViewModelBase
             foreach (var item in feed) Items.Add(new ActivityItemViewModel(item, _context.People));
             UnreadCount = Items.Count(i => i.IsUnread);
             UnreadChanged?.Invoke();
+            DetectNewMeetingInvites();
         }
         catch (Exception ex)
         {
@@ -79,6 +93,31 @@ public partial class ActivityViewModel : ViewModelBase
         {
             IsLoading = false;
             OnPropertyChanged(nameof(IsEmpty));
+        }
+    }
+
+    private void DetectNewMeetingInvites()
+    {
+        var invites = Items
+            .Where(i => i.Kind == ActivityKind.MeetingInvite && i.MeetingId is not null)
+            .ToList();
+
+        if (!_meetingInvitesSeeded)
+        {
+            foreach (var item in invites) _knownMeetingInviteIds.Add(item.Id);
+            _meetingInvitesSeeded = true;
+            return;
+        }
+
+        foreach (var item in invites.Where(i => i.IsUnread))
+        {
+            if (!_knownMeetingInviteIds.Add(item.Id)) continue;
+            IncomingMeetingInvite?.Invoke(new MeetingInvitePrompt(
+                item.Id,
+                item.MeetingId!.Value,
+                item.Summary,
+                item.Actor.DisplayName,
+                item.TimeText));
         }
     }
 

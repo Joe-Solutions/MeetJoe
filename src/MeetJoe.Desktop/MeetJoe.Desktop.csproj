@@ -8,16 +8,36 @@
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <!-- macOS camera / mic prompts for in-app LiveKit WebView -->
     <ApplicationId>com.joesolutions.meetjoe</ApplicationId>
+    <ApplicationIcon>Assets\MeetJoe.ico</ApplicationIcon>
+  </PropertyGroup>
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('osx'))">
+    <DefineConstants>$(DefineConstants);OSX</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\MeetJoe.App\MeetJoe.App.csproj" />
+    <None Include="Assets\MeetJoe.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Assets\MeetJoe-256.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Assets\MeetJoe.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('osx'))">
     <None Include="Info.plist" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Assets\AppIcon.icns" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Typed WKWebView APIs for camera/mic permission grant -->
+    <Reference Include="Avalonia.WebView.MacCatalyst">
+      <HintPath>$(NuGetPackageRoot)webview.avalonia.maccatalyst\11.0.0.1\lib\netstandard2.0\Avalonia.WebView.MacCatalyst.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Xamarin.Mac">
+      <HintPath>$(NuGetPackageRoot)webview.avalonia.maccatalyst\11.0.0.1\lib\netstandard2.0\Xamarin.Mac.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Avalonia.Diagnostics" Condition="'$(Configuration)' == 'Debug'" />
     <PackageReference Include="WebView.Avalonia.Desktop" />
+    <PackageReference Include="Velopack" />
+    <PackageReference Include="NuGet.Versioning" />
   </ItemGroup>
+  <Import Project="build\CreateMacAppBundle.targets" Condition="$([MSBuild]::IsOSPlatform('osx'))" />
 </Project>

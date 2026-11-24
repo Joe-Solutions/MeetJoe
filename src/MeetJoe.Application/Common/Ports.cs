@@ -51,6 +51,7 @@ public interface IRealtimePublisher
     Task IncomingCallAsync(IReadOnlyCollection<Guid> userIds, CallDto call, CancellationToken ct = default);
     Task CallUpdatedAsync(IReadOnlyCollection<Guid> userIds, CallDto call, CancellationToken ct = default);
     Task CallsChangedAsync(IReadOnlyCollection<Guid> userIds, CancellationToken ct = default);
+    Task CallMicMutedAsync(IReadOnlyCollection<Guid> userIds, Guid callId, Guid userId, bool muted, CancellationToken ct = default);
 }
 
 /// <summary>Tracks which users have at least one live realtime connection.</summary>

@@ -6,16 +6,16 @@
   <title>MeetJoe · Meeting</title>
   <style>
     :root {
-      --canvas: #0A1624;
       --stage: #050D16;
       --bar: #141A22;
       --bar-hover: #1E2733;
+      --tile: #1B2430;
+      --tile-border: #2A3544;
       --text: #F3F6F8;
       --muted: #9AA7B5;
       --accent: #1EC8C8;
       --danger: #C43B3B;
       --danger-hover: #D94A4A;
-      --pip-border: #2A3544;
     }
     * { box-sizing: border-box; }
     html, body {
@@ -26,7 +26,6 @@
     }
     body { display: flex; flex-direction: column; }
 
-    /* —— Top control bar (Teams-like) —— */
     #toolbar {
       display: grid;
       grid-template-columns: 1fr auto 1fr;
@@ -54,7 +53,7 @@
     .timer svg { width: 14px; height: 14px; stroke: var(--muted); fill: none; stroke-width: 1.7; }
 
     .ctrl {
-      appearance: none; border: 0; background: transparent; color: var(--text);
+      appearance: none; border: 0; background: transparent;
       width: 64px; padding: 6px 4px 4px; border-radius: 8px; cursor: pointer;
       display: flex; flex-direction: column; align-items: center; gap: 4px;
       font: inherit; font-size: 11px; font-weight: 600; color: var(--muted);
@@ -63,15 +62,13 @@
     .ctrl .icon {
       width: 36px; height: 36px; border-radius: 8px;
       display: grid; place-items: center;
-      background: #1B2430;
+      background: #1B2430; color: var(--text);
     }
     .ctrl:hover .icon { background: #243041; }
     .ctrl.off .icon { background: #3A4452; }
     .ctrl.off { color: var(--muted); }
     .ctrl.active .icon { background: var(--accent); color: #04262B; }
     .ctrl svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-    .ctrl .icon { color: var(--text); }
-    .ctrl.active .icon { color: #04262B; }
     .ctrl .badge {
       position: absolute; top: 2px; right: 10px;
       min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
@@ -95,60 +92,120 @@
     }
     #banner.show { display: block; }
 
-    /* —— Stage —— */
+    /* —— Meet-style participant grid (card tiles, never full-bleed video) —— */
     #stage {
-      position: relative; flex: 1; min-height: 0; background: var(--stage);
+      position: relative; flex: 1; min-height: 0;
+      display: flex; flex-direction: column;
+      background: var(--stage);
+      padding: 16px;
     }
-    #primary {
-      position: absolute; inset: 0; display: grid; place-items: center;
-      background: #000;
-    }
-    #primary video, #primary .placeholder {
-      width: 100%; height: 100%; object-fit: cover;
-    }
-    #primary .placeholder {
-      display: grid; place-items: center;
-      background: radial-gradient(ellipse at center, #122033 0%, #050D16 70%);
-      font-size: 56px; font-weight: 700; color: var(--muted); letter-spacing: -0.02em;
-    }
-    #primary-name {
-      position: absolute; left: 16px; bottom: 16px;
-      font-size: 14px; font-weight: 600;
-      text-shadow: 0 1px 6px rgba(0,0,0,.8);
-      max-width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      pointer-events: none;
-    }
+    html.embed #stage { min-height: 100%; height: 100%; }
     #status {
       position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
       padding: 6px 12px; border-radius: 999px;
       background: rgba(10, 22, 36, 0.72); color: var(--muted);
-      font-size: 12px; font-weight: 600; pointer-events: none;
+      font-size: 12px; font-weight: 600; pointer-events: none; z-index: 2;
     }
-    #status.live { color: var(--accent); }
-    #status.error { color: #FF8A7A; }
+    #status.live { color: var(--accent); opacity: 0.85; }
+    #status.error { color: #FF8A7A; opacity: 1; }
 
-    /* Self-view PiP */
-    #pip {
-      position: absolute; right: 16px; bottom: 16px;
-      width: min(240px, 32vw); aspect-ratio: 16 / 10;
-      border-radius: 10px; overflow: hidden;
-      border: 1px solid var(--pip-border);
-      background: #0B1522; box-shadow: 0 8px 28px rgba(0,0,0,.45);
-      z-index: 3;
+    #grid {
+      flex: 1; min-height: 0;
+      width: 100%;
+      display: grid;
+      gap: 12px;
+      align-content: center;
+      justify-content: center;
+      justify-items: center;
+      align-items: center;
+      grid-template-columns: repeat(var(--cols, 1), minmax(160px, 420px));
+      grid-auto-rows: auto;
+      padding: 8px;
     }
-    #pip video, #pip .placeholder {
-      width: 100%; height: 100%; object-fit: cover;
-    }
-    #pip .placeholder {
+    #grid[data-count="0"] {
       display: grid; place-items: center;
-      font-size: 22px; font-weight: 700; color: var(--muted);
-      background: #122033;
     }
-    #pip .pip-label {
-      position: absolute; left: 8px; bottom: 6px;
-      font-size: 11px; font-weight: 600; text-shadow: 0 1px 4px #000;
+    #grid[data-count="0"]::after {
+      content: "Connecting…";
+      color: var(--muted); font-size: 15px; font-weight: 600;
     }
-    #pip.hidden { display: none; }
+
+    .tile {
+      position: relative;
+      width: 100%;
+      max-width: 420px;
+      aspect-ratio: 16 / 10;
+      min-height: 160px;
+      max-height: 420px;
+      border-radius: 16px;
+      overflow: hidden;
+      background: var(--tile);
+      border: 1px solid var(--tile-border);
+      box-shadow: 0 2px 12px rgba(0,0,0,.28);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .tile.speaking { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+    .tile video {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      object-position: center;
+      background: #0a121c;
+      z-index: 0;
+    }
+    .tile video.hidden { display: none !important; }
+    .tile-avatar {
+      position: relative;
+      width: min(112px, 28%);
+      aspect-ratio: 1;
+      border-radius: 50%;
+      display: grid; place-items: center;
+      background: radial-gradient(circle at 30% 25%, #3A5A78, #1A3852 70%);
+      font-size: clamp(22px, 4vw, 40px);
+      font-weight: 700; color: var(--text);
+      letter-spacing: -0.02em;
+      z-index: 1;
+      box-shadow: 0 0 0 0 transparent;
+    }
+    .tile.speaking .tile-avatar {
+      animation: speak-pulse 1.1s ease-in-out infinite;
+    }
+    @keyframes speak-pulse {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(30, 200, 200, 0.55), 0 0 0 3px var(--accent);
+        transform: scale(1);
+      }
+      50% {
+        box-shadow: 0 0 0 14px rgba(30, 200, 200, 0), 0 0 0 3px var(--accent);
+        transform: scale(1.04);
+      }
+    }
+    .tile.has-video .tile-avatar { display: none; }
+    .tile-name {
+      position: absolute; left: 12px; bottom: 10px; z-index: 3;
+      max-width: calc(100% - 48px);
+      font-size: 13px; font-weight: 600;
+      text-shadow: 0 1px 6px rgba(0,0,0,.85);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      pointer-events: none;
+    }
+    .tile-live {
+      position: absolute; top: 10px; left: 10px; z-index: 3;
+      padding: 3px 8px; border-radius: 8px;
+      background: rgba(30, 200, 200, 0.18); color: var(--accent);
+      font-size: 11px; font-weight: 700;
+    }
+    .tile-mic {
+      position: absolute; top: 10px; right: 10px; z-index: 3;
+      width: 28px; height: 28px; border-radius: 50%;
+      display: none; place-items: center;
+      background: #C43B3B;
+    }
+    .tile-mic.muted { display: grid; }
+    .tile-mic svg {
+      width: 14px; height: 14px; stroke: #FF8A7A; fill: none; stroke-width: 1.8;
+      stroke-linecap: round; stroke-linejoin: round;
+    }
 
     #roster {
       display: none; position: absolute; inset: 0; z-index: 4;
@@ -167,8 +224,6 @@
       display: grid; place-items: center;
       background: #1A3852; font-weight: 700; font-size: 13px;
     }
-
-    .speaking #primary, .speaking#pip { outline: 2px solid var(--accent); outline-offset: -2px; }
   </style>
 </head>
 <body>
@@ -230,15 +285,7 @@
 
   <div id="stage">
     <div id="status">Connecting…</div>
-    <div id="primary">
-      <div class="placeholder" id="primary-ph">?</div>
-    </div>
-    <div id="primary-name"></div>
-
-    <div id="pip">
-      <div class="placeholder" id="pip-ph">You</div>
-      <div class="pip-label">You</div>
-    </div>
+    <div id="grid" data-count="0" style="--cols: 1"></div>
 
     <aside id="roster" aria-label="People in this call">
       <h2>People</h2>
@@ -249,27 +296,40 @@
   <script src="livekit-client.umd.min.js"></script>
   <script>
     const LivekitClient = window.LivekitClient;
-    // Prefer query string; keep hash as a fallback for older join links.
     const params = new URLSearchParams(
       location.search ? location.search.slice(1) : location.hash.replace(/^#/, ""));
     const url = params.get("u");
     const token = params.get("t");
+    const embedded = params.get("embed") === "1";
+    if (embedded) {
+      document.documentElement.classList.add("embed");
+      const toolbar = document.getElementById("toolbar");
+      if (toolbar) toolbar.style.display = "none";
+      // Fill the Avalonia media cell; tiles stay card-sized inside #grid.
+      const stage = document.getElementById("stage");
+      if (stage) {
+        stage.style.flex = "1";
+        stage.style.height = "100%";
+      }
+    }
 
     const statusEl = document.getElementById("status");
     const banner = document.getElementById("banner");
-    const primary = document.getElementById("primary");
-    const primaryPh = document.getElementById("primary-ph");
-    const primaryName = document.getElementById("primary-name");
-    const pip = document.getElementById("pip");
-    const pipPh = document.getElementById("pip-ph");
+    const grid = document.getElementById("grid");
     const timerEl = document.getElementById("timer");
     const peopleCount = document.getElementById("people-count");
     const roster = document.getElementById("roster");
     const rosterList = document.getElementById("roster-list");
 
-    /** @type {Map<string, { name: string, isLocal: boolean, hasVideo: boolean }>} */
+    const MIC_SVG =
+      '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+      '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>' +
+      '<path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/>' +
+      '<line x1="8" y1="23" x2="16" y2="23"/><line x1="4" y1="4" x2="20" y2="20"/>' +
+      "</svg>";
+
+    /** @type {Map<string, { name: string, isLocal: boolean, hasVideo: boolean, muted: boolean, el: HTMLElement|null }>} */
     const people = new Map();
-    let primaryId = null;
     let localId = null;
     let startedAt = null;
     let timerHandle = null;
@@ -277,8 +337,6 @@
     function setStatus(text, kind) {
       statusEl.textContent = text;
       statusEl.className = kind || "";
-      if (kind === "live") statusEl.style.opacity = "0";
-      else statusEl.style.opacity = "1";
     }
 
     function showBanner(text) {
@@ -287,9 +345,16 @@
     }
 
     function initials(name) {
-      return (name || "?")
-        .split(/\s+/).filter(Boolean).slice(0, 2)
-        .map(p => p[0].toUpperCase()).join("") || "?";
+      const parts = String(name || "")
+        .replace(/\([^)]*\)/g, " ")
+        .split(/\s+/)
+        .map(p => p.trim())
+        .filter(p => /[A-Za-z0-9]/.test(p));
+      if (parts.length === 0) return "?";
+      const first = (parts[0].match(/[A-Za-z0-9]/) || ["?"])[0].toUpperCase();
+      if (parts.length === 1) return first;
+      const last = (parts[parts.length - 1].match(/[A-Za-z0-9]/) || ["?"])[0].toUpperCase();
+      return first + last;
     }
 
     function formatDuration(ms) {
@@ -309,24 +374,66 @@
       }, 1000);
     }
 
-    function upsertPerson(id, name, isLocal) {
-      const existing = people.get(id) || { name, isLocal, hasVideo: false };
-      existing.name = name || existing.name;
-      existing.isLocal = isLocal;
-      people.set(id, existing);
-      refreshPeopleUi();
-      if (!primaryId && !isLocal) setPrimary(id);
-      if (!primaryId && isLocal && people.size === 1) setPrimary(id);
+    function columnsFor(count) {
+      if (count <= 1) return 1;
+      if (count <= 2) return 2;
+      if (count <= 4) return 2;
+      if (count <= 9) return 3;
+      return 4;
     }
 
-    function removePerson(id) {
-      people.delete(id);
-      if (primaryId === id) {
-        primaryId = null;
-        const next = [...people.keys()].find(k => k !== localId) || localId;
-        if (next) setPrimary(next);
+    function ensureTile(id) {
+      let info = people.get(id);
+      if (!info) return null;
+      if (info.el && info.el.isConnected) return info.el;
+
+      const tile = document.createElement("div");
+      tile.className = "tile";
+      tile.dataset.id = id;
+      tile.innerHTML =
+        `<video class="hidden" playsinline autoplay muted></video>` +
+        `<div class="tile-avatar">${initials(info.name)}</div>` +
+        `<div class="tile-live">Live</div>` +
+        `<div class="tile-name"></div>` +
+        `<div class="tile-mic">${MIC_SVG}</div>`;
+      info.el = tile;
+      grid.appendChild(tile);
+      syncTile(id);
+      return tile;
+    }
+
+    function syncTile(id) {
+      const info = people.get(id);
+      if (!info?.el) return;
+      const tile = info.el;
+      const avatar = tile.querySelector(".tile-avatar");
+      const nameEl = tile.querySelector(".tile-name");
+      const micEl = tile.querySelector(".tile-mic");
+      const video = tile.querySelector("video");
+      const label = info.isLocal ? (info.name ? `${info.name} (You)` : "You") : (info.name || "Guest");
+      nameEl.textContent = label;
+      avatar.textContent = initials(info.name || (info.isLocal ? "You" : "?"));
+      tile.classList.toggle("has-video", info.hasVideo);
+      micEl.classList.toggle("muted", info.muted);
+      if (video) {
+        video.classList.toggle("hidden", !info.hasVideo);
+        // Local preview must stay muted to avoid echo; keep it inside the tile only.
+        video.muted = !!info.isLocal;
+        video.playsInline = true;
+        video.disablePictureInPicture = true;
+        video.setAttribute("playsinline", "true");
+        video.setAttribute("webkit-playsinline", "true");
       }
-      refreshPeopleUi();
+    }
+
+    function layoutGrid() {
+      const count = people.size;
+      grid.dataset.count = String(count);
+      grid.style.setProperty("--cols", String(columnsFor(count)));
+      // Keep DOM order: local last (Meet-like “You” often at end), remotes first by join.
+      const remotes = [...people.entries()].filter(([, p]) => !p.isLocal);
+      const locals = [...people.entries()].filter(([, p]) => p.isLocal);
+      for (const [id] of [...remotes, ...locals]) ensureTile(id);
     }
 
     function refreshPeopleUi() {
@@ -342,26 +449,41 @@
           `<div>${p.name}${p.isLocal ? " (you)" : ""}</div>`;
         rosterList.appendChild(row);
       }
+      layoutGrid();
     }
 
-    function ensureVideo(container, isLocal) {
-      let video = container.querySelector("video");
+    function upsertPerson(id, name, isLocal) {
+      const existing = people.get(id) || {
+        name, isLocal, hasVideo: false, muted: isLocal ? false : true, el: null,
+      };
+      existing.name = name || existing.name;
+      existing.isLocal = isLocal;
+      people.set(id, existing);
+      refreshPeopleUi();
+    }
+
+    function removePerson(id) {
+      const info = people.get(id);
+      if (info?.el) info.el.remove();
+      people.delete(id);
+      refreshPeopleUi();
+    }
+
+    function ensureVideo(tile, isLocal) {
+      let video = tile.querySelector("video");
       if (!video) {
         video = document.createElement("video");
         video.autoplay = true;
         video.playsInline = true;
-        video.muted = isLocal;
-        container.insertBefore(video, container.firstChild);
+        video.setAttribute("playsinline", "true");
+        video.setAttribute("webkit-playsinline", "true");
+        video.disablePictureInPicture = true;
+        tile.insertBefore(video, tile.firstChild);
       }
+      // Never let LiveKit create a detached/full-screen video element.
+      video.muted = !!isLocal;
+      video.classList.remove("hidden");
       return video;
-    }
-
-    function setPrimary(id) {
-      primaryId = id;
-      const info = people.get(id);
-      primaryName.textContent = info ? (info.isLocal ? `${info.name} (you)` : info.name) : "";
-      primaryPh.textContent = initials(info?.name);
-      // Move existing videos: keep tracks attached where they are via track.attach below.
     }
 
     function attachTrack(identity, name, track, isLocal) {
@@ -369,65 +491,183 @@
       if (isLocal) localId = identity;
 
       if (track.kind === "audio" && !isLocal) {
+        // Re-attach: drop any prior element for this identity.
+        document.querySelectorAll("audio[data-meetjoe-audio]").forEach(el => {
+          if (el.getAttribute("data-meetjoe-audio") === identity) {
+            try { el.remove(); } catch (_) {}
+          }
+        });
         const audio = track.attach();
         audio.autoplay = true;
+        audio.setAttribute("playsinline", "true");
+        audio.setAttribute("data-meetjoe-audio", identity);
+        audio.muted = false;
+        audio.volume = 1;
         document.body.appendChild(audio);
+        // WKWebView often needs an explicit play() after attach.
+        const tryPlay = () => {
+          const p = audio.play();
+          if (p && typeof p.catch === "function") {
+            p.catch(() => { ensureAudioPlayback(); });
+          }
+        };
+        tryPlay();
+        audio.addEventListener("canplay", tryPlay, { once: true });
+        ensureAudioPlayback();
+        const info = people.get(identity);
+        if (info) {
+          info.muted = !!track.isMuted;
+          syncTile(identity);
+        }
+        refreshMuteFromRoom();
         return;
       }
       if (track.kind !== "video") return;
 
       const info = people.get(identity);
-      if (info) info.hasVideo = true;
-
-      if (isLocal) {
-        pipPh.style.display = "none";
-        const video = ensureVideo(pip, true);
-        track.attach(video);
-        // If alone, also show on primary.
-        if (people.size === 1 || primaryId === identity) {
-          primaryPh.style.display = "none";
-          const main = ensureVideo(primary, true);
-          track.attach(main);
-          setPrimary(identity);
-        }
-        return;
-      }
-
-      // Remote → primary stage
-      setPrimary(identity);
-      primaryPh.style.display = "none";
-      const video = ensureVideo(primary, false);
+      if (!info) return;
+      info.hasVideo = true;
+      const tile = ensureTile(identity);
+      if (!tile) return;
+      const video = ensureVideo(tile, isLocal);
+      // Attach into the tile's <video> only — never use track.attach() without an element
+      // (that creates a free-floating full-screen video node).
+      track.detach();
       track.attach(video);
+      video.classList.remove("hidden");
+      const play = video.play();
+      if (play && typeof play.catch === "function") play.catch(() => {});
+      syncTile(identity);
+      layoutGrid();
     }
 
     function detachTrack(identity, track) {
       track.detach();
       if (track.kind !== "video") return;
       const info = people.get(identity);
-      if (info) info.hasVideo = false;
-
-      if (identity === localId) {
-        const video = pip.querySelector("video");
-        if (video && !video.srcObject?.getVideoTracks().length) {
-          video.remove();
-          pipPh.style.display = "";
-        }
+      if (!info) return;
+      info.hasVideo = false;
+      const video = info.el?.querySelector("video");
+      if (video) {
+        video.removeAttribute("src");
+        video.srcObject = null;
+        video.classList.add("hidden");
       }
-      if (identity === primaryId) {
-        const video = primary.querySelector("video");
-        if (video && !video.srcObject?.getVideoTracks().length) {
-          video.remove();
-          primaryPh.style.display = "";
-        }
+      syncTile(identity);
+    }
+
+    function reportMuteStates() {
+      const muted = [];
+      for (const [id, p] of people) {
+        if (p.muted) muted.push(id);
+      }
+      notifyHost("mutes:" + muted.join(","));
+    }
+
+    async function publishMuteState(muted) {
+      if (!activeRoom) return;
+      try {
+        const bytes = new TextEncoder().encode(JSON.stringify({ t: "mic", muted: !!muted }));
+        await activeRoom.localParticipant.publishData(bytes, { reliable: true });
+      } catch (err) {
+        console.error(err);
       }
     }
+
+    function audioPublicationsFor(participant) {
+      if (!participant) return [];
+      if (participant.audioTrackPublications)
+        return [...participant.audioTrackPublications.values()];
+      return [...participant.trackPublications.values()].filter(p => p.kind === "audio");
+    }
+
+    /** Sync mute badges from LiveKit publications, then push to the Avalonia host. */
+    function refreshMuteFromRoom() {
+      if (!activeRoom) return;
+      for (const [id, p] of people) {
+        if (p.isLocal) {
+          p.muted = !activeRoom.localParticipant.isMicrophoneEnabled;
+          syncTile(id);
+          continue;
+        }
+        const remote = activeRoom.remoteParticipants.get(id);
+        if (!remote) continue;
+        const pubs = audioPublicationsFor(remote);
+        if (pubs.length === 0) continue;
+        // Only treat as muted when every audio publication is explicitly muted.
+        // Do not use !pub.track — missing local attach must not mark others muted.
+        p.muted = pubs.every(pub => !!pub.isMuted);
+        syncTile(id);
+      }
+      reportMuteStates();
+    }
+
+    function notifyHost(msg) {
+      try {
+        if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === "function") {
+          window.chrome.webview.postMessage(msg);
+          return;
+        }
+      } catch (_) { /* Windows WebView2 */ }
+      try {
+        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.webview
+            && typeof window.webkit.messageHandlers.webview.postMessage === "function") {
+          window.webkit.messageHandlers.webview.postMessage(msg);
+          return;
+        }
+      } catch (_) { /* macOS WKWebView */ }
+      try {
+        if (window.external && typeof window.external.sendMessage === "function") {
+          window.external.sendMessage(msg);
+          return;
+        }
+      } catch (_) { /* Avalonia/Blazor bridge */ }
+      try {
+        if (typeof invokeCSharpAction === "function") invokeCSharpAction(msg);
+      } catch (_) { /* legacy */ }
+    }
+    window.meetjoeNotifyHost = notifyHost;
+
+    // Uncover as early as possible (before LiveKit connect / getUserMedia).
+    notifyHost("media-ready");
 
     function signalLeave() {
-      try {
-        if (typeof invokeCSharpAction === "function") invokeCSharpAction("leave");
-      } catch (_) { /* optional bridge */ }
+      notifyHost("leave");
       try { location.hash = "meetjoe-leave=" + Date.now(); } catch (_) { /* ignore */ }
     }
+
+    /** @type {import('livekit-client').Room | null} */
+    let activeRoom = null;
+    let audioUnlockAttempts = 0;
+
+    async function ensureAudioPlayback() {
+      const room = activeRoom;
+      if (!room) return false;
+      try {
+        if (typeof room.startAudio === "function") await room.startAudio();
+        document.querySelectorAll("audio[data-meetjoe-audio]").forEach(audio => {
+          audio.muted = false;
+          audio.volume = 1;
+          const p = audio.play();
+          if (p && typeof p.catch === "function") p.catch(() => {});
+        });
+        if (room.canPlaybackAudio === false) {
+          audioUnlockAttempts++;
+          if (audioUnlockAttempts <= 2) {
+            showBanner("Sound is blocked. Tap the mic or camera button once to enable audio.");
+            notifyHost("audio-blocked");
+          }
+          return false;
+        }
+        notifyHost("audio-ok");
+        return true;
+      } catch (err) {
+        console.error(err);
+        notifyHost("audio-blocked");
+        return false;
+      }
+    }
+    window.meetjoeEnsureAudio = ensureAudioPlayback;
 
     async function main() {
       if (!url || !token) {
@@ -441,6 +681,11 @@
       const room = new LivekitClient.Room({
         adaptiveStream: true,
         dynacast: true,
+        audioCaptureDefaults: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
         videoCaptureDefaults: {
           resolution: LivekitClient.VideoPresets.h720.resolution,
         },
@@ -449,21 +694,83 @@
           simulcast: true,
         },
       });
+      activeRoom = room;
 
       room
         .on(LivekitClient.RoomEvent.TrackSubscribed, (track, _pub, participant) => {
           attachTrack(participant.identity, participant.name || participant.identity, track, false);
         })
+        .on(LivekitClient.RoomEvent.LocalTrackPublished, (pub, participant) => {
+          if (pub.track)
+            attachTrack(participant.identity, participant.name || participant.identity, pub.track, true);
+        })
+        .on(LivekitClient.RoomEvent.LocalTrackUnpublished, (pub, participant) => {
+          if (pub.track) detachTrack(participant.identity, pub.track);
+          else if (pub.kind === "video") {
+            const info = people.get(participant.identity);
+            if (info) {
+              info.hasVideo = false;
+              syncTile(participant.identity);
+            }
+          }
+        })
         .on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, _pub, participant) => {
           detachTrack(participant.identity, track);
         })
+        .on(LivekitClient.RoomEvent.TrackMuted, (pub, participant) => {
+          if (pub.kind !== "audio") return;
+          const info = people.get(participant.identity);
+          if (info) { info.muted = true; syncTile(participant.identity); }
+          refreshMuteFromRoom();
+        })
+        .on(LivekitClient.RoomEvent.TrackUnmuted, (pub, participant) => {
+          if (pub.kind !== "audio") return;
+          const info = people.get(participant.identity);
+          if (info) { info.muted = false; syncTile(participant.identity); }
+          refreshMuteFromRoom();
+        })
+        .on(LivekitClient.RoomEvent.TrackPublished, (_pub, participant) => {
+          if (participant?.identity) refreshMuteFromRoom();
+        })
+        .on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
+          upsertPerson(participant.identity, participant.name || participant.identity, false);
+          // Tell the newcomer our current mic state.
+          publishMuteState(!room.localParticipant.isMicrophoneEnabled);
+          refreshMuteFromRoom();
+        })
         .on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
           removePerson(participant.identity);
+          reportMuteStates();
+        })
+        .on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
+          try {
+            const msg = JSON.parse(new TextDecoder().decode(payload));
+            if (msg?.t !== "mic" || !participant) return;
+            const info = people.get(participant.identity);
+            if (!info) {
+              upsertPerson(participant.identity, participant.name || participant.identity, false);
+            }
+            const row = people.get(participant.identity);
+            if (row) {
+              row.muted = !!msg.muted;
+              syncTile(participant.identity);
+            }
+            reportMuteStates();
+          } catch (_) { /* ignore non-JSON */ }
         })
         .on(LivekitClient.RoomEvent.ActiveSpeakersChanged, (speakers) => {
           const ids = new Set(speakers.map(s => s.identity));
-          primary.classList.toggle("speaking", primaryId && ids.has(primaryId));
-          pip.classList.toggle("speaking", localId && ids.has(localId));
+          for (const [id, p] of people) {
+            p.el?.classList.toggle("speaking", ids.has(id));
+          }
+          notifyHost("speakers:" + [...ids].join(","));
+        })
+        .on(LivekitClient.RoomEvent.AudioPlaybackStatusChanged, () => {
+          if (room.canPlaybackAudio) notifyHost("audio-ok");
+          else {
+            notifyHost("audio-blocked");
+            showBanner("Sound is blocked. Tap the mic or camera button once to enable audio.");
+          }
         })
         .on(LivekitClient.RoomEvent.Disconnected, () => {
           setStatus("Disconnected", "error");
@@ -471,32 +778,47 @@
         });
 
       try {
+        // Ask the Avalonia host to uncover this WebView before getUserMedia.
+        // Covered WKWebView on macOS fails mic/camera and plays no remote audio.
+        notifyHost("media-ready");
+        await new Promise(r => setTimeout(r, 450));
+
         await room.connect(url, token);
         const me = room.localParticipant;
         localId = me.identity;
         upsertPerson(me.identity, me.name || "You", true);
-        pipPh.textContent = initials(me.name || "You");
+        await ensureAudioPlayback();
 
         const micBtn = document.getElementById("mic");
         const camBtn = document.getElementById("cam");
 
-        // Enable mic/camera independently so a camera denial still allows talking.
         try {
           await me.setMicrophoneEnabled(true);
           micBtn.classList.toggle("off", false);
+          const info = people.get(me.identity);
+          if (info) { info.muted = false; syncTile(me.identity); }
+          notifyHost("mic-on");
+          await ensureAudioPlayback();
         } catch (micErr) {
           console.error(micErr);
           micBtn.classList.toggle("off", true);
-          showBanner("Microphone is blocked. Allow mic access for MeetJoe (System Settings → Privacy) and rejoin.");
+          const info = people.get(me.identity);
+          if (info) { info.muted = true; syncTile(me.identity); }
+          notifyHost("mic-off");
+          notifyHost("permission-mic");
+          showBanner("Microphone is blocked. Allow mic access for MeetJoe in System Settings, then rejoin.");
         }
         try {
           await me.setCameraEnabled(true);
           camBtn.classList.toggle("off", false);
+          notifyHost("camera-on");
         } catch (camErr) {
           console.error(camErr);
           camBtn.classList.toggle("off", true);
+          notifyHost("camera-off");
+          notifyHost("permission-camera");
           const prior = banner.classList.contains("show") ? banner.textContent + " " : "";
-          showBanner(prior + "Camera is blocked; audio can still work.");
+          showBanner(prior + "Camera is blocked. Allow camera access for MeetJoe in System Settings.");
         }
 
         for (const pub of me.trackPublications.values()) {
@@ -505,12 +827,20 @@
         for (const participant of room.remoteParticipants.values()) {
           upsertPerson(participant.identity, participant.name || participant.identity, false);
           for (const pub of participant.trackPublications.values()) {
-            if (pub.isSubscribed && pub.track)
+            if (pub.track)
               attachTrack(participant.identity, participant.name || participant.identity, pub.track, false);
+            else if (pub.kind === "audio" || pub.kind === "video") {
+              try { await pub.setSubscribed(true); } catch (_) { /* older clients */ }
+            }
           }
         }
+        await ensureAudioPlayback();
+        refreshMuteFromRoom();
+        await publishMuteState(!room.localParticipant.isMicrophoneEnabled);
         setStatus("Live", "live");
         startTimer();
+        // Keep Avalonia mute badges in sync even if a TrackMuted event is missed.
+        setInterval(() => { try { refreshMuteFromRoom(); } catch (_) {} }, 2000);
       } catch (err) {
         console.error(err);
         setStatus(err?.message || "Could not connect", "error");
@@ -524,20 +854,93 @@
       const peopleBtn = document.getElementById("people");
       const leaveBtn = document.getElementById("leave");
 
-      micBtn.onclick = async () => {
-        const on = !room.localParticipant.isMicrophoneEnabled;
-        await room.localParticipant.setMicrophoneEnabled(on);
-        micBtn.classList.toggle("off", !on);
-      };
-      camBtn.onclick = async () => {
-        const on = !room.localParticipant.isCameraEnabled;
-        await room.localParticipant.setCameraEnabled(on);
-        camBtn.classList.toggle("off", !on);
+      function reportMediaState() {
+        const camOn = !!room.localParticipant.isCameraEnabled;
+        const micOn = !!room.localParticipant.isMicrophoneEnabled;
+        camBtn.classList.toggle("off", !camOn);
+        micBtn.classList.toggle("off", !micOn);
+        notifyHost(camOn ? "camera-on" : "camera-off");
+        notifyHost(micOn ? "mic-on" : "mic-off");
+      }
+
+      async function setCameraEnabled(on) {
+        try {
+          await room.localParticipant.setCameraEnabled(on);
+        } catch (err) {
+          console.error(err);
+          notifyHost("permission-camera");
+          throw err;
+        }
         if (!on) {
-          pip.querySelector("video")?.remove();
-          pipPh.style.display = "";
+          const info = people.get(localId);
+          if (info) {
+            info.hasVideo = false;
+            const video = info.el?.querySelector("video");
+            if (video) {
+              video.srcObject = null;
+              video.classList.add("hidden");
+            }
+            syncTile(localId);
+          }
+        }
+        reportMediaState();
+        return !!room.localParticipant.isCameraEnabled;
+      }
+
+      async function setMicEnabled(on) {
+        try {
+          await room.localParticipant.setMicrophoneEnabled(on);
+        } catch (err) {
+          console.error(err);
+          notifyHost("permission-mic");
+          throw err;
+        }
+        const info = people.get(localId);
+        if (info) { info.muted = !on; syncTile(localId); }
+        reportMediaState();
+        await publishMuteState(!on);
+        refreshMuteFromRoom();
+        return !!room.localParticipant.isMicrophoneEnabled;
+      }
+
+      window.meetjoeToggleCamera = async () => {
+        const wantOn = !room.localParticipant.isCameraEnabled;
+        try {
+          await ensureAudioPlayback();
+          const on = await setCameraEnabled(wantOn);
+          if (wantOn && !on) notifyHost("permission-camera");
+          return on;
+        } catch (err) {
+          console.error(err);
+          notifyHost("permission-camera");
+          showBanner("Could not toggle camera. Allow camera access for MeetJoe in System Settings.");
+          reportMediaState();
+          return false;
         }
       };
+      window.meetjoeToggleMic = async () => {
+        const wantOn = !room.localParticipant.isMicrophoneEnabled;
+        try {
+          await ensureAudioPlayback();
+          const on = await setMicEnabled(wantOn);
+          if (wantOn && !on) notifyHost("permission-mic");
+          return on;
+        } catch (err) {
+          console.error(err);
+          notifyHost("permission-mic");
+          showBanner("Could not toggle microphone. Allow mic access for MeetJoe in System Settings.");
+          reportMediaState();
+          return false;
+        }
+      };
+      window.meetjoeMediaState = () => ({
+        camera: !!room.localParticipant.isCameraEnabled,
+        mic: !!room.localParticipant.isMicrophoneEnabled,
+      });
+
+      micBtn.onclick = async () => { await window.meetjoeToggleMic(); };
+      camBtn.onclick = async () => { await window.meetjoeToggleCamera(); };
+      reportMediaState();
       shareBtn.onclick = async () => {
         const sharing = room.localParticipant.isScreenShareEnabled;
         await room.localParticipant.setScreenShareEnabled(!sharing);
@@ -548,13 +951,43 @@
         peopleBtn.classList.toggle("active", roster.classList.contains("open"));
       };
       leaveBtn.onclick = async () => {
-        await room.disconnect();
-        if (timerHandle) clearInterval(timerHandle);
+        await window.meetjoeShutdown?.();
         setStatus("You left. Close this view from MeetJoe.", "error");
         signalLeave();
       };
 
-      window.addEventListener("beforeunload", () => room.disconnect());
+      /** Stop tracks + disconnect so the host can tear down WKWebView without a native crash. */
+      window.meetjoeShutdown = async () => {
+        try {
+          await room.localParticipant.setCameraEnabled(false);
+        } catch (_) { /* ignore */ }
+        try {
+          await room.localParticipant.setMicrophoneEnabled(false);
+        } catch (_) { /* ignore */ }
+        try {
+          await room.localParticipant.setScreenShareEnabled(false);
+        } catch (_) { /* ignore */ }
+        try {
+          document.querySelectorAll("video,audio").forEach(el => {
+            try {
+              const stream = el.srcObject;
+              if (stream && stream.getTracks) stream.getTracks().forEach(t => { try { t.stop(); } catch (_) {} });
+              el.srcObject = null;
+              el.removeAttribute("src");
+            } catch (_) { /* ignore */ }
+          });
+        } catch (_) { /* ignore */ }
+        try { await room.disconnect(); } catch (_) { /* ignore */ }
+        if (timerHandle) {
+          clearInterval(timerHandle);
+          timerHandle = null;
+        }
+        activeRoom = null;
+      };
+
+      window.addEventListener("beforeunload", () => {
+        try { room.disconnect(); } catch (_) { /* ignore */ }
+      });
     }
 
     main();

@@ -32,7 +32,8 @@
                         Command="{Binding $parent[UserControl].((vm:ChatViewModel)DataContext).SelectCommand}"
                         CommandParameter="{Binding}">
                   <Grid ColumnDefinitions="Auto,*,Auto">
-                    <c:Avatar Margin="0,0,11,0" VerticalAlignment="Center" DisplayName="{Binding Title}"
+                    <c:Avatar Margin="0,0,11,0" VerticalAlignment="Center"
+                              DisplayName="{Binding ListAvatar.DisplayName}" Photo="{Binding ListAvatar.Photo}"
                               ShowStatus="{Binding IsDirect}" Status="{Binding Other.Status}" />
                     <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                       <TextBlock Text="{Binding Title}" FontWeight="SemiBold" MaxLines="1"
@@ -106,7 +107,7 @@
               <CheckBox IsChecked="{Binding IsSelected}" HorizontalAlignment="Stretch" Padding="12,0,0,0" Margin="0,5"
                         VerticalContentAlignment="Center">
                 <StackPanel Orientation="Horizontal" Spacing="11">
-                  <c:Avatar Width="32" Height="32" DisplayName="{Binding DisplayName}" Status="{Binding Status}"
+                  <c:Avatar Width="32" Height="32" DisplayName="{Binding DisplayName}" Photo="{Binding Photo}" Status="{Binding Status}"
                             ShowStatus="True" Surface="{StaticResource Brush.Canvas}" />
                   <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
@@ -146,7 +147,7 @@
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:PersonViewModel">
                 <StackPanel Orientation="Horizontal" Spacing="11" Margin="0,7">
-                  <c:Avatar Width="32" Height="32" DisplayName="{Binding DisplayName}" Status="{Binding Status}"
+                  <c:Avatar Width="32" Height="32" DisplayName="{Binding DisplayName}" Photo="{Binding Photo}" Status="{Binding Status}"
                             ShowStatus="True" />
                   <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />

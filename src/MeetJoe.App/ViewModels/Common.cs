@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using MeetJoe.App.Services;
 using MeetJoe.Contracts;
@@ -59,10 +60,37 @@ public partial class PersonViewModel(Guid id, string displayName, bool isMe) : O
     [NotifyPropertyChangedFor(nameof(StatusText))]
     private PresenceStatus _status = PresenceStatus.Offline;
 
+    /// <summary>Relative API path (e.g. api/users/{id}/avatar), or null for initials.</summary>
+    [ObservableProperty] private string? _avatarUrl;
+
+    /// <summary>Decoded profile photo shared by every Avatar binding for this person.</summary>
+    [ObservableProperty] private Bitmap? _photo;
+
     /// <summary>Used by pickers that let the user tick people.</summary>
     [ObservableProperty] private bool _isSelected;
 
+    /// <summary>LiveKit active speaker — pulses the avatar ring in call/meeting tiles.</summary>
+    [ObservableProperty] private bool _isSpeaking;
+
+    /// <summary>True when this person's mic is muted in the LiveKit room.</summary>
+    [ObservableProperty] private bool _isMicMuted;
+
     public string StatusText => Describe.Presence(Status);
+
+    partial void OnAvatarUrlChanged(string? value) =>
+        AvatarImages.RequestLoad(bitmap => Photo = bitmap, Id, value);
+
+    public void ApplyAvatar(string? avatarUrl)
+    {
+        if (AvatarUrl == avatarUrl)
+        {
+            if (Photo is null && !string.IsNullOrWhiteSpace(avatarUrl))
+                AvatarImages.RequestLoad(bitmap => Photo = bitmap, Id, avatarUrl);
+            return;
+        }
+
+        AvatarUrl = avatarUrl;
+    }
 }
 
 /// <summary>Everyone in the current organization, kept current from presence and membership events.</summary>
@@ -88,7 +116,12 @@ public sealed class PeopleStore(Guid myId)
         return person;
     }
 
-    public PersonViewModel Get(UserSummaryDto user) => Get(user.Id, user.DisplayName);
+    public PersonViewModel Get(UserSummaryDto user)
+    {
+        var person = Get(user.Id, user.DisplayName);
+        person.ApplyAvatar(user.AvatarUrl);
+        return person;
+    }
 
     public void Apply(IEnumerable<OrgMemberDto> members)
     {
@@ -105,6 +138,7 @@ public sealed class PeopleStore(Guid myId)
             person.Email = member.Email;
             person.Status = member.Status;
             person.StatusMessage = member.StatusMessage;
+            person.ApplyAvatar(member.AvatarUrl);
         }
     }
 

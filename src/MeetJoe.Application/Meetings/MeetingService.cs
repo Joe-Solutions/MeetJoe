@@ -357,7 +357,7 @@ public sealed class MeetingService(
         new(meeting.Id,
             meeting.Title,
             meeting.Description,
-            new UserSummaryDto(meeting.HostId, meeting.Host.DisplayName),
+            meeting.Host.ToSummary(),
             meeting.CreatedAt,
             meeting.StartsAt,
             meeting.EndsAt,
@@ -369,7 +369,7 @@ public sealed class MeetingService(
             meeting.Participants
                 .Where(p => p.IsPresent && !p.InLobby)
                 .OrderBy(p => p.JoinedAt)
-                .Select(p => new UserSummaryDto(p.UserId, p.User.DisplayName))
+                .Select(p => p.User.ToSummary())
                 .DistinctBy(u => u.Id)
                 .ToList(),
             meeting.Invites
@@ -379,7 +379,7 @@ public sealed class MeetingService(
             meeting.Participants
                 .Where(p => p.IsPresent && p.InLobby)
                 .OrderBy(p => p.JoinedAt)
-                .Select(p => new UserSummaryDto(p.UserId, p.User.DisplayName))
+                .Select(p => p.User.ToSummary())
                 .DistinctBy(u => u.Id)
                 .ToList(),
             meeting.Participants

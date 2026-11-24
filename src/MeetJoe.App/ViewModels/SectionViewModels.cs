@@ -193,6 +193,43 @@ public partial class MeetingStageViewModel : ViewModelBase
     [ObservableProperty] private string? _addPeopleStatus;
     [ObservableProperty] private bool _isMediaOpen;
 
+    [ObservableProperty] private bool _isCameraOn = true;
+    [ObservableProperty] private bool _isMicOn = true;
+
+    /// <summary>True once LiveKit reports media-ready; Avalonia tiles hide so the WebView can paint.</summary>
+    [ObservableProperty] private bool _isLiveKitSurfaceReady;
+
+    /// <summary>Wired by the meeting stage view to the LiveKit WebView host.</summary>
+    public Func<Task>? ToggleCameraHandler { get; set; }
+    public Func<Task>? ToggleMicHandler { get; set; }
+
+    public void ApplyActiveSpeakers(IReadOnlyCollection<Guid> speakerIds)
+    {
+        var set = speakerIds as HashSet<Guid> ?? speakerIds.ToHashSet();
+        foreach (var person in Meeting.Participants)
+            person.IsSpeaking = set.Contains(person.Id);
+    }
+
+    public void ApplyMutedParticipants(IReadOnlyCollection<Guid> mutedIds)
+    {
+        var set = mutedIds as HashSet<Guid> ?? mutedIds.ToHashSet();
+        foreach (var person in Meeting.Participants)
+        {
+            if (person.IsMe)
+                person.IsMicMuted = !IsMicOn || set.Contains(person.Id);
+            else
+                person.IsMicMuted = set.Contains(person.Id);
+        }
+    }
+
+    public void MarkLiveKitSurfaceReady() => IsLiveKitSurfaceReady = true;
+
+    partial void OnIsMicOnChanged(bool value)
+    {
+        foreach (var person in Meeting.Participants.Where(p => p.IsMe))
+            person.IsMicMuted = !value;
+    }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasInviteSuggestions))]
     private string _inviteQuery = string.Empty;
@@ -205,10 +242,21 @@ public partial class MeetingStageViewModel : ViewModelBase
     public bool ShowChatPanel => !ShowPeoplePanel;
     public bool HasInviteSuggestions => InviteSuggestions.Count > 0;
 
+    /// <summary>Meet-style tile columns for the center participant grid.</summary>
+    public int ParticipantGridColumns =>
+        Meeting.Participants.Count switch
+        {
+            <= 1 => 1,
+            <= 4 => 2,
+            <= 9 => 3,
+            _ => 4,
+        };
+
     public ObservableCollection<MessageDto> ChatMessages { get; } = [];
     public ObservableCollection<PersonViewModel> InviteSuggestions { get; } = [];
 
     partial void OnInviteQueryChanged(string value) => RefreshInviteSuggestions();
+    partial void OnMeetingChanged(MeetingViewModel value) => OnPropertyChanged(nameof(ParticipantGridColumns));
 
     /// <summary>Where the media room lives, shown so a connection can be diagnosed.</summary>
     public string MediaServer { get; }
@@ -224,6 +272,9 @@ public partial class MeetingStageViewModel : ViewModelBase
     public void Detach()
     {
         IsMediaOpen = false;
+        IsLiveKitSurfaceReady = false;
+        ToggleCameraHandler = null;
+        ToggleMicHandler = null;
         _context.Realtime.MeetingUpdated -= OnMeetingUpdated;
         _context.Realtime.MeetingChat -= OnMeetingChat;
         _context.Realtime.ParticipantRemoved -= OnRemoved;
@@ -255,6 +306,57 @@ public partial class MeetingStageViewModel : ViewModelBase
 
     [RelayCommand]
     private void ShowChat() => ShowPeoplePanel = false;
+
+    [RelayCommand]
+    private async Task ToggleCameraAsync()
+    {
+        // Optimistic chrome update; MediaStateChanged corrects from the WebView.
+        IsCameraOn = !IsCameraOn;
+        if (ToggleCameraHandler is not null) await ToggleCameraHandler.Invoke();
+    }
+
+    [RelayCommand]
+    private async Task ToggleMicAsync()
+    {
+        // Optimistic chrome update; MediaStateChanged corrects from the WebView.
+        IsMicOn = !IsMicOn;
+        if (ToggleMicHandler is not null) await ToggleMicHandler.Invoke();
+    }
+
+    private bool _permissionDialogOpen;
+
+    public async Task NotifyMediaPermissionNeededAsync(string kind)
+    {
+        if (_permissionDialogOpen) return;
+        _permissionDialogOpen = true;
+        try
+        {
+            switch (kind)
+            {
+                case "mic":
+                    await _context.Platform.AlertAsync(
+                        "Microphone access needed",
+                        "MeetJoe is not allowed to use your microphone.\n\n1. Open System Settings → Privacy & Security → Microphone\n2. Turn on MeetJoe (or “dotnet” if listed while debugging)\n3. Leave this meeting and join again.");
+                    break;
+                case "camera":
+                    await _context.Platform.AlertAsync(
+                        "Camera access needed",
+                        "MeetJoe is not allowed to use your camera, so video cannot turn on.\n\n1. Open System Settings → Privacy & Security → Camera\n2. Turn on MeetJoe\n3. Leave this meeting and join again.\n\nTip: launch MeetJoe.app (not a raw binary) so macOS can show the camera permission dialog.");
+                    try { await _context.Platform.OpenUriAsync(new Uri("x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")); }
+                    catch { /* best-effort */ }
+                    break;
+                default:
+                    await _context.Platform.AlertAsync(
+                        "Microphone & camera access needed",
+                        "MeetJoe needs permission to use your microphone and camera.\n\n1. Open System Settings → Privacy & Security\n2. Enable MeetJoe under Microphone and Camera\n3. Leave this meeting and join again.");
+                    break;
+            }
+        }
+        finally
+        {
+            _permissionDialogOpen = false;
+        }
+    }
 
     [RelayCommand]
     private void BeginAddPeople()
@@ -415,6 +517,7 @@ public partial class MeetingStageViewModel : ViewModelBase
     {
         if (meeting.Id != Id) return;
         Meeting.Apply(meeting, _context.People);
+        OnPropertyChanged(nameof(ParticipantGridColumns));
         HandRaised = meeting.RaisedHands.Contains(_context.People.MyId);
         var wasInLobby = InLobby;
         InLobby = meeting.Lobby.Any(p => p.Id == _context.People.MyId);
@@ -439,7 +542,9 @@ public partial class MeetingStageViewModel : ViewModelBase
     {
         // Query string (not hash): some embedded WebViews drop the URL fragment on navigate.
         var page = new Uri(apiBase, "meet/");
-        var query = "u=" + Uri.EscapeDataString(join.ServerUrl) + "&t=" + Uri.EscapeDataString(join.Token);
+        var query = "u=" + Uri.EscapeDataString(join.ServerUrl)
+            + "&t=" + Uri.EscapeDataString(join.Token)
+            + "&embed=1";
         return new UriBuilder(page) { Query = query }.Uri;
     }
 }
@@ -765,6 +870,39 @@ public partial class CalendarViewModel : ViewModelBase
         }
     }
 
+    /// <summary>Accept invite (when pending) and join — used by the shell meeting-invite toast.</summary>
+    public async Task<bool> JoinFromInviteAsync(Guid meetingId)
+    {
+        ErrorMessage = null;
+        try
+        {
+            await LoadAsync();
+            var meeting = FindMeeting(meetingId);
+            if (meeting is null)
+            {
+                ErrorMessage = "That meeting is no longer available.";
+                return false;
+            }
+
+            if (meeting.MyInviteStatus == InviteStatus.Pending)
+                await _context.Api.RespondToInviteAsync(meeting.Id, InviteStatus.Accepted);
+
+            await JoinAsync(meeting);
+            return Stage?.Id == meetingId;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = Describe.Error(ex);
+            return false;
+        }
+    }
+
+    private MeetingViewModel? FindMeeting(Guid meetingId) =>
+        Meetings.FirstOrDefault(m => m.Id == meetingId)
+        ?? Upcoming.FirstOrDefault(m => m.Id == meetingId)
+        ?? SelectedDayMeetings.FirstOrDefault(m => m.Id == meetingId)
+        ?? _scheduledMeetings.FirstOrDefault(m => m.Id == meetingId);
+
     [RelayCommand]
     private async Task LeaveAsync()
     {
@@ -820,17 +958,41 @@ public partial class SettingsViewModel : ViewModelBase
     private readonly Func<Task> _onLeftOrganization;
     private bool _applyingAvailability;
 
+    private readonly IAppUpdateService _updates;
+
     public SettingsViewModel(
-        SessionContext context, MeDto me, AppConfig config, Func<Task> signOut, Func<Task> onLeftOrganization)
+        SessionContext context,
+        MeDto me,
+        AppConfig config,
+        Func<Task> signOut,
+        Func<Task> onLeftOrganization,
+        IAppUpdateService? updates = null)
     {
         _context = context;
         _signOut = signOut;
         _onLeftOrganization = onLeftOrganization;
+        _updates = updates ?? new NullAppUpdateService();
         Email = me.Email;
         _displayName = me.DisplayName;
         _statusMessage = me.StatusMessage ?? string.Empty;
         _availability = AvailabilityOptions.First(o => o.Status == me.Availability);
         ServerUrl = config.ApiBaseUri.ToString();
+        CurrentVersion = AppVersion.Current;
+        _context.People.Me.ApplyAvatar(me.AvatarUrl);
+        Photo = _context.People.Me.Photo;
+        _context.People.Me.PropertyChanged += OnMeChanged;
+        RefreshUpdateStatus();
+        _updates.StatusChanged += RefreshUpdateStatus;
+    }
+
+    private void OnMeChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(PersonViewModel.Photo) or nameof(PersonViewModel.DisplayName))
+        {
+            Photo = _context.People.Me.Photo;
+            if (e.PropertyName == nameof(PersonViewModel.DisplayName))
+                DisplayName = _context.People.Me.DisplayName;
+        }
     }
 
     public IReadOnlyList<AvailabilityOption> AvailabilityOptions { get; } =
@@ -847,6 +1009,7 @@ public partial class SettingsViewModel : ViewModelBase
     public string RoleText => _context.Organization.Role.ToString();
     public string? JoinCode => _context.Organization.JoinCode;
     public bool CanInvite => JoinCode is not null;
+    public string CurrentVersion { get; }
 
     [ObservableProperty] private string _displayName;
     [ObservableProperty] private string _statusMessage;
@@ -854,6 +1017,13 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private string? _inviteStatus;
     [ObservableProperty] private string? _leaveStatus;
     [ObservableProperty] private AvailabilityOption _availability;
+    [ObservableProperty] private string _updateStatusText = "Checking for updates…";
+    [ObservableProperty] private bool _isCheckingUpdates;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPhoto))]
+    private Avalonia.Media.Imaging.Bitmap? _photo;
+
+    public bool HasPhoto => Photo is not null;
 
     [RelayCommand]
     private async Task SaveProfileAsync()
@@ -866,7 +1036,60 @@ public partial class SettingsViewModel : ViewModelBase
             StatusMessage = me.StatusMessage ?? string.Empty;
             _context.People.Me.DisplayName = me.DisplayName;
             _context.People.Me.StatusMessage = me.StatusMessage;
+            _context.People.Me.ApplyAvatar(me.AvatarUrl);
             ProfileStatus = "Saved";
+        }
+        catch (Exception ex)
+        {
+            ProfileStatus = Describe.Error(ex);
+        }
+    }
+
+    [RelayCommand]
+    private async Task UploadAvatarAsync()
+    {
+        ProfileStatus = null;
+        try
+        {
+            var picked = await _context.Platform.PickFileAsync();
+            if (picked is null) return;
+            await using var stream = await picked.OpenReadAsync();
+            var me = await _context.Api.UploadAvatarAsync(picked.Name, stream);
+            _context.People.Me.DisplayName = me.DisplayName;
+            AvatarImages.Current?.Invalidate(me.Id);
+            _context.People.Me.ApplyAvatar(me.AvatarUrl);
+            if (_context.People.Me.Photo is null && me.AvatarUrl is not null)
+            {
+                // Force a fresh download into the shared cache.
+                var bitmap = await AvatarImages.Current!.LoadAsync(me.Id, me.AvatarUrl);
+                if (bitmap is not null)
+                {
+                    AvatarImages.Current.SetLocal(me.Id, me.AvatarUrl, bitmap);
+                    _context.People.Me.Photo = bitmap;
+                }
+            }
+
+            Photo = _context.People.Me.Photo;
+            ProfileStatus = "Photo updated";
+        }
+        catch (Exception ex)
+        {
+            ProfileStatus = Describe.Error(ex);
+        }
+    }
+
+    [RelayCommand]
+    private async Task ClearAvatarAsync()
+    {
+        ProfileStatus = null;
+        try
+        {
+            var me = await _context.Api.ClearAvatarAsync();
+            AvatarImages.Current?.Invalidate(me.Id);
+            _context.People.Me.ApplyAvatar(null);
+            _context.People.Me.Photo = null;
+            Photo = null;
+            ProfileStatus = "Photo removed";
         }
         catch (Exception ex)
         {
@@ -925,6 +1148,37 @@ public partial class SettingsViewModel : ViewModelBase
         {
             LeaveStatus = Describe.Error(ex);
         }
+    }
+
+    [RelayCommand]
+    private async Task CheckForUpdatesAsync()
+    {
+        IsCheckingUpdates = true;
+        try
+        {
+            await _updates.CheckAsync(applyAutomatically: true);
+        }
+        finally
+        {
+            IsCheckingUpdates = false;
+            RefreshUpdateStatus();
+        }
+    }
+
+    private void RefreshUpdateStatus()
+    {
+        var status = _updates.Status;
+        UpdateStatusText = status.State switch
+        {
+            AppUpdateState.Checking => status.Message ?? "Checking for updates…",
+            AppUpdateState.Downloading => status.Message ?? $"Downloading… {status.DownloadPercent}%",
+            AppUpdateState.Updating => status.Message ?? "Installing update…",
+            AppUpdateState.Available => status.Message ?? $"Update {status.AvailableVersion} available.",
+            AppUpdateState.UpToDate => status.Message ?? $"Up to date ({status.CurrentVersion}).",
+            AppUpdateState.Unsupported => status.Message ?? "Auto-update requires an installed MeetJoe build.",
+            AppUpdateState.Failed => status.Message ?? "Update check failed.",
+            _ => $"Version {CurrentVersion}",
+        };
     }
 
     [RelayCommand]

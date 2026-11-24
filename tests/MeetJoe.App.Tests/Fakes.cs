@@ -52,6 +52,21 @@ internal sealed class FakeApi : IMeetJoeApi
         return Task.FromResult(Me);
     }
 
+    public Task<MeDto> UploadAvatarAsync(string fileName, Stream content, CancellationToken ct = default)
+    {
+        Me = Me with { AvatarUrl = $"api/users/{Me.Id:D}/avatar" };
+        return Task.FromResult(Me);
+    }
+
+    public Task<MeDto> ClearAvatarAsync(CancellationToken ct = default)
+    {
+        Me = Me with { AvatarUrl = null };
+        return Task.FromResult(Me);
+    }
+
+    public Task<Stream> DownloadAvatarAsync(Guid userId, CancellationToken ct = default) =>
+        Task.FromResult<Stream>(new MemoryStream());
+
     public Task<IReadOnlyList<OrganizationDto>> GetOrganizationsAsync(CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<OrganizationDto>>(Organizations.ToList());
 
@@ -490,6 +505,7 @@ internal sealed class FakeRealtime(FakeApi api) : IRealtimeClient
     public event Action<Guid, Guid, bool>? HandRaised;
     public event Action<CallDto>? IncomingCall;
     public event Action<CallDto>? CallUpdated;
+    public event Action<Guid, Guid, bool>? CallMicMuted;
     public event Action? CallsChanged;
     public event Action<bool>? ConnectionChanged;
 
@@ -530,6 +546,7 @@ internal sealed class FakeRealtime(FakeApi api) : IRealtimeClient
     public Task<CallJoinDto> AnswerCallAsync(Guid callId) => api.AnswerCallAsync(callId);
     public Task DeclineCallAsync(Guid callId) => api.DeclineCallAsync(callId);
     public Task HangUpCallAsync(Guid callId) => api.HangUpCallAsync(callId);
+    public Task SetCallMicMutedAsync(Guid callId, bool muted) => Task.CompletedTask;
 
     public void Receive(MessageDto message) => MessageReceived?.Invoke(message);
     public void Update(MessageDto message) => MessageUpdated?.Invoke(message);
@@ -605,6 +622,14 @@ internal sealed class FakePlatform : IPlatformServices
     {
         Confirms.Add((title, message));
         return Task.FromResult(NextConfirmResult);
+    }
+
+    public List<(string Title, string Message)> Alerts { get; } = [];
+
+    public Task AlertAsync(string title, string message, string okLabel = "OK")
+    {
+        Alerts.Add((title, message));
+        return Task.CompletedTask;
     }
 
     public int ImageLightboxCount { get; private set; }

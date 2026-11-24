@@ -406,7 +406,12 @@ public sealed partial class ChatService(IAppDbContext db, IRealtimePublisher rea
                 m.Id,
                 m.ConversationId,
                 m.ChannelId,
-                new UserSummaryDto(m.SenderId, m.Sender.DisplayName),
+                new UserSummaryDto(
+                    m.SenderId,
+                    m.Sender.DisplayName,
+                    m.Sender.AvatarStorageKey != null
+                        ? "api/users/" + m.SenderId.ToString() + "/avatar"
+                        : null),
                 m.DeletedAt == null ? m.Body : string.Empty,
                 m.CreatedAt,
                 m.Attachments
@@ -474,7 +479,7 @@ public sealed partial class ChatService(IAppDbContext db, IRealtimePublisher rea
         var ids = rows.Select(r => r.Id).ToList();
         var members = await db.ConversationMembers
             .Where(m => ids.Contains(m.ConversationId))
-            .Select(m => new { m.ConversationId, m.UserId, m.User.DisplayName })
+            .Select(m => new { m.ConversationId, m.UserId, m.User.DisplayName, m.User.AvatarStorageKey })
             .ToListAsync(ct);
         var membersByConversation = members.ToLookup(m => m.ConversationId);
 
@@ -488,7 +493,7 @@ public sealed partial class ChatService(IAppDbContext db, IRealtimePublisher rea
                 r.Title,
                 membersByConversation[r.Id]
                     .OrderBy(m => m.DisplayName, StringComparer.OrdinalIgnoreCase)
-                    .Select(m => new UserSummaryDto(m.UserId, m.DisplayName))
+                    .Select(m => new UserSummaryDto(m.UserId, m.DisplayName, Mapping.AvatarUrl(m.UserId, m.AvatarStorageKey)))
                     .ToList(),
                 r.LastMessagePreview,
                 r.LastMessageAt,
