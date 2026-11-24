@@ -432,7 +432,16 @@ internal sealed class FakeApi : IMeetJoeApi
 
     public Task<MeetingRecordingDto> StartRecordingAsync(Guid meetingId, CancellationToken ct = default) =>
         Task.FromResult(new MeetingRecordingDto(
-            Guid.NewGuid(), meetingId, RecordingStatus.Unavailable, null, DateTimeOffset.Now, DateTimeOffset.Now));
+            Guid.NewGuid(), meetingId, RecordingStatus.Recording, null, DateTimeOffset.Now, null));
+
+    public Task<MeetingRecordingDto> CompleteRecordingAsync(
+        Guid meetingId, Guid fileId, CancellationToken ct = default) =>
+        Task.FromResult(new MeetingRecordingDto(
+            Guid.NewGuid(), meetingId, RecordingStatus.Ready, "recording.webm", DateTimeOffset.Now, DateTimeOffset.Now));
+
+    public Task CancelRecordingAsync(Guid meetingId, CancellationToken ct = default) => Task.CompletedTask;
+
+    public Task<string?> GetAccessTokenAsync() => Task.FromResult<string?>("test-token");
 
     public Task<IReadOnlyList<CallDto>> GetCallsAsync(Guid organizationId, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<CallDto>>(Calls.ToList());

@@ -24,6 +24,10 @@ public partial class MeetingStageView : UserControl
         // Tunnel so Enter is seen before the text box inserts a newline.
         LiveChatComposer.AddHandler(KeyDownEvent, OnChatKeyDown, RoutingStrategies.Tunnel);
         LobbyChatComposer.AddHandler(KeyDownEvent, OnChatKeyDown, RoutingStrategies.Tunnel);
+        ComposerFileDrop.Enable(LiveChatDropZone, files =>
+            _stage?.AttachFilesAsync(files) ?? Task.CompletedTask);
+        ComposerFileDrop.Enable(LobbyChatDropZone, files =>
+            _stage?.AttachFilesAsync(files) ?? Task.CompletedTask);
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -174,6 +178,17 @@ public partial class MeetingStageView : UserControl
                 _stage.IsCameraOn = host.IsCameraEnabled;
                 _stage.IsMicOn = host.IsMicEnabled;
                 _stage.IsScreenShareOn = host.IsScreenShareEnabled;
+                _stage.IsRecording = host.IsRecording;
+            };
+            host.RecordingTimerChanged += startedAt => _stage?.ApplyLocalRecordingTimer(startedAt);
+            host.RoomRecordingChanged += (on, by, at) => _stage?.ApplyRoomRecording(on, by, at);
+            host.SessionStarted += ms => _stage?.ApplySessionStart(ms);
+            host.SessionWarning += () => _stage?.ApplySessionWarning();
+            host.SessionExpired += () =>
+            {
+                if (_stage?.ConsumeSessionExpired() != true) return;
+                if (_vm?.LeaveCommand.CanExecute(null) == true)
+                    _ = _vm.LeaveCommand.ExecuteAsync(null);
             };
             host.ActiveSpeakersChanged += ids =>
             {
@@ -206,6 +221,8 @@ public partial class MeetingStageView : UserControl
             _stage.ToggleCameraHandler = () => host.ToggleCameraAsync();
             _stage.ToggleMicHandler = () => host.ToggleMicAsync();
             _stage.ToggleScreenShareHandler = () => host.ToggleScreenShareAsync();
+            _stage.StartRecordingHandler = (url, token, name) => host.StartRecordingAsync(url, token, name);
+            _stage.StopRecordingHandler = () => host.StopRecordingAsync();
         }
 
         host.Show(uri);

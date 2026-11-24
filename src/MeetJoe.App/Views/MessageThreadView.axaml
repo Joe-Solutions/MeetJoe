@@ -5,8 +5,12 @@
              x:Class="MeetJoe.App.Views.MessageThreadView"
              x:DataType="vm:MessageThreadViewModel">
   <Grid ColumnDefinitions="*,Auto" RowDefinitions="*,Auto">
+    <!-- Full conversation (history + composer) accepts file drops. -->
+    <Border x:Name="ThreadDropZone" Grid.Row="0" Grid.Column="0" Grid.RowSpan="2"
+            Classes="chatdrop" ToolTip.Tip="Drop files anywhere in the conversation to attach">
+      <Grid RowDefinitions="*,Auto">
     <!-- Messages -->
-    <ScrollViewer x:Name="Scroller" Grid.Row="0" Grid.Column="0">
+    <ScrollViewer x:Name="Scroller" Grid.Row="0">
       <StackPanel Margin="24,16,24,8" VerticalAlignment="Bottom">
         <Button Classes="ghost tint" HorizontalAlignment="Center" Margin="0,0,0,8"
                 Content="Show earlier messages" Command="{Binding LoadOlderCommand}"
@@ -25,25 +29,101 @@
                             Surface="{StaticResource Brush.Canvas}" />
                 </Panel>
 
-                <StackPanel Classes="messagebody" Classes.mine="{Binding IsMine}" Spacing="3">
-                  <!-- Teams-style header: name/time on one side, reaction pill on the other — never over bubble text. -->
-                  <Grid Classes="messageheader" Classes.mine="{Binding IsMine}"
-                        Classes.continuation="{Binding IsContinuation}"
-                        MinWidth="160">
-                    <StackPanel Classes="messagemeta" Classes.mine="{Binding IsMine}"
-                                Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
-                                IsVisible="{Binding StartsGroup}">
-                      <TextBlock Text="{Binding Sender.DisplayName}" FontWeight="Bold" FontSize="13"
-                                 IsVisible="{Binding !IsMine}" />
-                      <TextBlock Classes="muted" FontSize="12" VerticalAlignment="Center" Text="{Binding TimeText}" />
-                      <TextBlock Classes="muted" FontSize="12" VerticalAlignment="Center" Text="edited"
-                                 IsVisible="{Binding ShowEdited}" />
+                <StackPanel Classes="messagebody" Classes.mine="{Binding IsMine}" Spacing="3"
+                            ClipToBounds="False">
+                  <!-- Name/time only — reaction pill floats over the bubble so hover never shifts layout. -->
+                  <StackPanel Classes="messagemeta" Classes.mine="{Binding IsMine}"
+                              Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
+                              IsVisible="{Binding StartsGroup}" Margin="2,0,2,2">
+                    <TextBlock Text="{Binding Sender.DisplayName}" FontWeight="Bold" FontSize="13"
+                               IsVisible="{Binding !IsMine}" />
+                    <TextBlock Classes="muted" FontSize="12" VerticalAlignment="Center" Text="{Binding TimeText}" />
+                    <TextBlock Classes="muted" FontSize="12" VerticalAlignment="Center" Text="edited"
+                               IsVisible="{Binding ShowEdited}" />
+                  </StackPanel>
+
+                  <Panel Classes="messagechrome" Classes.mine="{Binding IsMine}" ClipToBounds="False">
+                    <StackPanel Spacing="4" Classes.mine="{Binding IsMine}">
+                      <Border Classes="messagebubble" Classes.mine="{Binding IsMine}"
+                              Classes.continuation="{Binding IsContinuation}"
+                              IsVisible="{Binding !IsEditing}">
+                        <StackPanel Spacing="6">
+                          <c:MarkdownText Markdown="{Binding DisplayBody}" TextWrapping="Wrap" LineHeight="21"
+                                          Classes.muted="{Binding IsDeleted}" />
+
+                          <Border Margin="0,2,0,0" Padding="10,8" Background="{StaticResource Brush.Panel}"
+                                  CornerRadius="8" IsVisible="{Binding HasLinkPreview}">
+                            <StackPanel Spacing="2">
+                              <TextBlock FontWeight="SemiBold" FontSize="13" Text="{Binding LinkPreview.Title}"
+                                         MaxLines="1" TextTrimming="CharacterEllipsis" />
+                              <TextBlock Classes="muted small" Text="{Binding LinkPreview.Url}"
+                                         MaxLines="1" TextTrimming="CharacterEllipsis" />
+                              <TextBlock Classes="muted small" Text="{Binding LinkPreview.Description}"
+                                         IsVisible="{Binding LinkPreview.Description, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                         MaxLines="2" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" />
+                            </StackPanel>
+                          </Border>
+
+                          <ItemsControl ItemsSource="{Binding Attachments}" IsVisible="{Binding !IsDeleted}">
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate x:DataType="vm:AttachmentViewModel">
+                                <StackPanel Margin="0,4,0,0" Spacing="6">
+                                  <Border IsVisible="{Binding IsImage}" CornerRadius="10" ClipToBounds="True"
+                                          Background="{StaticResource Brush.PanelRaised}" MaxWidth="340">
+                                    <Panel>
+                                      <TextBlock Classes="muted small" Margin="12" Text="Loading image…"
+                                                 IsVisible="{Binding IsLoadingPreview}" />
+                                      <Button Classes="ghost" Padding="0" Cursor="Hand"
+                                              Background="Transparent"
+                                              Command="{Binding OpenFullscreenCommand}"
+                                              IsVisible="{Binding Preview, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                              ToolTip.Tip="View full screen">
+                                        <Image Source="{Binding Preview}" MaxWidth="340" MaxHeight="280"
+                                               Stretch="Uniform" />
+                                      </Button>
+                                    </Panel>
+                                  </Border>
+                                  <StackPanel Orientation="Horizontal" Spacing="10"
+                                              IsVisible="{Binding ShowFileChip}">
+                                    <Button Classes="secondary" Padding="12,6" Command="{Binding DownloadCommand}"
+                                            ToolTip.Tip="Save this file">
+                                      <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <c:Icon Data="{StaticResource Icon.File}" Size="17" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding FileName}" MaxWidth="280" TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Classes="muted small" Text="{Binding SizeText}" VerticalAlignment="Center" />
+                                      </StackPanel>
+                                    </Button>
+                                    <TextBlock Classes="muted small" VerticalAlignment="Center" Text="{Binding Status}" />
+                                  </StackPanel>
+                                  <Button Classes="ghost" HorizontalAlignment="Left" Padding="4,2"
+                                          Content="Save image" FontSize="12"
+                                          IsVisible="{Binding IsImage}"
+                                          Command="{Binding DownloadCommand}" />
+                                </StackPanel>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                        </StackPanel>
+                      </Border>
+
+                      <Button Classes="replychip" Classes.mine="{Binding IsMine}"
+                              Command="{Binding OpenRepliesCommand}"
+                              IsVisible="{Binding HasReplies}"
+                              ToolTip.Tip="Open thread">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                          <c:Icon Data="{StaticResource Icon.ChatBubble}" Size="13"
+                                  VerticalAlignment="Center" />
+                          <TextBlock Text="{Binding RepliesLabel}" FontSize="12" FontWeight="SemiBold"
+                                     VerticalAlignment="Center" />
+                        </StackPanel>
+                      </Button>
                     </StackPanel>
 
+                    <!-- Floating emoji / reply pill — overlays the bubble, zero layout impact. -->
                     <Border Classes="message-hoverbar" Classes.mine="{Binding IsMine}"
-                            VerticalAlignment="Center" IsVisible="{Binding ShowActions}"
-                            ZIndex="2"
-                            BoxShadow="0 8 20 0 #55000000">
+                            IsVisible="{Binding ShowActions}"
+                            ZIndex="20">
                       <StackPanel Orientation="Horizontal" Spacing="0">
                         <ItemsControl ItemsSource="{Binding ReactionChoices}">
                           <ItemsControl.ItemsPanel>
@@ -81,84 +161,7 @@
                         </Button>
                       </StackPanel>
                     </Border>
-                  </Grid>
-
-                  <StackPanel Classes="messagechrome" Classes.mine="{Binding IsMine}" Spacing="4">
-                    <Border Classes="messagebubble" Classes.mine="{Binding IsMine}"
-                            Classes.continuation="{Binding IsContinuation}"
-                            IsVisible="{Binding !IsEditing}">
-                      <StackPanel Spacing="6">
-                        <c:MarkdownText Markdown="{Binding DisplayBody}" TextWrapping="Wrap" LineHeight="21"
-                                        Classes.muted="{Binding IsDeleted}" />
-
-                        <Border Margin="0,2,0,0" Padding="10,8" Background="{StaticResource Brush.Panel}"
-                                CornerRadius="8" IsVisible="{Binding HasLinkPreview}">
-                          <StackPanel Spacing="2">
-                            <TextBlock FontWeight="SemiBold" FontSize="13" Text="{Binding LinkPreview.Title}"
-                                       MaxLines="1" TextTrimming="CharacterEllipsis" />
-                            <TextBlock Classes="muted small" Text="{Binding LinkPreview.Url}"
-                                       MaxLines="1" TextTrimming="CharacterEllipsis" />
-                            <TextBlock Classes="muted small" Text="{Binding LinkPreview.Description}"
-                                       IsVisible="{Binding LinkPreview.Description, Converter={x:Static ObjectConverters.IsNotNull}}"
-                                       MaxLines="2" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" />
-                          </StackPanel>
-                        </Border>
-
-                        <ItemsControl ItemsSource="{Binding Attachments}" IsVisible="{Binding !IsDeleted}">
-                          <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:AttachmentViewModel">
-                              <StackPanel Margin="0,4,0,0" Spacing="6">
-                                <Border IsVisible="{Binding IsImage}" CornerRadius="10" ClipToBounds="True"
-                                        Background="{StaticResource Brush.PanelRaised}" MaxWidth="340">
-                                  <Panel>
-                                    <TextBlock Classes="muted small" Margin="12" Text="Loading image…"
-                                               IsVisible="{Binding IsLoadingPreview}" />
-                                    <Button Classes="ghost" Padding="0" Cursor="Hand"
-                                            Background="Transparent"
-                                            Command="{Binding OpenFullscreenCommand}"
-                                            IsVisible="{Binding Preview, Converter={x:Static ObjectConverters.IsNotNull}}"
-                                            ToolTip.Tip="View full screen">
-                                      <Image Source="{Binding Preview}" MaxWidth="340" MaxHeight="280"
-                                             Stretch="Uniform" />
-                                    </Button>
-                                  </Panel>
-                                </Border>
-                                <StackPanel Orientation="Horizontal" Spacing="10"
-                                            IsVisible="{Binding ShowFileChip}">
-                                  <Button Classes="secondary" Padding="12,6" Command="{Binding DownloadCommand}"
-                                          ToolTip.Tip="Save this file">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                      <c:Icon Data="{StaticResource Icon.File}" Size="17" VerticalAlignment="Center" />
-                                      <TextBlock Text="{Binding FileName}" MaxWidth="280" TextTrimming="CharacterEllipsis"
-                                                 VerticalAlignment="Center" />
-                                      <TextBlock Classes="muted small" Text="{Binding SizeText}" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                  </Button>
-                                  <TextBlock Classes="muted small" VerticalAlignment="Center" Text="{Binding Status}" />
-                                </StackPanel>
-                                <Button Classes="ghost" HorizontalAlignment="Left" Padding="4,2"
-                                        Content="Save image" FontSize="12"
-                                        IsVisible="{Binding IsImage}"
-                                        Command="{Binding DownloadCommand}" />
-                              </StackPanel>
-                            </DataTemplate>
-                          </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                      </StackPanel>
-                    </Border>
-
-                    <Button Classes="replychip" Classes.mine="{Binding IsMine}"
-                            Command="{Binding OpenRepliesCommand}"
-                            IsVisible="{Binding HasReplies}"
-                            ToolTip.Tip="Open thread">
-                      <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                        <c:Icon Data="{StaticResource Icon.ChatBubble}" Size="13"
-                                VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding RepliesLabel}" FontSize="12" FontWeight="SemiBold"
-                                   VerticalAlignment="Center" />
-                      </StackPanel>
-                    </Button>
-                  </StackPanel>
+                  </Panel>
 
                   <StackPanel Spacing="6" IsVisible="{Binding IsEditing}" Margin="0,2,0,0">
                     <TextBox Classes="messageedit" Text="{Binding EditDraft}"
@@ -204,59 +207,15 @@
       </StackPanel>
     </ScrollViewer>
 
-    <!-- Thread side panel -->
-    <Border Grid.Row="0" Grid.Column="1" Grid.RowSpan="2" Width="320" Classes="panel"
-            BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
-            IsVisible="{Binding ShowThreadPanel}" Background="{StaticResource Brush.Panel}">
-      <Grid RowDefinitions="Auto,*,Auto">
-        <Border Classes="stageheader" Padding="16,12">
-          <Grid ColumnDefinitions="*,Auto">
-            <StackPanel Spacing="2">
-              <TextBlock Classes="h2" Text="Thread" />
-              <TextBlock Classes="muted small" Text="{Binding OpenThread.Sender.DisplayName}"
-                         TextTrimming="CharacterEllipsis" />
-            </StackPanel>
-            <Button Grid.Column="1" Classes="ghost square" Command="{Binding CloseThreadCommand}" ToolTip.Tip="Close">
-              <c:Icon Data="{StaticResource Icon.Close}" Size="16" />
-            </Button>
-          </Grid>
-        </Border>
-
-        <ScrollViewer Grid.Row="1">
-          <StackPanel Margin="16,12" Spacing="10">
-            <TextBlock Text="{Binding OpenThread.DisplayBody}" TextWrapping="Wrap" LineHeight="21"
-                       Opacity="0.85" />
-            <TextBlock Classes="muted small" Text="Loading replies…" IsVisible="{Binding IsLoadingReplies}" />
-            <ItemsControl ItemsSource="{Binding ThreadReplies}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:MessageViewModel">
-                  <StackPanel Spacing="2" Margin="0,0,0,10">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                      <TextBlock Text="{Binding Sender.DisplayName}" FontWeight="SemiBold" FontSize="13" />
-                      <TextBlock Classes="muted" FontSize="12" Text="{Binding TimeText}" />
-                    </StackPanel>
-                    <TextBlock Text="{Binding DisplayBody}" TextWrapping="Wrap" LineHeight="20" FontSize="13.5" />
-                  </StackPanel>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </StackPanel>
-        </ScrollViewer>
-
-        <TextBlock Grid.Row="2" Classes="muted small" Margin="16,0,16,14"
-                   Text="Replies use the composer below." />
-      </Grid>
-    </Border>
-
     <!-- Nothing here yet -->
-    <StackPanel Grid.Row="0" Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6"
+    <StackPanel Grid.Row="0" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6"
                 IsVisible="{Binding IsEmpty}">
       <TextBlock Classes="h2" HorizontalAlignment="Center" Text="No messages yet" />
       <TextBlock Classes="muted" HorizontalAlignment="Center" Text="Say hello to get things started." />
     </StackPanel>
 
     <!-- Composer + floating “New messages” chip (upper-right of the field) -->
-    <Panel Grid.Row="1" Grid.Column="0">
+    <Panel Grid.Row="1">
     <StackPanel Margin="24,4,24,18" Spacing="6">
       <TextBlock Classes="muted small" Text="{Binding TypingText}"
                  IsVisible="{Binding TypingText, Converter={x:Static ObjectConverters.IsNotNull}}" />
@@ -275,7 +234,7 @@
         </Grid>
       </Border>
 
-      <Border Classes="composer">
+      <Border x:Name="ComposerDropZone" Classes="composer">
         <StackPanel>
           <ItemsControl ItemsSource="{Binding PendingAttachments}" Margin="8,6,8,0">
             <ItemsControl.ItemsPanel>
@@ -370,5 +329,51 @@
         </StackPanel>
       </Button>
     </Panel>
+      </Grid>
+    </Border>
+
+    <!-- Thread side panel -->
+    <Border Grid.Row="0" Grid.Column="1" Grid.RowSpan="2" Width="320" Classes="panel"
+            BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
+            IsVisible="{Binding ShowThreadPanel}" Background="{StaticResource Brush.Panel}">
+      <Grid RowDefinitions="Auto,*,Auto">
+        <Border Classes="stageheader" Padding="16,12">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Spacing="2">
+              <TextBlock Classes="h2" Text="Thread" />
+              <TextBlock Classes="muted small" Text="{Binding OpenThread.Sender.DisplayName}"
+                         TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+            <Button Grid.Column="1" Classes="ghost square" Command="{Binding CloseThreadCommand}" ToolTip.Tip="Close">
+              <c:Icon Data="{StaticResource Icon.Close}" Size="16" />
+            </Button>
+          </Grid>
+        </Border>
+
+        <ScrollViewer Grid.Row="1">
+          <StackPanel Margin="16,12" Spacing="10">
+            <TextBlock Text="{Binding OpenThread.DisplayBody}" TextWrapping="Wrap" LineHeight="21"
+                       Opacity="0.85" />
+            <TextBlock Classes="muted small" Text="Loading replies…" IsVisible="{Binding IsLoadingReplies}" />
+            <ItemsControl ItemsSource="{Binding ThreadReplies}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:MessageViewModel">
+                  <StackPanel Spacing="2" Margin="0,0,0,10">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <TextBlock Text="{Binding Sender.DisplayName}" FontWeight="SemiBold" FontSize="13" />
+                      <TextBlock Classes="muted" FontSize="12" Text="{Binding TimeText}" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding DisplayBody}" TextWrapping="Wrap" LineHeight="20" FontSize="13.5" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+
+        <TextBlock Grid.Row="2" Classes="muted small" Margin="16,0,16,14"
+                   Text="Replies use the composer below." />
+      </Grid>
+    </Border>
   </Grid>
 </UserControl>

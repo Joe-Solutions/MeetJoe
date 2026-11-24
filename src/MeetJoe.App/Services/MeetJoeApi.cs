@@ -17,7 +17,7 @@ public sealed class AuthHeaderHandler(IAuthService auth) : DelegatingHandler
     }
 }
 
-public sealed class MeetJoeApi(HttpClient http) : IMeetJoeApi
+public sealed class MeetJoeApi(HttpClient http, IAuthService auth) : IMeetJoeApi
 {
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -244,6 +244,17 @@ public sealed class MeetJoeApi(HttpClient http) : IMeetJoeApi
 
     public Task<MeetingRecordingDto> StartRecordingAsync(Guid meetingId, CancellationToken ct = default) =>
         SendAsync<MeetingRecordingDto>(HttpMethod.Post, $"api/meetings/{meetingId}/recording", null, ct);
+
+    public Task<MeetingRecordingDto> CompleteRecordingAsync(
+        Guid meetingId, Guid fileId, CancellationToken ct = default) =>
+        SendAsync<MeetingRecordingDto>(
+            HttpMethod.Post, $"api/meetings/{meetingId}/recording/complete",
+            new CompleteRecordingRequest(fileId), ct);
+
+    public Task CancelRecordingAsync(Guid meetingId, CancellationToken ct = default) =>
+        SendAsync(HttpMethod.Post, $"api/meetings/{meetingId}/recording/cancel", null, ct);
+
+    public Task<string?> GetAccessTokenAsync() => auth.GetAccessTokenAsync();
 
     public Task<IReadOnlyList<CallDto>> GetCallsAsync(Guid organizationId, CancellationToken ct = default) =>
         GetAsync<IReadOnlyList<CallDto>>($"api/orgs/{organizationId}/calls", ct);

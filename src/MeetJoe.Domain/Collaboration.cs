@@ -364,7 +364,7 @@ public class MeetingInvite(Guid meetingId, Guid userId, DateTimeOffset invitedAt
     }
 }
 
-/// <summary>Recording metadata. LiveKit egress can fill storage later; UI can still show status.</summary>
+/// <summary>Recording metadata for a meeting (client-side capture uploads the finished file).</summary>
 public class MeetingRecording
 {
     private MeetingRecording() { }
@@ -378,23 +378,36 @@ public class MeetingRecording
     public DateTimeOffset StartedAt { get; private set; }
     public DateTimeOffset? EndedAt { get; private set; }
 
+    public bool IsInProgress =>
+        Status is RecordingStatus.Starting or RecordingStatus.Recording;
+
     public static MeetingRecording Start(Guid meetingId, Guid startedById, DateTimeOffset now) => new()
     {
         Id = Guid.CreateVersion7(),
         MeetingId = meetingId,
         StartedById = startedById,
-        Status = RecordingStatus.Unavailable,
+        Status = RecordingStatus.Recording,
         StartedAt = now,
-        EndedAt = now,
+        EndedAt = null,
         FileName = null,
         StorageKey = null,
     };
 
     public void MarkReady(string storageKey, string fileName, DateTimeOffset now)
     {
+        if (!IsInProgress) throw new DomainException("This recording is not in progress.");
         Status = RecordingStatus.Ready;
-        StorageKey = storageKey;
-        FileName = fileName;
+        StorageKey = Guard.Required(storageKey, "Storage key", 100);
+        FileName = Guard.Required(fileName, "File name", MaxFileNameLength);
         EndedAt = now;
     }
+
+    public void MarkFailed(DateTimeOffset now)
+    {
+        if (!IsInProgress) return;
+        Status = RecordingStatus.Failed;
+        EndedAt = now;
+    }
+
+    public const int MaxFileNameLength = 255;
 }

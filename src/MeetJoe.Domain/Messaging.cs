@@ -350,6 +350,8 @@ public class Attachment(Guid messageId, Guid fileObjectId)
 public class FileObject
 {
     public const long MaxSizeBytes = 50L * 1024 * 1024;
+    /// <summary>Client-side meeting/call recordings (WebM) may exceed normal chat attachments.</summary>
+    public const long MaxRecordingSizeBytes = 200L * 1024 * 1024;
     public const int MaxFileNameLength = 255;
 
     private FileObject() { }
@@ -377,7 +379,8 @@ public class FileObject
         string? contentType,
         long size,
         DateTimeOffset now,
-        Guid? meetingId = null)
+        Guid? meetingId = null,
+        long maxSizeBytes = MaxSizeBytes)
     {
         var targets = (conversationId is not null ? 1 : 0)
                       + (channelId is not null ? 1 : 0)
@@ -385,8 +388,8 @@ public class FileObject
         if (targets != 1)
             throw new DomainException("A file is shared in exactly one conversation, channel, or meeting.");
         if (size <= 0) throw new DomainException("The file is empty.");
-        if (size > MaxSizeBytes)
-            throw new DomainException($"Files can be at most {MaxSizeBytes / (1024 * 1024)} MB.");
+        if (size > maxSizeBytes)
+            throw new DomainException($"Files can be at most {maxSizeBytes / (1024 * 1024)} MB.");
 
         var id = Guid.CreateVersion7();
         return new FileObject

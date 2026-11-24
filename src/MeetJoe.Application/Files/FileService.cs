@@ -24,10 +24,56 @@ public sealed class FileService(IAppDbContext db, IFileStorage storage, TimeProv
         CancellationToken ct = default,
         Guid? meetingId = null)
     {
+        return await UploadCoreAsync(
+            userId, conversationId, channelId, fileName, contentType, size, content, ct, meetingId,
+            Domain.FileObject.MaxSizeBytes);
+    }
+
+    /// <summary>Client-side meeting/call recording upload (larger size limit than chat attachments).</summary>
+    public Task<FileDto> UploadRecordingAsync(
+        Guid userId,
+        Guid? conversationId,
+        Guid? meetingId,
+        string? fileName,
+        string? contentType,
+        long size,
+        Stream content,
+        CancellationToken ct = default)
+    {
+        if (conversationId is null && meetingId is null)
+            throw AppException.Validation("A recording must belong to a meeting or call conversation.");
+        if (conversationId is not null && meetingId is not null)
+            throw AppException.Validation("A recording belongs to either a meeting or a call, not both.");
+
+        return UploadCoreAsync(
+            userId, conversationId, null, fileName, contentType, size, content, ct, meetingId,
+            Domain.FileObject.MaxRecordingSizeBytes);
+    }
+
+    private async Task<FileDto> UploadCoreAsync(
+        Guid userId,
+        Guid? conversationId,
+        Guid? channelId,
+        string? fileName,
+        string? contentType,
+        long size,
+        Stream content,
+        CancellationToken ct,
+        Guid? meetingId,
+        long maxSizeBytes)
+    {
         var target = await db.ResolveTargetAsync(userId, conversationId, channelId, ct, meetingId);
+        // Drop MIME parameters (e.g. codecs=…) — commas in Content-Type break MinIO multipart signing.
+        var safeContentType = contentType;
+        if (!string.IsNullOrWhiteSpace(safeContentType))
+        {
+            var semi = safeContentType.IndexOf(';');
+            if (semi >= 0) safeContentType = safeContentType[..semi].Trim();
+        }
+
         var file = Domain.FileObject.Create(
-            target.OrganizationId, userId, conversationId, channelId, fileName, contentType, size, time.Now(),
-            meetingId);
+            target.OrganizationId, userId, conversationId, channelId, fileName, safeContentType, size, time.Now(),
+            meetingId, maxSizeBytes);
 
         await storage.PutAsync(file.StorageKey, content, size, file.ContentType, ct);
         db.Files.Add(file);
@@ -44,7 +90,7 @@ public sealed class FileService(IAppDbContext db, IFileStorage storage, TimeProv
         }
 
         var uploaderName = await db.Users.Where(u => u.Id == userId).Select(u => u.DisplayName).FirstAsync(ct);
-        var location = meetingId is not null ? "Meeting" : string.Empty;
+        var location = meetingId is not null ? "Recording" : string.Empty;
         return new FileDto(
             file.Id, file.FileName, file.ContentType, file.Size, file.CreatedAt,
             new UserSummaryDto(userId, uploaderName), conversationId, channelId, location, meetingId);
@@ -70,7 +116,9 @@ public sealed class FileService(IAppDbContext db, IFileStorage storage, TimeProv
     public Task CopyContentAsync(FileDownload file, Stream destination, CancellationToken ct = default) =>
         storage.CopyToAsync(file.StorageKey, destination, ct);
 
-    /// <summary>Every file shared in a conversation or channel the user belongs to, newest first.</summary>
+    /// <summary>
+    /// Every attached file in a conversation, channel, or meeting the user belongs to, newest first.
+    /// </summary>
     public async Task<IReadOnlyList<FileDto>> ListAsync(Guid userId, Guid organizationId, CancellationToken ct = default)
     {
         await db.RequireMembershipAsync(userId, organizationId, ct);
@@ -82,7 +130,9 @@ public sealed class FileService(IAppDbContext db, IFileStorage storage, TimeProv
                              && db.ConversationMembers.Any(m => m.ConversationId == f.ConversationId && m.UserId == userId))
                             || (f.ChannelId != null
                                 && db.Channels.Any(c =>
-                                    c.Id == f.ChannelId && c.Workspace.Members.Any(m => m.UserId == userId)))))
+                                    c.Id == f.ChannelId && c.Workspace.Members.Any(m => m.UserId == userId)))
+                            || (f.MeetingId != null
+                                && db.MeetingParticipants.Any(p => p.MeetingId == f.MeetingId && p.UserId == userId))))
             .OrderByDescending(f => f.CreatedAt)
             .Take(500)
             .Select(f => new
@@ -96,9 +146,14 @@ public sealed class FileService(IAppDbContext db, IFileStorage storage, TimeProv
                 UploaderName = f.Uploader.DisplayName,
                 f.ConversationId,
                 f.ChannelId,
+                f.MeetingId,
                 ChannelLocation = db.Channels
                     .Where(c => c.Id == f.ChannelId)
                     .Select(c => c.Workspace.Name + " / " + c.Name)
+                    .FirstOrDefault(),
+                MeetingTitle = db.Meetings
+                    .Where(m => m.Id == f.MeetingId)
+                    .Select(m => m.Title)
                     .FirstOrDefault(),
             })
             .ToListAsync(ct);
@@ -107,7 +162,10 @@ public sealed class FileService(IAppDbContext db, IFileStorage storage, TimeProv
             .Select(r => new FileDto(
                 r.Id, r.FileName, r.ContentType, r.Size, r.CreatedAt,
                 new UserSummaryDto(r.UploaderId, r.UploaderName), r.ConversationId, r.ChannelId,
-                r.ChannelLocation ?? "Chat"))
+                r.MeetingId is not null
+                    ? (string.IsNullOrWhiteSpace(r.MeetingTitle) ? "Recording" : $"Recording · {r.MeetingTitle}")
+                    : (r.ChannelLocation ?? "Chat"),
+                r.MeetingId))
             .ToList();
     }
 }

@@ -16,12 +16,36 @@ public partial class ShellView : UserControl
 {
     private ShellViewModel? _vm;
     private bool _callPipActive;
+    private FloatingPipDrag? _meetingPipDrag;
+    private FloatingPipDrag? _callPipDrag;
 
     public ShellView()
     {
         InitializeComponent();
         DataContextChanged += (_, _) => BindViewModel(DataContext as ShellViewModel);
         CallChatComposer.AddHandler(KeyDownEvent, OnCallChatKeyDown, RoutingStrategies.Tunnel);
+        ComposerFileDrop.Enable(CallChatDropZone, files =>
+            _vm?.Calls.AttachFilesAsync(files) ?? Task.CompletedTask);
+
+        _meetingPipDrag = new FloatingPipDrag(MeetingPipRoot, MeetingPipHeader);
+        _callPipDrag = new FloatingPipDrag(CallStageRoot, CallStageHeader);
+        // Place default PiP once the shell has a real size.
+        LayoutUpdated += OnShellLayoutUpdated;
+    }
+
+    private Size _lastShellContentSize;
+
+    private void OnShellLayoutUpdated(object? sender, EventArgs e)
+    {
+        // Re-clamp PiP when the shell content area changes size (resize / rail).
+        if (MeetingPipRoot.Parent is not Control parent) return;
+        var size = parent.Bounds.Size;
+        if (size == _lastShellContentSize) return;
+        _lastShellContentSize = size;
+        if (MeetingPipRoot.IsVisible)
+            _meetingPipDrag?.ApplyFloatingLayout(300, 248);
+        if (_callPipActive)
+            _callPipDrag?.ApplyFloatingLayout(300, 248);
     }
 
     private void OnCallChatKeyDown(object? sender, KeyEventArgs e)
@@ -100,7 +124,18 @@ public partial class ShellView : UserControl
     {
         if (_vm is not { Calls.HasMedia: true, Calls.MediaPageUri: { } uri })
         {
+            if (_callPipDrag is not null)
+            {
+                _callPipDrag.IsEnabled = false;
+                _callPipDrag.ResetSavedPosition();
+            }
+            _callPipActive = false;
             CallStageRoot.IsVisible = false;
+            CallStageRoot.ClearValue(WidthProperty);
+            CallStageRoot.ClearValue(HeightProperty);
+            CallStageRoot.ClearValue(MarginProperty);
+            CallStageRoot.HorizontalAlignment = HorizontalAlignment.Stretch;
+            CallStageRoot.VerticalAlignment = VerticalAlignment.Stretch;
             _ = TearDownCallMediaAsync();
             return;
         }
@@ -109,6 +144,11 @@ public partial class ShellView : UserControl
 
         if (_vm.ShowCallStage)
         {
+            if (_callPipDrag is { IsEnabled: true })
+                _callPipDrag.RememberCurrentPosition();
+            if (_callPipDrag is not null)
+                _callPipDrag.IsEnabled = false;
+
             CallStageRoot.ClearValue(WidthProperty);
             CallStageRoot.ClearValue(HeightProperty);
             CallStageRoot.ClearValue(MarginProperty);
@@ -126,17 +166,16 @@ public partial class ShellView : UserControl
             CallHeaderExpandButton.IsVisible = false;
             if (CallStageRoot.ColumnDefinitions.Count > 1)
                 CallStageRoot.ColumnDefinitions[1].Width = new GridLength(280);
+            CallStageHeader.Padding = new Thickness(16, 10);
+            CallStageControls.Padding = new Thickness(16, 12);
+            CallStageRoot.ClipToBounds = false;
         }
         else
         {
-            // Teams-style floating PiP: visible single-speaker surface while browsing.
-            CallStageRoot.Width = 300;
-            CallStageRoot.Height = 248;
-            CallStageRoot.Margin = new Thickness(16);
-            CallStageRoot.HorizontalAlignment = HorizontalAlignment.Right;
-            CallStageRoot.VerticalAlignment = VerticalAlignment.Bottom;
+            // Teams-style floating PiP — draggable within the shell content area.
             CallStageRoot.Opacity = 1;
             CallStageRoot.IsHitTestVisible = true;
+            CallStageRoot.ClipToBounds = true;
             CallStageHeader.IsVisible = true;
             CallStageControls.IsVisible = true;
             CallStageRail.IsVisible = false;
@@ -148,13 +187,12 @@ public partial class ShellView : UserControl
             if (CallStageRoot.ColumnDefinitions.Count > 1)
                 CallStageRoot.ColumnDefinitions[1].Width = new GridLength(0);
             CallStageHeader.Padding = new Thickness(10, 8);
-            CallStageControls.Padding = new Thickness(10, 8);
-        }
-
-        if (_vm.ShowCallStage)
-        {
-            CallStageHeader.Padding = new Thickness(16, 10);
-            CallStageControls.Padding = new Thickness(16, 12);
+            CallStageControls.Padding = new Thickness(8, 6);
+            if (_callPipDrag is not null)
+            {
+                _callPipDrag.IsEnabled = true;
+                _callPipDrag.ApplyFloatingLayout(300, 248);
+            }
         }
 
         OpenCallMedia(uri);
@@ -224,7 +262,7 @@ public partial class ShellView : UserControl
             host.SetLeaveHandler(() =>
             {
                 if (_vm?.Calls.HangUpCommand.CanExecute(null) == true)
-                    _vm.Calls.HangUpCommand.Execute(null);
+                    _ = _vm.Calls.HangUpCommand.ExecuteAsync(null);
             });
             host.MediaStateChanged += () =>
             {
@@ -234,6 +272,17 @@ public partial class ShellView : UserControl
                 _vm.Calls.IsCameraOn = host.IsCameraEnabled;
                 _vm.Calls.IsMicOn = host.IsMicEnabled;
                 _vm.Calls.IsScreenShareOn = host.IsScreenShareEnabled;
+                _vm.Calls.IsRecording = host.IsRecording;
+            };
+            host.RecordingTimerChanged += startedAt => _vm?.Calls.ApplyLocalRecordingTimer(startedAt);
+            host.RoomRecordingChanged += (on, by, at) => _vm?.Calls.ApplyRoomRecording(on, by, at);
+            host.SessionStarted += ms => _vm?.Calls.ApplySessionStart(ms);
+            host.SessionWarning += () => _vm?.Calls.ApplySessionWarning();
+            host.SessionExpired += () =>
+            {
+                if (_vm?.Calls.ConsumeSessionExpired() != true) return;
+                if (_vm.Calls.HangUpCommand.CanExecute(null))
+                    _ = _vm.Calls.HangUpCommand.ExecuteAsync(null);
             };
             host.ActiveSpeakersChanged += ids =>
             {
@@ -268,6 +317,8 @@ public partial class ShellView : UserControl
             _vm.Calls.ToggleCameraHandler = () => host.ToggleCameraAsync();
             _vm.Calls.ToggleMicHandler = () => host.ToggleMicAsync();
             _vm.Calls.ToggleScreenShareHandler = () => host.ToggleScreenShareAsync();
+            _vm.Calls.StartRecordingHandler = (url, token, name) => host.StartRecordingAsync(url, token, name);
+            _vm.Calls.StopRecordingHandler = () => host.StopRecordingAsync();
         }
 
         host.Show(uri);
@@ -298,6 +349,10 @@ public partial class ShellView : UserControl
 
         if (!showPip || stage?.MediaPageUri is not { } uri)
         {
+            if (MeetingPipRoot.IsVisible)
+                _meetingPipDrag?.RememberCurrentPosition();
+            if (_meetingPipDrag is not null)
+                _meetingPipDrag.IsEnabled = false;
             MeetingPipRoot.IsVisible = false;
             // Return host to parking (MeetingStage will Take on reopen) or shut down if meeting ended.
             if (MeetingPipMediaHost.Children.OfType<InAppMediaHost>().FirstOrDefault() is { } hosted)
@@ -306,10 +361,14 @@ public partial class ShellView : UserControl
                 if (_vm?.Calendar.IsInMeeting == true && stage is { IsMediaOpen: true })
                     MeetingMediaParking.Park(hosted);
                 else
+                {
+                    _meetingPipDrag?.ResetSavedPosition();
                     _ = ShutdownMeetingHostAsync(hosted);
+                }
             }
             else if (_vm?.Calendar.IsInMeeting != true)
             {
+                _meetingPipDrag?.ResetSavedPosition();
                 _ = MeetingMediaParking.ShutdownAsync();
             }
 
@@ -317,6 +376,11 @@ public partial class ShellView : UserControl
         }
 
         MeetingPipRoot.IsVisible = true;
+        if (_meetingPipDrag is not null)
+        {
+            _meetingPipDrag.IsEnabled = true;
+            _meetingPipDrag.ApplyFloatingLayout(300, 248);
+        }
 
         var host = MeetingPipMediaHost.Children.OfType<InAppMediaHost>().FirstOrDefault()
                    ?? MeetingMediaParking.Take();
@@ -334,6 +398,19 @@ public partial class ShellView : UserControl
                 s.IsCameraOn = host.IsCameraEnabled;
                 s.IsMicOn = host.IsMicEnabled;
                 s.IsScreenShareOn = host.IsScreenShareEnabled;
+                s.IsRecording = host.IsRecording;
+            };
+            host.RecordingTimerChanged += startedAt =>
+                _vm?.Calendar.Stage?.ApplyLocalRecordingTimer(startedAt);
+            host.RoomRecordingChanged += (on, by, at) =>
+                _vm?.Calendar.Stage?.ApplyRoomRecording(on, by, at);
+            host.SessionStarted += ms => _vm?.Calendar.Stage?.ApplySessionStart(ms);
+            host.SessionWarning += () => _vm?.Calendar.Stage?.ApplySessionWarning();
+            host.SessionExpired += () =>
+            {
+                if (_vm?.Calendar.Stage?.ConsumeSessionExpired() != true) return;
+                if (_vm.Calendar.LeaveCommand.CanExecute(null))
+                    _ = _vm.Calendar.LeaveCommand.ExecuteAsync(null);
             };
             host.ActiveSpeakersChanged += ids => _vm?.Calendar.Stage?.ApplyActiveSpeakers(ids);
             host.MutedParticipantsChanged += ids => _vm?.Calendar.Stage?.ApplyMutedParticipants(ids);
@@ -356,6 +433,8 @@ public partial class ShellView : UserControl
         stage.ToggleCameraHandler = () => host.ToggleCameraAsync();
         stage.ToggleMicHandler = () => host.ToggleMicAsync();
         stage.ToggleScreenShareHandler = () => host.ToggleScreenShareAsync();
+        stage.StartRecordingHandler = (url, token, name) => host.StartRecordingAsync(url, token, name);
+        stage.StopRecordingHandler = () => host.StopRecordingAsync();
         host.Show(uri);
         host.HorizontalAlignment = HorizontalAlignment.Stretch;
         host.VerticalAlignment = VerticalAlignment.Stretch;

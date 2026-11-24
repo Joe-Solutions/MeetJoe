@@ -287,14 +287,69 @@ public sealed class MeetingService(
         var meeting = await RequireHostAsync(userId, meetingId, ct);
         if (!meeting.IsActive) throw AppException.Conflict("This meeting has ended.");
 
+        var active = await db.MeetingRecordings
+            .Where(r => r.MeetingId == meetingId
+                        && (r.Status == Domain.RecordingStatus.Starting
+                            || r.Status == Domain.RecordingStatus.Recording))
+            .FirstOrDefaultAsync(ct);
+        if (active is not null)
+            throw AppException.Conflict("A recording is already in progress.");
+
         var recording = Domain.MeetingRecording.Start(meeting.Id, userId, time.Now());
         db.MeetingRecordings.Add(recording);
         await db.SaveChangesAsync(ct);
 
-        return new MeetingRecordingDto(
-            recording.Id, meeting.Id, recording.Status.ToContract(), recording.FileName,
-            recording.StartedAt, recording.EndedAt);
+        return ToRecordingDto(recording);
     }
+
+    public async Task<MeetingRecordingDto> CompleteRecordingAsync(
+        Guid userId, Guid meetingId, CompleteRecordingRequest request, CancellationToken ct = default)
+    {
+        var meeting = await RequireHostAsync(userId, meetingId, ct);
+        var recording = await db.MeetingRecordings
+            .Where(r => r.MeetingId == meetingId
+                        && (r.Status == Domain.RecordingStatus.Starting
+                            || r.Status == Domain.RecordingStatus.Recording))
+            .OrderByDescending(r => r.StartedAt)
+            .FirstOrDefaultAsync(ct)
+            ?? throw AppException.Conflict("No recording is in progress.");
+
+        if (recording.StartedById != userId)
+            throw AppException.Forbidden("Only the host who started the recording can finish it.");
+
+        var file = await db.Files.FirstOrDefaultAsync(f => f.Id == request.FileId, ct)
+                   ?? throw AppException.NotFound("File");
+        if (file.MeetingId != meetingId || file.UploaderId != userId)
+            throw AppException.Validation("That file is not a recording for this meeting.");
+
+        recording.MarkReady(file.StorageKey, file.FileName, time.Now());
+        await db.SaveChangesAsync(ct);
+        return ToRecordingDto(recording);
+    }
+
+    public async Task<MeetingRecordingDto> CancelRecordingAsync(
+        Guid userId, Guid meetingId, CancellationToken ct = default)
+    {
+        await RequireHostAsync(userId, meetingId, ct);
+        var recording = await db.MeetingRecordings
+            .Where(r => r.MeetingId == meetingId
+                        && (r.Status == Domain.RecordingStatus.Starting
+                            || r.Status == Domain.RecordingStatus.Recording))
+            .OrderByDescending(r => r.StartedAt)
+            .FirstOrDefaultAsync(ct)
+            ?? throw AppException.Conflict("No recording is in progress.");
+
+        if (recording.StartedById != userId)
+            throw AppException.Forbidden("Only the host who started the recording can stop it.");
+
+        recording.MarkFailed(time.Now());
+        await db.SaveChangesAsync(ct);
+        return ToRecordingDto(recording);
+    }
+
+    private static MeetingRecordingDto ToRecordingDto(Domain.MeetingRecording recording) =>
+        new(recording.Id, recording.MeetingId, recording.Status.ToContract(), recording.FileName,
+            recording.StartedAt, recording.EndedAt);
 
     public async Task<MeetingDto> RespondToInviteAsync(
         Guid userId, Guid meetingId, RespondInviteRequest request, CancellationToken ct = default)

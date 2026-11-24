@@ -112,6 +112,29 @@
     <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
     <Setter Property="Background" Value="#0F2A40" />
   </Style>
+  <!-- Drag-drop highlight for chat composers (DM / meeting / call). -->
+  <Style Selector="Border.composer.filedrop">
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+    <Setter Property="BorderThickness" Value="2" />
+    <Setter Property="Background" Value="{DynamicResource Brush.AccentSoft}" />
+  </Style>
+  <Style Selector="Border.roomcomposer-drop.filedrop">
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+    <Setter Property="BorderThickness" Value="1.5" />
+    <Setter Property="Background" Value="{DynamicResource Brush.AccentSoft}" />
+    <Setter Property="Padding" Value="4" />
+  </Style>
+  <!-- Full conversation drop surface (messages + composer). -->
+  <Style Selector="Border.chatdrop">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="1.5" />
+    <Setter Property="CornerRadius" Value="12" />
+  </Style>
+  <Style Selector="Border.chatdrop.filedrop">
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+    <Setter Property="Background" Value="{DynamicResource Brush.AccentSoft}" />
+  </Style>
 
   <Style Selector="Border.composer-toolbar">
     <Setter Property="Padding" Value="6,4,6,2" />
@@ -429,49 +452,37 @@
   <Style Selector="StackPanel.messagemeta.mine">
     <Setter Property="HorizontalAlignment" Value="Right" />
   </Style>
-  <Style Selector="StackPanel.messagechrome">
+  <Style Selector="Panel.messagechrome">
     <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="ClipToBounds" Value="False" />
   </Style>
-  <Style Selector="StackPanel.messagechrome.mine">
+  <Style Selector="Panel.messagechrome.mine">
     <Setter Property="HorizontalAlignment" Value="Right" />
+  </Style>
+  <Style Selector="DockPanel.message">
+    <Setter Property="ClipToBounds" Value="False" />
   </Style>
 
   <!--
-    Teams-style: reaction pill lives in the header row (name/time band), not over bubble text.
-    Others → upper-right; mine → upper-left. Hidden until the message is hovered.
-    Continuations collapse the header to 0 until hover, then open a slim toolbar row above the bubble.
+    Floating reaction / reply pill overlays the top of the bubble (Slack/Teams style).
+    Positioned absolutely inside Panel.messagechrome so hover never expands layout.
   -->
-  <Style Selector="Grid.messageheader">
-    <Setter Property="MinHeight" Value="0" />
-    <Setter Property="ClipToBounds" Value="False" />
-  </Style>
-  <Style Selector="Grid.messageheader.mine">
-    <Setter Property="HorizontalAlignment" Value="Stretch" />
-  </Style>
-  <!-- Continuations: no name row — collapse until hover so bubbles stay tight. -->
-  <Style Selector="Grid.messageheader.continuation">
-    <Setter Property="MaxHeight" Value="0" />
-    <Setter Property="Margin" Value="0" />
-  </Style>
-  <Style Selector="DockPanel.message:pointerover Grid.messageheader.continuation">
-    <Setter Property="MaxHeight" Value="40" />
-    <Setter Property="MinHeight" Value="36" />
-    <Setter Property="Margin" Value="0,0,0,4" />
-  </Style>
-
   <Style Selector="Border.message-hoverbar">
-    <Setter Property="Background" Value="{DynamicResource Brush.PanelRaised}" />
-    <Setter Property="BorderBrush" Value="#2C5273" />
+    <Setter Property="Background" Value="#E6121E2E" />
+    <Setter Property="BorderBrush" Value="#3D6A94" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="999" />
-    <Setter Property="Padding" Value="4" />
+    <Setter Property="Padding" Value="5,3" />
     <Setter Property="HorizontalAlignment" Value="Right" />
-    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Top" />
+    <Setter Property="Margin" Value="0,-16,6,0" />
     <Setter Property="Opacity" Value="0" />
     <Setter Property="IsHitTestVisible" Value="False" />
+    <Setter Property="BoxShadow" Value="0 10 28 0 #66000000" />
   </Style>
   <Style Selector="Border.message-hoverbar.mine">
     <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="Margin" Value="6,-16,0,0" />
   </Style>
   <Style Selector="DockPanel.message:pointerover Border.message-hoverbar">
     <Setter Property="Opacity" Value="1" />

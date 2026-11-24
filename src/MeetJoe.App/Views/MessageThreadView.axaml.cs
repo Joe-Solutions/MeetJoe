@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using MeetJoe.App.Controls;
 using MeetJoe.App.ViewModels;
 
 namespace MeetJoe.App.Views;
@@ -24,6 +25,8 @@ public partial class MessageThreadView : UserControl
         // Edit boxes live in item templates — catch Enter/Esc via the scroll surface.
         Scroller.AddHandler(KeyDownEvent, OnEditKeyDown, RoutingStrategies.Tunnel);
         Scroller.ScrollChanged += OnScrollChanged;
+        ComposerFileDrop.Enable(ThreadDropZone, files =>
+            _thread?.AttachFilesAsync(files) ?? Task.CompletedTask);
     }
 
     protected override void OnDataContextChanged(EventArgs e)
