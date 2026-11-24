@@ -3,7 +3,7 @@
 # Usage:
 #   ./scripts/pack-desktop-update.sh [version] [rid]
 # Example:
-#   ./scripts/pack-desktop-update.sh 0.2.0 osx-arm64
+#   ./scripts/pack-desktop-update.sh 0.1.3 osx-arm64
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -36,12 +36,12 @@ export DOTNET_ROOT
 
 echo "==> Ensuring vpk tool"
 dotnet tool restore >/dev/null
-if ! dotnet tool run vpk --help >/dev/null 2>&1; then
+if [[ -x "$ROOT/.tools/vpk" ]]; then
+  VPK=("$ROOT/.tools/vpk")
+else
   dotnet tool install vpk --version 1.2.161 --tool-path "$ROOT/.tools" >/dev/null
-  export PATH="$ROOT/.tools:$PATH"
+  VPK=("$ROOT/.tools/vpk")
 fi
-VPK=(dotnet tool run vpk)
-if [[ -x "$ROOT/.tools/vpk" ]]; then VPK=("$ROOT/.tools/vpk"); fi
 
 PUBLISH="$ROOT/artifacts/publish/$RID"
 RELEASES="$ROOT/src/MeetJoe.Api/releases/desktop/$RID"
@@ -56,35 +56,63 @@ dotnet publish "$ROOT/src/MeetJoe.Desktop/MeetJoe.Desktop.csproj" \
   -p:InformationalVersion="$VERSION" \
   -o "$PUBLISH"
 
+PACK_EXTRA=()
 ICON_ARGS=()
+MAIN_EXE=MeetJoe
+# Ensure empty arrays are safe under `set -u`.
 if [[ "$RID" == osx-* ]]; then
   ICON="$ROOT/src/MeetJoe.Desktop/Assets/AppIcon.icns"
-  # Ensure the .app Info.plist + icns land in the publish folder for Velopack.
-  cp -f "$ROOT/src/MeetJoe.Desktop/Info.plist" "$PUBLISH/Info.plist"
+  PLIST="$ROOT/src/MeetJoe.Desktop/Info.plist"
+  ENTITLEMENTS="$ROOT/src/MeetJoe.Desktop/MeetJoe.entitlements"
+  cp -f "$PLIST" "$PUBLISH/Info.plist"
   cp -f "$ICON" "$PUBLISH/AppIcon.icns"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "$PUBLISH/Info.plist" 2>/dev/null || true
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" "$PUBLISH/Info.plist" 2>/dev/null || true
+  PACK_EXTRA+=(--plist "$PUBLISH/Info.plist")
+  if [[ -f "$ENTITLEMENTS" ]]; then
+    PACK_EXTRA+=(--signEntitlements "$ENTITLEMENTS")
+  fi
 elif [[ "$RID" == win-* ]]; then
+  MAIN_EXE=MeetJoe.exe
   ICON="$ROOT/src/MeetJoe.Desktop/Assets/MeetJoe.ico"
 else
   ICON="$ROOT/src/MeetJoe.Desktop/Assets/MeetJoe.png"
 fi
-if [[ -f "$ICON" ]]; then
+if [[ -n "${ICON}" && -f "$ICON" ]]; then
   ICON_ARGS=(--icon "$ICON")
 fi
 
-echo "==> Packing Velopack release"
-"${VPK[@]}" pack \
+# Velopack OS directive for cross-compiling, e.g. `vpk [win] pack` from macOS.
+VPK_OS_DIR=
+case "$RID" in
+  win-*) VPK_OS_DIR='[win]' ;;
+  osx-*) VPK_OS_DIR='[osx]' ;;
+  linux-*) VPK_OS_DIR='[linux]' ;;
+esac
+
+echo "==> Packing Velopack release (channel=stable, os=${VPK_OS_DIR:-host})"
+if [[ -n "$VPK_OS_DIR" ]]; then
+  set -- "${VPK[@]}" "$VPK_OS_DIR" pack
+else
+  set -- "${VPK[@]}" pack
+fi
+"$@" \
   --packId MeetJoe \
   --packVersion "$VERSION" \
   --packDir "$PUBLISH" \
-  --mainExe MeetJoe \
+  --mainExe "$MAIN_EXE" \
+  --packTitle MeetJoe \
+  --packAuthors "Joe Solutions" \
   --outputDir "$RELEASES" \
   --channel stable \
-  "${ICON_ARGS[@]}"
-
+  --runtime "$RID" \
+  ${ICON_ARGS[@]+"${ICON_ARGS[@]}"} \
+  ${PACK_EXTRA[@]+"${PACK_EXTRA[@]}"}
 cat > "$RELEASES/RELEASE_NOTES.md" <<EOF
 MeetJoe $VERSION
 EOF
 
 echo "==> Feed ready at $RELEASES"
+ls -lh "$RELEASES" | head -30
 echo "    Clients will pull: {API}/updates/desktop/$RID/"
 echo "    Manifest:          {API}/api/desktop/updates?rid=$RID"
