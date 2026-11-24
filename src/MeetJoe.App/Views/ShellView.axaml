@@ -126,7 +126,16 @@
               </Button>
               <Button Classes="secondary" Width="40" Height="40" Padding="0" CornerRadius="20"
                       ToolTip.Tip="Chat" Command="{Binding Calls.ShowChatCommand}">
-                <c:Icon Data="{StaticResource Icon.ChatBubble}" Size="18" />
+                <Panel>
+                  <c:Icon Data="{StaticResource Icon.ChatBubble}" Size="18" />
+                  <Border IsVisible="{Binding Calls.HasUnreadChat}" Background="{StaticResource Brush.Accent}"
+                          CornerRadius="8" MinWidth="16" Height="16" Padding="4,0"
+                          HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-2,-2,0">
+                    <TextBlock Text="{Binding Calls.UnreadChatBadge}" FontSize="10" FontWeight="Bold"
+                               Foreground="{StaticResource Brush.OnAccent}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  </Border>
+                </Panel>
               </Button>
               <Button Classes="secondary" Width="40" Height="40" Padding="0" CornerRadius="20"
                       ToolTip.Tip="Add people" Command="{Binding Calls.BeginAddPeopleCommand}">
@@ -149,13 +158,15 @@
         </Border>
 
         <!--
-          Avalonia Meet tiles own the stage (never hide — WebView blank-out looked like “no grid”).
-          LiveKit WKWebView sits in an uncovered PiP so macOS capture/playback is not occluded.
+          LiveKit WebView owns the Meet grid (video in each tile; initials when camera off).
+          Avalonia roster tiles are a connecting placeholder only — never stacked over the
+          WebView on macOS (occlusion kills capture/playback).
         -->
         <Panel Grid.Row="1" Background="{StaticResource Brush.Rail}">
           <ItemsControl x:Name="CallRosterTiles" ItemsSource="{Binding Calls.Roster}" Margin="16"
                         VerticalAlignment="Center" HorizontalAlignment="Stretch"
-                        IsHitTestVisible="False" ZIndex="1">
+                        IsHitTestVisible="False" ZIndex="1"
+                        IsVisible="{Binding Calls.ShowConnectingTiles}">
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>
                 <UniformGrid Columns="{Binding $parent[UserControl].((vm:ShellViewModel)DataContext).Calls.RosterGridColumns}" />
@@ -215,11 +226,10 @@
             </ItemsControl.ItemTemplate>
           </ItemsControl>
 
-          <!-- Uncovered LiveKit surface (PiP). Must not sit under Avalonia tiles on macOS. -->
+          <!-- Full-stage LiveKit surface when expanded; small keep-alive when minimized. -->
           <Panel x:Name="CallMediaHost"
-                 Width="320" Height="180"
-                 HorizontalAlignment="Left" VerticalAlignment="Bottom"
-                 Margin="12" ZIndex="5"
+                 HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                 ZIndex="5"
                  IsHitTestVisible="False" />
         </Panel>
 
@@ -270,6 +280,12 @@
                 <StackPanel Orientation="Horizontal" Spacing="6">
                   <c:Icon Data="{StaticResource Icon.ChatBubble}" Size="15" />
                   <TextBlock Text="Chat" VerticalAlignment="Center" />
+                  <Border IsVisible="{Binding Calls.HasUnreadChat}" Background="{StaticResource Brush.Accent}"
+                          CornerRadius="9" MinWidth="18" Height="18" Padding="5,0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Calls.UnreadChatBadge}" FontSize="11" FontWeight="Bold"
+                               Foreground="{StaticResource Brush.OnAccent}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  </Border>
                 </StackPanel>
               </Button>
             </StackPanel>
@@ -323,24 +339,40 @@
             <Grid Grid.Row="1" RowDefinitions="Auto,*,Auto" Margin="0,8,0,0"
                   IsVisible="{Binding Calls.ShowChatPanel}">
               <TextBlock Classes="h2" Margin="14,4,14,8" Text="Chat" />
-              <ScrollViewer Grid.Row="1" Margin="12,0,12,0">
-                <ItemsControl ItemsSource="{Binding Calls.ChatMessages}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="contracts:MessageDto">
-                      <StackPanel Margin="0,0,0,10" Spacing="2">
-                        <TextBlock FontWeight="SemiBold" FontSize="12" Text="{Binding Sender.DisplayName}" />
-                        <TextBlock TextWrapping="Wrap" FontSize="13" Text="{Binding Body}" />
-                      </StackPanel>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
+              <ScrollViewer Grid.Row="1" Margin="8,0,8,0">
+                <ItemsControl ItemsSource="{Binding Calls.ChatMessages}"
+                              ItemTemplate="{StaticResource RoomChatMessageTemplate}"
+                              VerticalAlignment="Bottom" />
               </ScrollViewer>
-              <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="10">
-                <TextBox x:Name="CallChatComposer" Text="{Binding Calls.ChatDraft}"
-                         Watermark="Message everyone on the call" />
-                <Button Grid.Column="1" Classes="primary" Margin="6,0,0,0" Content="Send"
-                        ToolTip.Tip="Send (Enter)" Command="{Binding Calls.SendChatCommand}" />
-              </Grid>
+              <StackPanel Grid.Row="2" Margin="8,6,8,8" Spacing="4">
+                <Border Classes="emojipicker" IsVisible="{Binding Calls.ShowEmojiPicker}">
+                  <ItemsControl ItemsSource="{Binding Calls.EmojiPalette}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <WrapPanel />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="x:String">
+                        <Button Classes="emoji" Content="{Binding}"
+                                Command="{Binding $parent[UserControl].((vm:ShellViewModel)DataContext).Calls.InsertEmojiCommand}"
+                                CommandParameter="{Binding}" />
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </Border>
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+                  <Button Classes="ghost square" VerticalAlignment="Center" ToolTip.Tip="Emoji"
+                          Command="{Binding Calls.ToggleEmojiPickerCommand}">
+                    <c:Icon Data="{StaticResource Icon.Smile}" Size="16" />
+                  </Button>
+                  <TextBox x:Name="CallChatComposer" Grid.Column="1" Classes="roomcomposer"
+                           Text="{Binding Calls.ChatDraft}"
+                           Watermark="Message everyone on the call" />
+                  <Button Grid.Column="2" Classes="primary" Content="Send" VerticalAlignment="Center"
+                          ToolTip.Tip="Send (Enter)" Command="{Binding Calls.SendChatCommand}" />
+                </Grid>
+              </StackPanel>
             </Grid>
           </Grid>
         </Border>

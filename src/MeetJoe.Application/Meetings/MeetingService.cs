@@ -169,6 +169,29 @@ public sealed class MeetingService(
         await PublishMeetingAsync(meeting.Id, ct);
     }
 
+    /// <summary>
+    /// Client quit/crash often skips Leave — clear every room this user is still marked present in
+    /// so “Happening now” does not keep ghost meetings forever.
+    /// </summary>
+    public async Task LeavePresentMeetingsAsync(Guid userId, CancellationToken ct = default)
+    {
+        var meetingIds = await db.MeetingParticipants
+            .AsNoTracking()
+            .Where(p => p.UserId == userId && p.LeftAt == null)
+            .Select(p => p.MeetingId)
+            .Distinct()
+            .ToListAsync(ct);
+
+        foreach (var meetingId in meetingIds)
+        {
+            try { await LeaveAsync(userId, meetingId, ct); }
+            catch (AppException)
+            {
+                // Meeting may already have ended or the user left the org.
+            }
+        }
+    }
+
     public async Task EndAsync(Guid userId, Guid meetingId, CancellationToken ct = default)
     {
         var meeting = await RequireAccessibleAsync(userId, meetingId, ct);

@@ -35,6 +35,7 @@ public partial class ShellView : UserControl
         if (_vm is not null)
         {
             _vm.PropertyChanged -= OnShellPropertyChanged;
+            _vm.Calls.PropertyChanged -= OnCallsPropertyChanged;
             _vm.Calls.CallChromeChanged -= SyncCallStage;
         }
 
@@ -42,6 +43,7 @@ public partial class ShellView : UserControl
         if (_vm is not null)
         {
             _vm.PropertyChanged += OnShellPropertyChanged;
+            _vm.Calls.PropertyChanged += OnCallsPropertyChanged;
             _vm.Calls.CallChromeChanged += SyncCallStage;
         }
 
@@ -54,6 +56,14 @@ public partial class ShellView : UserControl
             or nameof(ShellViewModel.ShowCallBar)
             or nameof(ShellViewModel.Current))
             SyncCallStage();
+    }
+
+    private void OnCallsPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // WKWebView paints above Avalonia; hide it so the invite dialog is not clipped.
+        if (e.PropertyName is nameof(CallsViewModel.ShowAddPeople)
+            or nameof(CallsViewModel.IsLiveKitSurfaceReady))
+            LayoutCallMediaHost();
     }
 
     private void SyncCallStage()
@@ -96,40 +106,46 @@ public partial class ShellView : UserControl
     }
 
     /// <summary>
-    /// LiveKit must stay uncovered on macOS. Avalonia tiles keep the Meet grid; the WebView
-    /// is a bottom-left PiP (visible when camera is on, near-invisible keep-alive otherwise).
+    /// Expanded stage: WebView fills the grid area so LiveKit tiles (video / initials) paint
+    /// in-box. Minimized: keep a real surface alive for capture/playback while browsing.
+    /// Never stack Avalonia chrome over the WebView on macOS — hide the native surface while
+    /// the Add people dialog is open so the modal is not occluded.
     /// </summary>
     private void LayoutCallMediaHost()
     {
-        if (CallMediaHost.Children.OfType<InAppMediaHost>().FirstOrDefault() is not { } host)
-            return;
+        var inviting = _vm?.Calls.ShowAddPeople == true;
 
-        host.IsVisible = true;
+        if (CallMediaHost.Children.OfType<InAppMediaHost>().FirstOrDefault() is not { } host)
+        {
+            CallMediaHost.IsVisible = !inviting;
+            return;
+        }
+
         host.ZIndex = 5;
+        host.IsHitTestVisible = false;
+        host.Opacity = 1;
+        host.ClearValue(WidthProperty);
+        host.ClearValue(HeightProperty);
+        host.ClearValue(MarginProperty);
+        host.HorizontalAlignment = HorizontalAlignment.Stretch;
+        host.VerticalAlignment = VerticalAlignment.Stretch;
+        host.IsVisible = !inviting;
+
+        CallMediaHost.IsVisible = !inviting;
 
         if (_vm is { ShowCallStage: true })
         {
-            // Camera on: larger uncovered surface helps WKWebView capture; tiles stay visible around it.
-            var cameraOn = _vm.Calls.IsCameraOn;
-            host.Width = cameraOn ? 420 : 320;
-            host.Height = cameraOn ? 260 : 180;
-            host.HorizontalAlignment = HorizontalAlignment.Left;
-            host.VerticalAlignment = VerticalAlignment.Bottom;
-            host.Margin = new Thickness(12);
-            // Keep the native surface painted (opacity 0 can stall WKWebView A/V).
-            host.Opacity = cameraOn ? 1 : 0.04;
-            host.IsHitTestVisible = false;
+            CallMediaHost.ClearValue(WidthProperty);
+            CallMediaHost.ClearValue(HeightProperty);
+            CallMediaHost.ClearValue(MarginProperty);
+            CallMediaHost.HorizontalAlignment = HorizontalAlignment.Stretch;
+            CallMediaHost.VerticalAlignment = VerticalAlignment.Stretch;
         }
         else
         {
-            // Minimized stage root is already ~320×180 — fill it.
-            host.ClearValue(WidthProperty);
-            host.ClearValue(HeightProperty);
-            host.ClearValue(MarginProperty);
-            host.HorizontalAlignment = HorizontalAlignment.Stretch;
-            host.VerticalAlignment = VerticalAlignment.Stretch;
-            host.Opacity = 1;
-            host.IsHitTestVisible = false;
+            // Minimized floating keep-alive (~320×180 stage root already).
+            CallMediaHost.HorizontalAlignment = HorizontalAlignment.Stretch;
+            CallMediaHost.VerticalAlignment = VerticalAlignment.Stretch;
         }
     }
 

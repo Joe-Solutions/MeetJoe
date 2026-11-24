@@ -63,6 +63,10 @@ public partial class MeetingStageView : UserControl
         if (e.PropertyName is nameof(MeetingStageViewModel.IsMediaOpen)
             or nameof(MeetingStageViewModel.MediaPageUri))
             SyncMediaHost();
+        else if (e.PropertyName is nameof(MeetingStageViewModel.ShowAddPeople)
+                 or nameof(MeetingStageViewModel.IsLiveKitSurfaceReady))
+            // WKWebView paints above Avalonia; hide it so the invite dialog is not clipped.
+            LayoutMediaHostForInvite();
     }
 
     private void OnChatKeyDown(object? sender, KeyEventArgs e)
@@ -151,19 +155,37 @@ public partial class MeetingStageView : UserControl
     }
 
     /// <summary>
-    /// Keep LiveKit in an uncovered PiP so Avalonia tiles can own the Meet grid without
-    /// occluding WKWebView capture/playback on macOS.
+    /// WebView fills the stage so LiveKit paints video inside each grid tile (initials when
+    /// camera off). Do not cover it with Avalonia chrome on macOS — hide the native surface
+    /// while Add people is open so the modal is not occluded.
     /// </summary>
     private void LayoutMediaHost(InAppMediaHost host)
     {
-        host.Width = 320;
-        host.Height = 180;
-        host.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
-        host.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Bottom;
-        host.Margin = new Avalonia.Thickness(12);
+        var inviting = _stage?.ShowAddPeople == true;
+
+        host.Width = double.NaN;
+        host.Height = double.NaN;
+        host.Margin = default;
+        host.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
+        host.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch;
         host.ZIndex = 5;
-        host.IsVisible = true;
         host.IsHitTestVisible = false;
-        host.Opacity = _stage?.IsCameraOn == true ? 1 : 0.04;
+        host.Opacity = 1;
+        host.IsVisible = !inviting;
+
+        MediaHost.Width = double.NaN;
+        MediaHost.Height = double.NaN;
+        MediaHost.Margin = default;
+        MediaHost.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
+        MediaHost.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch;
+        MediaHost.IsVisible = !inviting;
+    }
+
+    private void LayoutMediaHostForInvite()
+    {
+        if (MediaHost.Children.OfType<InAppMediaHost>().FirstOrDefault() is { } host)
+            LayoutMediaHost(host);
+        else
+            MediaHost.IsVisible = _stage?.ShowAddPeople != true;
     }
 }
