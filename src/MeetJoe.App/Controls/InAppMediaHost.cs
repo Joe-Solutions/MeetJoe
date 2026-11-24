@@ -57,11 +57,36 @@ public sealed class InAppMediaHost : Panel
         if (changed || _webView.Url != url)
         {
             _pageReady = false;
-            _webView.Url = url;
+            // TCC dialogs must run before LiveKit getUserMedia or macOS never prompts.
+            _ = ShowAfterOsMediaAsync(url);
         }
 
         InvalidateMeasure();
         InvalidateArrange();
+    }
+
+    private async Task ShowAfterOsMediaAsync(Uri url)
+    {
+        if (WebViewPlatformHooks.RequestOsMediaPermissionAsync is { } requestOs)
+        {
+            try
+            {
+                var micOk = await requestOs("mic");
+                var camOk = await requestOs("camera");
+                if (!micOk) RaisePermissionNeeded("mic");
+                if (!camOk) RaisePermissionNeeded("camera");
+            }
+            catch
+            {
+                // Still navigate — the page banners if getUserMedia fails.
+            }
+        }
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (_webView is null || _url != url) return;
+            _webView.Url = url;
+        });
     }
 
     public void Hide() => _ = ShutdownAsync();

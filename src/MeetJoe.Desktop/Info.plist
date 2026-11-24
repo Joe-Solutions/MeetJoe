@@ -12,21 +12,23 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>MeetJoe</string>
+	<key>CFBundleDisplayName</key>
+	<string>MeetJoe</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>0.1.2</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>0.1.2</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>13.0</string>
+	<string>12.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>MeetJoe uses the camera for video calls and meetings.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>MeetJoe uses the microphone so you can talk in calls and meetings.</string>
-	<key>NSHighResolutionCapable</key>
-	<true/>
 </dict>
 </plist>
