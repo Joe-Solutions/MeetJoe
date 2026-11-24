@@ -2,7 +2,7 @@
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <AvaloniaVersion>11.3.23</AvaloniaVersion>
-    <DotNetVersion>9.0.23</DotNetVersion>
+    <DotNetVersion>10.0.15</DotNetVersion>
     <OpenIddictVersion>7.9.0</OpenIddictVersion>
   </PropertyGroup>
   <ItemGroup>
@@ -25,7 +25,7 @@
     <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="$(DotNetVersion)" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="$(DotNetVersion)" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="$(DotNetVersion)" />
-    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.4" />
     <PackageVersion Include="OpenIddict.AspNetCore" Version="$(OpenIddictVersion)" />
     <PackageVersion Include="OpenIddict.EntityFrameworkCore" Version="$(OpenIddictVersion)" />
     <PackageVersion Include="StackExchange.Redis" Version="2.13.23" />

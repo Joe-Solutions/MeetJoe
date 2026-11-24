@@ -1,5 +1,5 @@
 # MeetJoe API — multi-stage production image (.NET 9)
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 COPY Directory.Build.props Directory.Packages.props global.json MeetJoe.sln ./
@@ -19,7 +19,7 @@ COPY src/MeetJoe.Api/ src/MeetJoe.Api/
 
 RUN dotnet publish src/MeetJoe.Api/MeetJoe.Api.csproj -c Release -o /app/publish --no-restore
 
-FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
