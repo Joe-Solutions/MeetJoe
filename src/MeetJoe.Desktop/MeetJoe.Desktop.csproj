@@ -2,8 +2,6 @@
   <!-- Desktop host for macOS and Windows. All UI lives in MeetJoe.App. -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <!-- net8.0, not net9.0: see MeetJoe.App.csproj (macOS WebView fails on .NET 9+). -->
-    <TargetFramework>net8.0</TargetFramework>
     <AssemblyName>MeetJoe</AssemblyName>
     <RootNamespace>MeetJoe.Desktop</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -29,15 +27,6 @@
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('osx'))">
     <None Include="Info.plist" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Assets\AppIcon.icns" CopyToOutputDirectory="PreserveNewest" />
-    <!-- Typed WKWebView APIs for camera/mic permission grant -->
-    <Reference Include="Avalonia.WebView.MacCatalyst">
-      <HintPath>$(NuGetPackageRoot)webview.avalonia.maccatalyst\11.0.0.1\lib\netstandard2.0\Avalonia.WebView.MacCatalyst.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="Xamarin.Mac">
-      <HintPath>$(NuGetPackageRoot)webview.avalonia.maccatalyst\11.0.0.1\lib\netstandard2.0\Xamarin.Mac.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia.Desktop" />

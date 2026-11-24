@@ -3,8 +3,6 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
-using AvaloniaWebView;
-using WebViewCore.Events;
 
 namespace MeetJoe.App.Controls;
 
@@ -14,8 +12,9 @@ namespace MeetJoe.App.Controls;
 /// </summary>
 public sealed class InAppMediaHost : Panel
 {
-    private WebView? _webView;
+    private IMediaWebView? _webView;
     private Uri? _url;
+    private Uri? _navigatedUrl;
     private Action? _onLeave;
     private bool _pageReady;
     private string? _pendingScript;
@@ -54,7 +53,7 @@ public sealed class InAppMediaHost : Panel
         EnsureWebView();
         if (_webView is null) return;
 
-        if (changed || _webView.Url != url)
+        if (changed || _navigatedUrl != url)
         {
             _pageReady = false;
             // TCC dialogs must run before LiveKit getUserMedia or macOS never prompts.
@@ -88,7 +87,8 @@ public sealed class InAppMediaHost : Panel
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             if (_webView is null || _url != url) return;
-            _webView.Url = url;
+            _navigatedUrl = url;
+            _webView.Navigate(url);
         });
     }
 
@@ -101,6 +101,7 @@ public sealed class InAppMediaHost : Panel
     public async Task ShutdownAsync()
     {
         _url = null;
+        _navigatedUrl = null;
         _pageReady = false;
         _pendingScript = null;
         _permissionAlerted.Clear();
@@ -113,8 +114,7 @@ public sealed class InAppMediaHost : Panel
             return;
         }
 
-        web.WebMessageReceived -= OnMediaMessage;
-        web.NavigationStarting -= OnMediaNavigating;
+        web.MessageReceived -= OnMediaMessage;
         web.NavigationCompleted -= OnNavigationCompleted;
 
         try
@@ -124,20 +124,7 @@ public sealed class InAppMediaHost : Panel
         }
         catch { /* page may already be gone */ }
 
-        try { web.Stop(); }
-        catch { /* ignore */ }
-
-        try { web.Url = new Uri("about:blank"); }
-        catch { /* ignore */ }
-
-        // Let WebKit release camera/mic devices before native dispose.
-        await Task.Delay(150);
-
-        try
-        {
-            if (web.PlatformWebView is IDisposable platform)
-                platform.Dispose();
-        }
+        try { await web.ShutdownAsync(); }
         catch { /* ignore */ }
 
         Children.Clear();
@@ -228,27 +215,21 @@ public sealed class InAppMediaHost : Panel
         if (_webView is not null || _url is null) return;
         try
         {
-            _webView = new WebView
-            {
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                VerticalAlignment = VerticalAlignment.Stretch,
-                MinWidth = 160,
-                MinHeight = 120,
-            };
+            _webView = WebViewPlatformHooks.CreateMediaWebView?.Invoke() ?? new LibraryMediaWebView();
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Headless UI tests / missing WebView runtime.
+            // Headless UI tests / missing WebView runtime. Never silent: this hid the
+            // .NET 9 macOS WebView crash (no call audio, no TCC prompt) for several releases.
+            System.Diagnostics.Trace.TraceError($"MeetJoe media WebView unavailable: {ex}");
             return;
         }
 
-        _webView.WebMessageReceived += OnMediaMessage;
-        _webView.NavigationStarting += OnMediaNavigating;
+        _webView.MessageReceived += OnMediaMessage;
         _webView.NavigationCompleted += OnNavigationCompleted;
-        WebViewPlatformHooks.OnWebViewCreated?.Invoke(_webView);
         Children.Clear();
-        Children.Add(_webView);
-        _webView.Url = _url;
+        Children.Add(_webView.View);
+        // Navigation happens in ShowAfterOsMediaAsync, after the OS permission step.
     }
 
     protected override Size MeasureOverride(Size availableSize)
@@ -270,7 +251,7 @@ public sealed class InAppMediaHost : Panel
         return size;
     }
 
-    private async void OnNavigationCompleted(object? sender, WebViewUrlLoadedEventArg e)
+    private async void OnNavigationCompleted()
     {
         _pageReady = true;
         // Uncover immediately so getUserMedia is not blocked by Avalonia tiles on macOS.
@@ -293,9 +274,9 @@ public sealed class InAppMediaHost : Panel
         catch { /* ignore */ }
     }
 
-    private void OnMediaMessage(object? sender, WebViewMessageReceivedEventArgs e)
+    private void OnMediaMessage(string raw)
     {
-        var message = e.Message?.Trim();
+        var message = raw.Trim();
         if (string.IsNullOrEmpty(message)) return;
 
         if (string.Equals(message, "leave", StringComparison.OrdinalIgnoreCase))
@@ -380,15 +361,6 @@ public sealed class InAppMediaHost : Panel
         }
 
         return ids;
-    }
-
-    private void OnMediaNavigating(object? sender, WebViewUrlLoadingEventArg e)
-    {
-        if (e.Url?.Fragment.Contains("meetjoe-leave", StringComparison.Ordinal) == true)
-        {
-            e.Cancel = true;
-            RequestLeave();
-        }
     }
 
     /// <summary>Raise even on repeat failures so toggling camera/mic always surfaces a warning.</summary>

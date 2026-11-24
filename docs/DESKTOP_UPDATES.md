@@ -28,6 +28,7 @@ Goal: users install **once** from the site (Velopack installer). After that, **S
 | --- | --- |
 | `VelopackApp` in `MeetJoe.Desktop/Program.cs` | Marks the process as a Velopack app |
 | `VelopackAppUpdateService` | Settings → Check for updates; uses feed from API |
+| `MacMediaWebView` (macOS) / WebView.Avalonia (Windows) | Meeting WebView. Do **not** put WebView.Avalonia back on macOS: its Xamarin.Mac registrar throws on .NET 9+ (no call audio, no TCC prompt) |
 | `GET /api/desktop/updates?rid=` | Public semver manifest (`DesktopUpdateFeed`) |
 | Static `/updates/desktop/{rid}/` | nupkgs + `releases.*.json` |
 | `scripts/pack-desktop-update.sh` | `dotnet publish` + `vpk pack` → `src/MeetJoe.Api/releases/desktop/{rid}/` |

@@ -2,7 +2,7 @@
 # Launch MeetJoe as a proper .app so Info.plist camera/mic usage strings apply (TCC).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-OUT="$ROOT/src/MeetJoe.Desktop/bin/Debug/net9.0"
+OUT="$ROOT/src/MeetJoe.Desktop/bin/Debug/net10.0"
 APP="$OUT/MeetJoe.app"
 PLIST="$ROOT/src/MeetJoe.Desktop/Info.plist"
 

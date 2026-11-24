@@ -18,7 +18,7 @@ internal static class Program
 #if OSX
         if (OperatingSystem.IsMacOS())
         {
-            WebViewPlatformHooks.OnWebViewCreated = MacOsWebViewMediaAccess.Attach;
+            WebViewPlatformHooks.CreateMediaWebView = () => new MacMediaWebView();
             WebViewPlatformHooks.RequestOsMediaPermissionAsync = MacOsMediaPermissions.EnsureAsync;
         }
 #endif
@@ -29,9 +29,12 @@ internal static class Program
     }
 
     // Also used by the Avalonia designer.
-    public static AppBuilder BuildAvaloniaApp() =>
-        AppBuilder.Configure<MeetJoe.App.App>()
+    public static AppBuilder BuildAvaloniaApp()
+    {
+        var builder = AppBuilder.Configure<MeetJoe.App.App>()
             .UsePlatformDetect()
-            .LogToTrace()
-            .UseDesktopWebView();
+            .LogToTrace();
+        // macOS hosts WKWebView itself (MacMediaWebView); WebView.Avalonia is Windows-only here.
+        return OperatingSystem.IsMacOS() ? builder : builder.UseDesktopWebView();
+    }
 }

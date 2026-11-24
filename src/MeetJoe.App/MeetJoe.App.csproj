@@ -1,10 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- Shared UI and view models. Platform hosts (Desktop now, iOS/Android later) reference this. -->
   <PropertyGroup>
-    <!-- Desktop client chain stays on net8.0: WebView.Avalonia's bundled Xamarin.Mac registrar
-         throws AmbiguousMatchException on .NET 9+ (Marshal.GetFunctionPointerForDelegateInternal
-         gained an overload), so the macOS WebView - and all call audio/video - never loads. -->
-    <TargetFramework>net8.0</TargetFramework>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
   <ItemGroup>
