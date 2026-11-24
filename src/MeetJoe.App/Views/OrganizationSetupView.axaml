@@ -1,0 +1,35 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeetJoe.App.ViewModels"
+             xmlns:v="using:MeetJoe.App.Views"
+             x:Class="MeetJoe.App.Views.OrganizationSetupView"
+             x:DataType="vm:OrganizationSetupViewModel">
+  <Panel>
+    <v:BrandBackdrop />
+
+    <StackPanel Width="380" HorizontalAlignment="Center" VerticalAlignment="Center">
+      <TextBlock Classes="h1" FontSize="28" Text="{Binding Greeting}" TextWrapping="Wrap" />
+      <TextBlock Classes="muted" Margin="0,8,0,28" TextWrapping="Wrap"
+                 Text="Set up an organization for your team, or join one you've been invited to." />
+
+      <TextBlock Classes="label" Text="Start a new organization" />
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <TextBox Text="{Binding OrganizationName}" Watermark="Organization name" />
+        <Button Grid.Column="1" Classes="primary" Content="Create" Command="{Binding CreateCommand}" />
+      </Grid>
+
+      <Border Classes="separator" Margin="0,24" />
+
+      <TextBlock Classes="label" Text="Join with an invite code" />
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <TextBox Text="{Binding JoinCode}" Watermark="XXXXX-XXXXX" />
+        <Button Grid.Column="1" Classes="secondary" Content="Join" Command="{Binding JoinCommand}" />
+      </Grid>
+
+      <TextBlock Classes="error" Margin="0,16,0,0" Text="{Binding ErrorMessage}"
+                 IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+      <Button Classes="link" Margin="-4,24,0,0" Content="Sign out" Command="{Binding SignOutCommand}" />
+    </StackPanel>
+  </Panel>
+</UserControl>

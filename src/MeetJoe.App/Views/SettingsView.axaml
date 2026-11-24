@@ -1,0 +1,93 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeetJoe.App.ViewModels"
+             xmlns:c="using:MeetJoe.App.Controls"
+             x:Class="MeetJoe.App.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+  <Grid RowDefinitions="Auto,*">
+    <Border Classes="stageheader">
+      <TextBlock Classes="h1" VerticalAlignment="Center" Text="Settings" />
+    </Border>
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Width="520" HorizontalAlignment="Left" Margin="24,24,24,40">
+        <!-- Profile -->
+        <TextBlock Classes="h2" Text="Profile" />
+        <StackPanel Orientation="Horizontal" Spacing="14" Margin="0,16,0,18">
+          <c:Avatar Width="56" Height="56" DisplayName="{Binding DisplayName}"
+                    Surface="{StaticResource Brush.Canvas}" />
+          <StackPanel VerticalAlignment="Center" Spacing="2">
+            <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="16" />
+            <TextBlock Classes="muted small" Text="{Binding Email}" />
+          </StackPanel>
+        </StackPanel>
+
+        <TextBlock Classes="label" Text="Display name" />
+        <TextBox Text="{Binding DisplayName}" />
+
+        <TextBlock Classes="label" Margin="0,16,0,6" Text="Status message" />
+        <TextBox Text="{Binding StatusMessage}" Watermark="Let people know what you're up to" />
+
+        <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,16,0,0">
+          <Button Classes="primary" Content="Save profile" Command="{Binding SaveProfileCommand}" />
+          <TextBlock Classes="muted small" VerticalAlignment="Center" Text="{Binding ProfileStatus}"
+                     TextWrapping="Wrap" MaxWidth="340" />
+        </StackPanel>
+
+        <Border Classes="separator" Margin="0,28" />
+
+        <!-- Presence -->
+        <TextBlock Classes="h2" Text="Availability" />
+        <TextBlock Classes="muted" Margin="0,4,0,14" TextWrapping="Wrap"
+                   Text="What colleagues see next to your name while you're signed in. You appear offline when MeetJoe is closed." />
+        <ComboBox Width="240" ItemsSource="{Binding AvailabilityOptions}" SelectedItem="{Binding Availability}">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:AvailabilityOption">
+              <TextBlock Text="{Binding Label}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+
+        <Border Classes="separator" Margin="0,28" />
+
+        <!-- Organization -->
+        <TextBlock Classes="h2" Text="Organization" />
+        <DockPanel Margin="0,12,0,0">
+          <Button DockPanel.Dock="Right" Classes="link" Content="Leave" VerticalAlignment="Center"
+                  Command="{Binding LeaveOrganizationCommand}"
+                  ToolTip.Tip="Leave this organization" />
+          <TextBlock VerticalAlignment="Center">
+            <Run Text="{Binding OrganizationName}" FontWeight="SemiBold" />
+            <Run Text="·" Foreground="{StaticResource Brush.TextMuted}" />
+            <Run Text="{Binding RoleText}" Foreground="{StaticResource Brush.TextMuted}" />
+          </TextBlock>
+        </DockPanel>
+        <TextBlock Classes="error" Margin="0,8,0,0" Text="{Binding LeaveStatus}"
+                   IsVisible="{Binding LeaveStatus, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+        <StackPanel IsVisible="{Binding CanInvite}" Margin="0,18,0,0">
+          <TextBlock Classes="label" Text="Invite code" />
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <SelectableTextBlock Text="{Binding JoinCode}" FontSize="18" FontWeight="Bold" LetterSpacing="1.5"
+                                 VerticalAlignment="Center" />
+            <Button Classes="secondary" Padding="12,6" MinHeight="32" Content="Copy"
+                    Command="{Binding CopyJoinCodeCommand}" />
+            <TextBlock Classes="muted small" VerticalAlignment="Center" Text="{Binding InviteStatus}" />
+          </StackPanel>
+          <TextBlock Classes="muted small" Margin="0,8,0,0" TextWrapping="Wrap"
+                     Text="Anyone with this code can join your organization after creating an account." />
+        </StackPanel>
+
+        <Border Classes="separator" Margin="0,28" />
+
+        <!-- Account -->
+        <TextBlock Classes="h2" Text="Account" />
+        <TextBlock Classes="muted small" Margin="0,10,0,14">
+          <Run Text="Signed in to" />
+          <Run Text="{Binding ServerUrl}" />
+        </TextBlock>
+        <Button Classes="secondary" Content="Sign out" Command="{Binding SignOutCommand}" />
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

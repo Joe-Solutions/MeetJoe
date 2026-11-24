@@ -1,0 +1,10 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:v="using:MeetJoe.App.Views"
+        x:Class="MeetJoe.App.Views.MainWindow"
+        Title="MeetJoe"
+        Width="1280" Height="800"
+        MinWidth="960" MinHeight="600"
+        WindowStartupLocation="CenterScreen">
+  <v:MainView />
+</Window>

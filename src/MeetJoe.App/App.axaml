@@ -1,0 +1,40 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeetJoe.App.ViewModels"
+             xmlns:v="using:MeetJoe.App.Views"
+             x:Class="MeetJoe.App.App"
+             RequestedThemeVariant="Dark">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://MeetJoe.App/Styles/Tokens.axaml" />
+        <ResourceInclude Source="avares://MeetJoe.App/Styles/Icons.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+
+  <Application.Styles>
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <ColorPaletteResources x:Key="Dark" Accent="#1EC8C8" RegionColor="#0B1F33" ErrorText="#E85D4C" />
+      </FluentTheme.Palettes>
+    </FluentTheme>
+    <StyleInclude Source="avares://MeetJoe.App/Styles/Controls.axaml" />
+  </Application.Styles>
+
+  <!-- Each view model has one view. Listed explicitly so trimming and AOT (mobile) keep working. -->
+  <Application.DataTemplates>
+    <DataTemplate DataType="vm:LoginViewModel"><v:LoginView /></DataTemplate>
+    <DataTemplate DataType="vm:OrganizationSetupViewModel"><v:OrganizationSetupView /></DataTemplate>
+    <DataTemplate DataType="vm:ShellViewModel"><v:ShellView /></DataTemplate>
+    <DataTemplate DataType="vm:ChatViewModel"><v:ChatView /></DataTemplate>
+    <DataTemplate DataType="vm:WorkspacesViewModel"><v:WorkspaceView /></DataTemplate>
+    <DataTemplate DataType="vm:MessageThreadViewModel"><v:MessageThreadView /></DataTemplate>
+    <DataTemplate DataType="vm:CalendarViewModel"><v:CalendarView /></DataTemplate>
+    <DataTemplate DataType="vm:FilesViewModel"><v:FilesView /></DataTemplate>
+    <DataTemplate DataType="vm:SettingsViewModel"><v:SettingsView /></DataTemplate>
+    <DataTemplate DataType="vm:PlaceholderViewModel"><v:PlaceholderView /></DataTemplate>
+    <DataTemplate DataType="vm:ActivityViewModel"><v:ActivityView /></DataTemplate>
+    <DataTemplate DataType="vm:CallsViewModel"><v:CallsView /></DataTemplate>
+  </Application.DataTemplates>
+</Application>

@@ -1,0 +1,46 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeetJoe.App.ViewModels"
+             xmlns:v="using:MeetJoe.App.Views"
+             x:Class="MeetJoe.App.Views.LoginView"
+             x:DataType="vm:LoginViewModel">
+  <Panel>
+    <v:BrandBackdrop />
+
+    <StackPanel Width="340" HorizontalAlignment="Center" VerticalAlignment="Center">
+      <TextBlock HorizontalAlignment="Center" FontSize="56" FontWeight="ExtraBold" LetterSpacing="-1.5">
+        <Run Text="Meet" /><Run Text="Joe" Foreground="{StaticResource Brush.Accent}" />
+      </TextBlock>
+      <TextBlock Classes="muted" HorizontalAlignment="Center" FontSize="15" Margin="0,6,0,36"
+                 Text="Chat, channels and meetings for your team." />
+
+      <StackPanel Spacing="10">
+        <TextBox Text="{Binding DisplayName}" Watermark="Your name" IsVisible="{Binding IsRegistering}" />
+        <TextBox Text="{Binding Email}" Watermark="Email" />
+        <TextBox Text="{Binding Password}" Watermark="Password" PasswordChar="•" />
+        <TextBlock Classes="muted small" IsVisible="{Binding IsRegistering}"
+                   Text="Use at least 10 characters." />
+        <TextBlock Classes="error" Text="{Binding ErrorMessage}"
+                   IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        <Button Classes="primary" HorizontalAlignment="Stretch" Margin="0,6,0,0" IsDefault="True"
+                Content="{Binding SubmitText}" Command="{Binding SubmitCommand}" />
+      </StackPanel>
+
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="2" Margin="0,18,0,0">
+        <TextBlock Classes="muted" VerticalAlignment="Center" Text="{Binding TogglePrompt}" />
+        <Button Classes="link" Content="{Binding ToggleText}" Command="{Binding ToggleModeCommand}" />
+      </StackPanel>
+
+      <TextBlock Classes="muted small" HorizontalAlignment="Center" Margin="0,28,0,0"
+                 Text="{Binding VersionText}" />
+    </StackPanel>
+
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                Spacing="10" Margin="0,0,0,28" Opacity="0.92">
+      <Image Width="36" Height="36" Stretch="Uniform" VerticalAlignment="Center"
+             Source="avares://MeetJoe.App/Assets/Brand/joe-solutions-logo.png" />
+      <TextBlock Classes="muted small" VerticalAlignment="Center"
+                 Text="Powered by Joe Solutions, Inc." />
+    </StackPanel>
+  </Panel>
+</UserControl>

@@ -1,0 +1,325 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeetJoe.App.ViewModels"
+             xmlns:c="using:MeetJoe.App.Controls"
+             xmlns:contracts="using:MeetJoe.Contracts"
+             x:Class="MeetJoe.App.Views.MeetingStageView"
+             x:DataType="vm:CalendarViewModel">
+  <Panel Classes="meetingstage" Classes.live="{Binding IsInMeeting}" Background="{StaticResource Brush.Rail}">
+
+    <!-- Live meeting: media + right chat + centered icon controls -->
+    <Grid ColumnDefinitions="*,300" RowDefinitions="Auto,*,Auto"
+          IsVisible="{Binding Stage.IsMediaOpen}">
+      <Border Grid.ColumnSpan="2" Classes="stageheader">
+        <StackPanel VerticalAlignment="Center" Spacing="1">
+          <TextBlock Classes="h2" Text="{Binding Stage.Meeting.Title}" MaxLines="1" TextTrimming="CharacterEllipsis" />
+          <TextBlock Classes="muted small" Text="{Binding Stage.Meeting.Summary}" />
+        </StackPanel>
+      </Border>
+
+      <!-- WebView is created on demand in code-behind -->
+      <ContentControl x:Name="MediaHost" Grid.Row="1" />
+
+      <Border Grid.Row="1" Grid.Column="1" BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
+              Background="{StaticResource Brush.Panel}">
+        <Grid RowDefinitions="Auto,*">
+          <StackPanel Orientation="Horizontal" Spacing="6" Margin="10,10,10,0">
+            <Button Classes="secondary" Padding="12,6" MinHeight="32"
+                    Command="{Binding Stage.ShowPeopleCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <c:Icon Data="{StaticResource Icon.Users}" Size="15" />
+                <TextBlock Text="People" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button Classes="secondary" Padding="12,6" MinHeight="32"
+                    Command="{Binding Stage.ShowChatCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <c:Icon Data="{StaticResource Icon.ChatBubble}" Size="15" />
+                <TextBlock Text="Chat" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+
+          <!-- People roster (Zoom / Meet / Teams style) -->
+          <DockPanel Grid.Row="1" Margin="0,8,0,0" IsVisible="{Binding Stage.ShowPeoplePanel}">
+            <TextBlock DockPanel.Dock="Top" Classes="muted small" Margin="14,0,14,8"
+                       Text="{Binding Stage.Meeting.Summary}" />
+            <ScrollViewer Margin="8,0,8,12">
+              <ItemsControl ItemsSource="{Binding Stage.Meeting.Participants}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:PersonViewModel">
+                    <Border Padding="8,8" Margin="0,0,0,4" CornerRadius="8"
+                            Background="{StaticResource Brush.PanelRaised}">
+                      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                        <c:Avatar Width="36" Height="36" DisplayName="{Binding DisplayName}" />
+                        <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock FontWeight="SemiBold" MaxLines="1" TextTrimming="CharacterEllipsis"
+                                       Text="{Binding DisplayName}" />
+                            <TextBlock Classes="muted small" Text="You" IsVisible="{Binding IsMe}"
+                                       VerticalAlignment="Center" />
+                          </StackPanel>
+                          <TextBlock Classes="muted small" Text="In the meeting" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4"
+                                    VerticalAlignment="Center"
+                                    IsVisible="{Binding $parent[UserControl].((vm:CalendarViewModel)DataContext).Stage.Meeting.IsHostedByMe}">
+                          <Button Classes="ghost" Padding="8,4" Content="Mute"
+                                  IsVisible="{Binding !IsMe}"
+                                  Command="{Binding $parent[UserControl].((vm:CalendarViewModel)DataContext).Stage.MuteCommand}"
+                                  CommandParameter="{Binding}" />
+                          <Button Classes="ghost" Padding="8,4" Content="Remove"
+                                  IsVisible="{Binding !IsMe}"
+                                  Command="{Binding $parent[UserControl].((vm:CalendarViewModel)DataContext).Stage.RemoveCommand}"
+                                  CommandParameter="{Binding}" />
+                        </StackPanel>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </DockPanel>
+
+          <!-- Meeting chat -->
+          <Grid Grid.Row="1" RowDefinitions="*,Auto" IsVisible="{Binding Stage.ShowChatPanel}">
+            <ScrollViewer Margin="12,8,12,0">
+              <ItemsControl ItemsSource="{Binding Stage.ChatMessages}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="contracts:MessageDto">
+                    <StackPanel Margin="0,0,0,10" Spacing="2">
+                      <TextBlock FontWeight="SemiBold" FontSize="12" Text="{Binding Sender.DisplayName}" />
+                      <TextBlock TextWrapping="Wrap" FontSize="13" Text="{Binding Body}" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+            <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="10">
+              <TextBox x:Name="LiveChatComposer" Text="{Binding Stage.ChatDraft}"
+                       Watermark="Message the room" />
+              <Button Grid.Column="1" Classes="primary" Margin="6,0,0,0" Content="Send"
+                      ToolTip.Tip="Send (Enter)" Command="{Binding Stage.SendChatCommand}" />
+            </Grid>
+          </Grid>
+        </Grid>
+      </Border>
+
+      <Border Grid.Row="2" Grid.ColumnSpan="2" BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,1,0,0"
+              Padding="16,12" Background="{StaticResource Brush.Panel}">
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="14">
+          <Button Classes="secondary" Width="52" Height="52" Padding="0" CornerRadius="26"
+                  ToolTip.Tip="People" Command="{Binding Stage.ShowPeopleCommand}">
+            <c:Icon Data="{StaticResource Icon.Users}" Size="22" />
+          </Button>
+          <Button Classes="secondary" Width="52" Height="52" Padding="0" CornerRadius="26"
+                  ToolTip.Tip="Chat" Command="{Binding Stage.ShowChatCommand}">
+            <c:Icon Data="{StaticResource Icon.ChatBubble}" Size="22" />
+          </Button>
+          <Button Classes="secondary" Width="52" Height="52" Padding="0" CornerRadius="26"
+                  ToolTip.Tip="Add people" Command="{Binding Stage.BeginAddPeopleCommand}">
+            <c:Icon Data="{StaticResource Icon.UserPlus}" Size="22" />
+          </Button>
+          <Button Classes="secondary" Width="52" Height="52" Padding="0" CornerRadius="26"
+                  ToolTip.Tip="End for everyone" Command="{Binding EndCommand}"
+                  IsVisible="{Binding Stage.Meeting.IsHostedByMe}">
+            <c:Icon Data="{StaticResource Icon.EndCall}" Size="22" />
+          </Button>
+          <Button Classes="danger" Width="52" Height="52" Padding="0" CornerRadius="26"
+                  ToolTip.Tip="Leave meeting" Command="{Binding LeaveCommand}">
+            <c:Icon Data="{StaticResource Icon.Leave}" Size="22" />
+          </Button>
+        </StackPanel>
+      </Border>
+    </Grid>
+
+    <!-- Lobby / roster before immersive media -->
+    <Grid ColumnDefinitions="*,280" RowDefinitions="Auto,Auto,*,Auto"
+          IsVisible="{Binding !Stage.IsMediaOpen}">
+      <Border Grid.ColumnSpan="2" Classes="stageheader">
+        <StackPanel VerticalAlignment="Center" Spacing="1">
+          <TextBlock Classes="h2" Text="{Binding Stage.Meeting.Title}" MaxLines="1" TextTrimming="CharacterEllipsis" />
+          <TextBlock Classes="muted small" Text="{Binding Stage.Meeting.Summary}" />
+        </StackPanel>
+      </Border>
+
+      <Border Grid.Row="1" Grid.ColumnSpan="2" Background="{StaticResource Brush.Panel}" Padding="24,10"
+              BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,0,1"
+              IsVisible="{Binding Stage.InLobby}">
+        <TextBlock FontSize="13" TextWrapping="Wrap" VerticalAlignment="Center">
+          <Run FontWeight="Bold" Text="You're in the lobby." />
+          <Run Foreground="{StaticResource Brush.TextMuted}"
+               Text=" Camera and mic unlock after the host admits you." />
+        </TextBlock>
+      </Border>
+
+      <ScrollViewer Grid.Row="2" Grid.Column="0">
+        <StackPanel Margin="24" Spacing="16">
+          <TextBlock Classes="h2" Text="In the lobby" IsVisible="{Binding Stage.InLobby}" />
+          <TextBlock Classes="muted" Text="Waiting for the host to admit you…" IsVisible="{Binding Stage.InLobby}" />
+
+          <TextBlock Classes="muted small" Text="Lobby"
+                     IsVisible="{Binding Stage.Meeting.IsHostedByMe}" />
+          <ItemsControl ItemsSource="{Binding Stage.Meeting.Lobby}"
+                        IsVisible="{Binding Stage.Meeting.IsHostedByMe}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:PersonViewModel">
+                <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,8">
+                  <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center" />
+                  <Button Grid.Column="1" Classes="secondary" Content="Admit" Margin="8,0"
+                          Command="{Binding $parent[UserControl].((vm:CalendarViewModel)DataContext).Stage.AdmitCommand}"
+                          CommandParameter="{Binding}" />
+                  <Button Grid.Column="2" Classes="ghost" Content="Reject"
+                          Command="{Binding $parent[UserControl].((vm:CalendarViewModel)DataContext).Stage.RejectCommand}"
+                          CommandParameter="{Binding}" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <ItemsControl ItemsSource="{Binding Stage.Meeting.Participants}" HorizontalAlignment="Center">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel HorizontalAlignment="Center" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:PersonViewModel">
+                <Border Width="220" Height="160" Margin="6" Background="{StaticResource Brush.Panel}"
+                        BorderBrush="{StaticResource Brush.Border}" BorderThickness="1">
+                  <DockPanel>
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="4" Margin="8"
+                                IsVisible="{Binding $parent[UserControl].((vm:CalendarViewModel)DataContext).Stage.Meeting.IsHostedByMe}">
+                      <Button Classes="ghost" Padding="8,2" Content="Mute"
+                              Command="{Binding $parent[UserControl].((vm:CalendarViewModel)DataContext).Stage.MuteCommand}"
+                              CommandParameter="{Binding}" />
+                      <Button Classes="ghost" Padding="8,2" Content="Remove"
+                              Command="{Binding $parent[UserControl].((vm:CalendarViewModel)DataContext).Stage.RemoveCommand}"
+                              CommandParameter="{Binding}" />
+                    </StackPanel>
+                    <Panel>
+                      <c:Avatar Width="64" Height="64" DisplayName="{Binding DisplayName}"
+                                HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <TextBlock Text="{Binding DisplayName}" FontSize="13" FontWeight="SemiBold"
+                                 HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="12,0,12,10"
+                                 MaxLines="1" TextTrimming="CharacterEllipsis" />
+                    </Panel>
+                  </DockPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </ScrollViewer>
+
+      <Border Grid.Row="2" Grid.Column="1" BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
+              Background="{StaticResource Brush.Panel}">
+        <Grid RowDefinitions="Auto,*,Auto">
+          <TextBlock Classes="h2" Margin="14,12" Text="Meeting chat" />
+          <ScrollViewer Grid.Row="1" Margin="12,0">
+            <ItemsControl ItemsSource="{Binding Stage.ChatMessages}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="contracts:MessageDto">
+                  <StackPanel Margin="0,0,0,10" Spacing="2">
+                    <TextBlock FontWeight="SemiBold" FontSize="12" Text="{Binding Sender.DisplayName}" />
+                    <TextBlock TextWrapping="Wrap" FontSize="13" Text="{Binding Body}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+          <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="10" IsVisible="{Binding !Stage.InLobby}">
+            <TextBox x:Name="LobbyChatComposer" Text="{Binding Stage.ChatDraft}"
+                     Watermark="Message the room" />
+            <Button Grid.Column="1" Classes="primary" Margin="6,0,0,0" Content="Send"
+                    ToolTip.Tip="Send (Enter)" Command="{Binding Stage.SendChatCommand}" />
+          </Grid>
+        </Grid>
+      </Border>
+
+      <Border Grid.Row="3" Grid.ColumnSpan="2" BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,1,0,0"
+              Padding="24,14">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Classes="error" VerticalAlignment="Center" Text="{Binding ErrorMessage}"
+                     IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+            <Button Classes="secondary" Width="52" Height="52" Padding="0" CornerRadius="26"
+                    ToolTip.Tip="Add people" Command="{Binding Stage.BeginAddPeopleCommand}"
+                    IsVisible="{Binding !Stage.InLobby}">
+              <c:Icon Data="{StaticResource Icon.UserPlus}" Size="22" />
+            </Button>
+            <Button Classes="secondary" Content="Raise / lower hand"
+                    Command="{Binding Stage.RaiseHandCommand}" IsVisible="{Binding !Stage.InLobby}" />
+            <Button Classes="secondary" Width="52" Height="52" Padding="0" CornerRadius="26"
+                    ToolTip.Tip="End for everyone" Command="{Binding EndCommand}"
+                    IsVisible="{Binding Stage.Meeting.IsHostedByMe}">
+              <c:Icon Data="{StaticResource Icon.EndCall}" Size="22" />
+            </Button>
+            <Button Classes="danger" Width="52" Height="52" Padding="0" CornerRadius="26"
+                    ToolTip.Tip="Leave meeting" Command="{Binding LeaveCommand}">
+              <c:Icon Data="{StaticResource Icon.Leave}" Size="22" />
+            </Button>
+          </StackPanel>
+        </Grid>
+      </Border>
+    </Grid>
+
+    <!-- Add people — works in lobby and during live media -->
+    <Border ZIndex="30" Background="#CC050D16" IsVisible="{Binding Stage.ShowAddPeople}">
+      <Border Width="440" MaxWidth="520" Padding="20" CornerRadius="14"
+              HorizontalAlignment="Center" VerticalAlignment="Center"
+              Background="{StaticResource Brush.PanelRaised}"
+              BorderBrush="{StaticResource Brush.Border}" BorderThickness="1">
+        <StackPanel Spacing="12">
+          <DockPanel>
+            <Button DockPanel.Dock="Right" Classes="ghost square" Command="{Binding Stage.CancelAddPeopleCommand}"
+                    ToolTip.Tip="Close">
+              <c:Icon Data="{StaticResource Icon.Close}" Size="16" />
+            </Button>
+            <StackPanel Spacing="2">
+              <TextBlock Classes="h2" Text="Add people" />
+              <TextBlock Classes="muted small" Text="Type an email to find someone in your organization." />
+            </StackPanel>
+          </DockPanel>
+
+          <TextBox Text="{Binding Stage.InviteQuery, UpdateSourceTrigger=PropertyChanged}"
+                   Watermark="Email" MaxLength="200" />
+
+          <Border IsVisible="{Binding Stage.HasInviteSuggestions}"
+                  Background="{StaticResource Brush.Panel}" CornerRadius="8"
+                  BorderBrush="{StaticResource Brush.Border}" BorderThickness="1" MaxHeight="220">
+            <ScrollViewer>
+              <ItemsControl ItemsSource="{Binding Stage.InviteSuggestions}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:PersonViewModel">
+                    <Button Classes="ghost" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                            Padding="12,10" CornerRadius="0"
+                            Command="{Binding $parent[UserControl].((vm:CalendarViewModel)DataContext).Stage.PickInviteSuggestionCommand}"
+                            CommandParameter="{Binding}">
+                      <StackPanel Orientation="Horizontal" Spacing="10">
+                        <c:Avatar Width="32" Height="32" DisplayName="{Binding DisplayName}" />
+                        <StackPanel Spacing="1" VerticalAlignment="Center">
+                          <TextBlock FontWeight="SemiBold" Text="{Binding DisplayName}" />
+                          <TextBlock Classes="muted small" Text="{Binding Email}" />
+                        </StackPanel>
+                      </StackPanel>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </Border>
+
+          <TextBlock Classes="error" Text="{Binding Stage.AddPeopleStatus}"
+                     IsVisible="{Binding Stage.AddPeopleStatus, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Classes="primary" Content="Send invite" IsDefault="True"
+                    Command="{Binding Stage.InvitePeopleCommand}" />
+            <Button Classes="ghost" Content="Cancel" Command="{Binding Stage.CancelAddPeopleCommand}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </Border>
+  </Panel>
+</UserControl>

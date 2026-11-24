@@ -1,0 +1,163 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeetJoe.App.ViewModels"
+             xmlns:c="using:MeetJoe.App.Controls"
+             x:Class="MeetJoe.App.Views.ChatView"
+             x:DataType="vm:ChatViewModel">
+  <Grid ColumnDefinitions="300,*,Auto">
+    <!-- List pane: conversations -->
+    <Border Classes="listpane">
+      <DockPanel>
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Height="64" Margin="20,0,12,0">
+          <TextBlock Classes="h1" VerticalAlignment="Center" Text="Chat" />
+          <Button Grid.Column="1" Classes="ghost square" VerticalAlignment="Center" ToolTip.Tip="New chat"
+                  Command="{Binding BeginNewChatCommand}">
+            <c:Icon Data="{StaticResource Icon.Plus}" Size="19" />
+          </Button>
+        </Grid>
+
+        <TextBlock DockPanel.Dock="Top" Classes="error" Margin="20,0,20,10" Text="{Binding ErrorMessage}"
+                   IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+        <TextBlock DockPanel.Dock="Top" Classes="muted" Margin="20,4,20,0" TextWrapping="Wrap"
+                   Text="No conversations yet. Start one with the + button."
+                   IsVisible="{Binding HasNoConversations}" />
+
+        <ScrollViewer>
+          <ItemsControl ItemsSource="{Binding Conversations}" Margin="8,0,8,8">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ConversationViewModel">
+                <Button Classes="row" Classes.selected="{Binding IsSelected}" Padding="10,9" Margin="0,1"
+                        HorizontalContentAlignment="Stretch"
+                        Command="{Binding $parent[UserControl].((vm:ChatViewModel)DataContext).SelectCommand}"
+                        CommandParameter="{Binding}">
+                  <Grid ColumnDefinitions="Auto,*,Auto">
+                    <c:Avatar Margin="0,0,11,0" VerticalAlignment="Center" DisplayName="{Binding Title}"
+                              ShowStatus="{Binding IsDirect}" Status="{Binding Other.Status}" />
+                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                      <TextBlock Text="{Binding Title}" FontWeight="SemiBold" MaxLines="1"
+                                 Foreground="{StaticResource Brush.TextPrimary}" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Classes="muted small" Text="{Binding Preview}" MaxLines="1"
+                                 TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="5" Margin="8,0,0,0" VerticalAlignment="Center">
+                      <TextBlock Classes="muted" FontSize="11.5" HorizontalAlignment="Right" Text="{Binding TimeText}" />
+                      <Border IsVisible="{Binding HasUnread}" Background="{StaticResource Brush.Accent}"
+                              CornerRadius="9" MinWidth="18" Height="18" Padding="5,0" HorizontalAlignment="Right">
+                        <TextBlock Text="{Binding UnreadCount}" FontSize="11" FontWeight="Bold"
+                                   Foreground="{StaticResource Brush.OnAccent}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      </Border>
+                    </StackPanel>
+                  </Grid>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+
+    <!-- Main stage: the open conversation -->
+    <Grid Grid.Column="1" RowDefinitions="Auto,*" IsVisible="{Binding HasSelection}">
+      <Border Classes="stageheader">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4">
+            <Button Classes="ghost square" VerticalAlignment="Center" ToolTip.Tip="Start call"
+                    Command="{Binding StartCallCommand}">
+              <c:Icon Data="{StaticResource Icon.Calls}" Size="19" />
+            </Button>
+            <Button Classes="ghost square" VerticalAlignment="Center" ToolTip.Tip="People"
+                    Command="{Binding ToggleMembersPanelCommand}">
+              <c:Icon Data="{StaticResource Icon.Workspaces}" Size="19" />
+            </Button>
+          </StackPanel>
+          <StackPanel VerticalAlignment="Center" Spacing="1">
+            <TextBlock Classes="h2" Text="{Binding Selected.Title}" MaxLines="1" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="muted small" Text="{Binding Selected.Subtitle}" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+      <ContentControl Grid.Row="1" Content="{Binding Thread}" />
+    </Grid>
+
+    <!-- Main stage: nothing open -->
+    <StackPanel Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8"
+                IsVisible="{Binding ShowEmptyState}">
+      <TextBlock Classes="h1" HorizontalAlignment="Center" Text="Pick up a conversation" />
+      <TextBlock Classes="muted" HorizontalAlignment="Center" Text="Choose one from the list, or start a new chat." />
+      <Button Classes="primary" HorizontalAlignment="Center" Margin="0,12,0,0" Content="New chat"
+              Command="{Binding BeginNewChatCommand}" />
+    </StackPanel>
+
+    <!-- Main stage: starting a chat -->
+    <ScrollViewer Grid.Column="1" IsVisible="{Binding IsStartingChat}">
+      <StackPanel Width="440" HorizontalAlignment="Center" Margin="0,56,0,32">
+        <TextBlock Classes="h1" Text="New chat" />
+        <TextBlock Classes="muted" Margin="0,6,0,22" TextWrapping="Wrap"
+                   Text="Choose one person for a direct chat, or several to start a group." />
+
+        <TextBlock Classes="muted" TextWrapping="Wrap" IsVisible="{Binding !Candidates.Count}"
+                   Text="Nobody else has joined this organization yet. Share the invite code from Settings to bring people in." />
+
+        <ItemsControl ItemsSource="{Binding Candidates}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:PersonViewModel">
+              <CheckBox IsChecked="{Binding IsSelected}" HorizontalAlignment="Stretch" Padding="12,0,0,0" Margin="0,5"
+                        VerticalContentAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="11">
+                  <c:Avatar Width="32" Height="32" DisplayName="{Binding DisplayName}" Status="{Binding Status}"
+                            ShowStatus="True" Surface="{StaticResource Brush.Canvas}" />
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                    <TextBlock Classes="muted small" Text="{Binding Email}" />
+                  </StackPanel>
+                </StackPanel>
+              </CheckBox>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Classes="label" Margin="0,22,0,6" Text="Group name (optional, for three or more people)" />
+        <TextBox Text="{Binding NewChatTitle}" Watermark="For example, Launch planning" />
+
+        <TextBlock Classes="error" Margin="0,14,0,0" Text="{Binding NewChatError}"
+                   IsVisible="{Binding NewChatError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,22,0,0">
+          <Button Classes="primary" Content="Start chat" Command="{Binding StartChatCommand}" />
+          <Button Classes="secondary" Content="Cancel" Command="{Binding CancelNewChatCommand}" />
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- Context panel: who is in this conversation -->
+    <Border Grid.Column="2" Classes="contextpane" IsVisible="{Binding IsMembersPanelOpen}">
+      <DockPanel>
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Height="64" Margin="20,0,12,0">
+          <TextBlock Classes="h2" VerticalAlignment="Center" Text="People" />
+          <Button Grid.Column="1" Classes="ghost square" VerticalAlignment="Center" ToolTip.Tip="Close"
+                  Command="{Binding ToggleMembersPanelCommand}">
+            <c:Icon Data="{StaticResource Icon.Close}" Size="17" />
+          </Button>
+        </Grid>
+        <ScrollViewer>
+          <ItemsControl ItemsSource="{Binding Selected.Members}" Margin="20,0,16,16">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:PersonViewModel">
+                <StackPanel Orientation="Horizontal" Spacing="11" Margin="0,7">
+                  <c:Avatar Width="32" Height="32" DisplayName="{Binding DisplayName}" Status="{Binding Status}"
+                            ShowStatus="True" />
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                    <TextBlock Classes="muted small" Text="{Binding StatusText}" />
+                  </StackPanel>
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+  </Grid>
+</UserControl>

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Desktop host for macOS and Windows. All UI lives in MeetJoe.App. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>MeetJoe</AssemblyName>
+    <RootNamespace>MeetJoe.Desktop</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <!-- macOS camera / mic prompts for in-app LiveKit WebView -->
+    <ApplicationId>com.joesolutions.meetjoe</ApplicationId>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MeetJoe.App\MeetJoe.App.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('osx'))">
+    <None Include="Info.plist" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Diagnostics" Condition="'$(Configuration)' == 'Debug'" />
+    <PackageReference Include="WebView.Avalonia.Desktop" />
+  </ItemGroup>
+</Project>

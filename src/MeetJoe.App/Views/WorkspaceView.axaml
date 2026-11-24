@@ -1,0 +1,188 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeetJoe.App.ViewModels"
+             xmlns:c="using:MeetJoe.App.Controls"
+             x:Class="MeetJoe.App.Views.WorkspaceView"
+             x:DataType="vm:WorkspacesViewModel">
+  <Grid ColumnDefinitions="300,*,Auto">
+    <!-- List pane: workspaces and their channels -->
+    <Border Classes="listpane">
+      <DockPanel>
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Height="64" Margin="20,0,12,0">
+          <TextBlock Classes="h1" VerticalAlignment="Center" Text="Workspaces" />
+          <Button Grid.Column="1" Classes="ghost square" VerticalAlignment="Center" ToolTip.Tip="New workspace"
+                  Command="{Binding BeginCreateWorkspaceCommand}">
+            <c:Icon Data="{StaticResource Icon.Plus}" Size="19" />
+          </Button>
+        </Grid>
+
+        <TextBlock DockPanel.Dock="Top" Classes="error" Margin="20,0,20,10" Text="{Binding ErrorMessage}"
+                   IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+        <TextBlock DockPanel.Dock="Top" Classes="muted" Margin="20,4,20,0" TextWrapping="Wrap"
+                   Text="You're not in any workspaces yet. Create one with the + button."
+                   IsVisible="{Binding HasNoWorkspaces}" />
+
+        <ScrollViewer>
+          <ItemsControl ItemsSource="{Binding Workspaces}" Margin="8,0,8,8">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:WorkspaceViewModel">
+                <StackPanel Margin="0,0,0,14">
+                  <Grid ColumnDefinitions="*,Auto" Margin="12,0,4,2">
+                    <TextBlock Text="{Binding Name}" FontWeight="Bold" VerticalAlignment="Center"
+                               MaxLines="1" TextTrimming="CharacterEllipsis" />
+                    <Button Grid.Column="1" Classes="ghost square" Width="28" Height="28" MinHeight="28"
+                            ToolTip.Tip="Add a channel"
+                            Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).BeginAddChannelCommand}"
+                            CommandParameter="{Binding}">
+                      <c:Icon Data="{StaticResource Icon.Plus}" Size="16" />
+                    </Button>
+                  </Grid>
+
+                  <ItemsControl ItemsSource="{Binding Channels}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:ChannelViewModel">
+                        <Button Classes="row" Classes.selected="{Binding IsSelected}" Margin="0,1"
+                                Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).SelectChannelCommand}"
+                                CommandParameter="{Binding}">
+                          <StackPanel Orientation="Horizontal" Spacing="9">
+                            <c:Icon Data="{StaticResource Icon.Hash}" Size="15" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding Name}" VerticalAlignment="Center" MaxLines="1"
+                                       TextTrimming="CharacterEllipsis" />
+                          </StackPanel>
+                        </Button>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+
+                  <StackPanel Margin="10,6,4,0" Spacing="6" IsVisible="{Binding IsAddingChannel}">
+                    <TextBox Text="{Binding NewChannelName}" Watermark="Channel name" />
+                    <CheckBox IsChecked="{Binding NewChannelIsPrivate}" Content="Private channel" />
+                    <TextBlock Classes="error" Text="{Binding ChannelError}"
+                               IsVisible="{Binding ChannelError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <Button Classes="primary" Padding="14,6" MinHeight="32" Content="Add"
+                              Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).AddChannelCommand}"
+                              CommandParameter="{Binding}" />
+                      <Button Classes="ghost" Content="Cancel"
+                              Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).CancelAddChannelCommand}"
+                              CommandParameter="{Binding}" />
+                    </StackPanel>
+                  </StackPanel>
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+
+    <!-- Main stage: the open channel -->
+    <Grid Grid.Column="1" RowDefinitions="Auto,*" IsVisible="{Binding HasSelection}">
+      <Border Classes="stageheader">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Classes="ghost square" VerticalAlignment="Center" ToolTip.Tip="Members"
+                  Command="{Binding ToggleMembersPanelCommand}">
+            <c:Icon Data="{StaticResource Icon.Workspaces}" Size="19" />
+          </Button>
+          <StackPanel VerticalAlignment="Center" Spacing="1">
+            <StackPanel Orientation="Horizontal" Spacing="7">
+              <c:Icon Data="{StaticResource Icon.Hash}" Size="16" VerticalAlignment="Center" />
+              <TextBlock Classes="h2" Text="{Binding SelectedChannel.Name}" />
+            </StackPanel>
+            <TextBlock Classes="muted small" Text="{Binding Thread.Subtitle}" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+      <ContentControl Grid.Row="1" Content="{Binding Thread}" />
+    </Grid>
+
+    <!-- Main stage: nothing open -->
+    <StackPanel Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8"
+                IsVisible="{Binding ShowEmptyState}">
+      <TextBlock Classes="h1" HorizontalAlignment="Center" Text="Work together in channels" />
+      <TextBlock Classes="muted" HorizontalAlignment="Center"
+                 Text="Open a channel from the list, or create a workspace for a team or project." />
+      <Button Classes="primary" HorizontalAlignment="Center" Margin="0,12,0,0" Content="New workspace"
+              Command="{Binding BeginCreateWorkspaceCommand}" />
+    </StackPanel>
+
+    <!-- Main stage: creating a workspace -->
+    <StackPanel Grid.Column="1" Width="440" HorizontalAlignment="Center" Margin="0,56,0,32"
+                IsVisible="{Binding IsCreatingWorkspace}">
+      <TextBlock Classes="h1" Text="New workspace" />
+      <TextBlock Classes="muted" Margin="0,6,0,22" TextWrapping="Wrap"
+                 Text="A workspace is a home for a team or project. It starts with a General channel, and you can add people once it exists." />
+
+      <TextBlock Classes="label" Text="Name" />
+      <TextBox Text="{Binding NewWorkspaceName}" Watermark="For example, Product" />
+
+      <TextBlock Classes="label" Margin="0,16,0,6" Text="Description (optional)" />
+      <TextBox Text="{Binding NewWorkspaceDescription}" Watermark="What this workspace is for" />
+
+      <TextBlock Classes="error" Margin="0,14,0,0" Text="{Binding CreateError}"
+                 IsVisible="{Binding CreateError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+      <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,22,0,0">
+        <Button Classes="primary" Content="Create workspace" Command="{Binding CreateWorkspaceCommand}" />
+        <Button Classes="secondary" Content="Cancel" Command="{Binding CancelCreateWorkspaceCommand}" />
+      </StackPanel>
+    </StackPanel>
+
+    <!-- Context panel: workspace members -->
+    <Border Grid.Column="2" Classes="contextpane" IsVisible="{Binding IsMembersPanelOpen}">
+      <DockPanel>
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Height="64" Margin="20,0,12,0">
+          <TextBlock Classes="h2" VerticalAlignment="Center" Text="Members" />
+          <Button Grid.Column="1" Classes="ghost square" VerticalAlignment="Center" ToolTip.Tip="Close"
+                  Command="{Binding ToggleMembersPanelCommand}">
+            <c:Icon Data="{StaticResource Icon.Close}" Size="17" />
+          </Button>
+        </Grid>
+
+        <ScrollViewer>
+          <StackPanel Margin="20,0,16,16">
+            <TextBlock Classes="error" Margin="0,0,0,8" Text="{Binding MembersError}"
+                       IsVisible="{Binding MembersError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+            <ItemsControl ItemsSource="{Binding Members}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:WorkspaceMemberViewModel">
+                  <StackPanel Orientation="Horizontal" Spacing="11" Margin="0,7">
+                    <c:Avatar Width="32" Height="32" DisplayName="{Binding Person.DisplayName}"
+                              Status="{Binding Person.Status}" ShowStatus="True" />
+                    <StackPanel VerticalAlignment="Center">
+                      <TextBlock Text="{Binding Person.DisplayName}" FontWeight="SemiBold" />
+                      <TextBlock Classes="muted small" Text="{Binding RoleText}" />
+                    </StackPanel>
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <StackPanel IsVisible="{Binding CanAddMembers}">
+              <Border Classes="separator" Margin="0,14" />
+              <TextBlock Classes="section" Margin="0,0,0,6" Text="Add people" />
+              <TextBlock Classes="muted small" TextWrapping="Wrap" IsVisible="{Binding !Addable.Count}"
+                         Text="Everyone in your organization is already in this workspace." />
+              <ItemsControl ItemsSource="{Binding Addable}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:PersonViewModel">
+                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,6">
+                      <c:Avatar Width="28" Height="28" DisplayName="{Binding DisplayName}" Margin="0,0,10,0" />
+                      <TextBlock Grid.Column="1" Text="{Binding DisplayName}" VerticalAlignment="Center"
+                                 MaxLines="1" TextTrimming="CharacterEllipsis" />
+                      <Button Grid.Column="2" Classes="ghost tint" Content="Add"
+                              Command="{Binding $parent[UserControl].((vm:WorkspacesViewModel)DataContext).AddMemberCommand}"
+                              CommandParameter="{Binding}" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+  </Grid>
+</UserControl>

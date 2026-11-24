@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MeetJoe · Meeting</title>
+  <style>
+    :root {
+      --canvas: #0A1624;
+      --stage: #050D16;
+      --bar: #141A22;
+      --bar-hover: #1E2733;
+      --text: #F3F6F8;
+      --muted: #9AA7B5;
+      --accent: #1EC8C8;
+      --danger: #C43B3B;
+      --danger-hover: #D94A4A;
+      --pip-border: #2A3544;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%; overflow: hidden;
+      font-family: Manrope, "Segoe UI", system-ui, sans-serif;
+      background: var(--stage); color: var(--text);
+      user-select: none;
+    }
+    body { display: flex; flex-direction: column; }
+
+    /* —— Top control bar (Teams-like) —— */
+    #toolbar {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 12px;
+      min-height: 64px;
+      padding: 8px 16px;
+      background: var(--bar);
+      border-bottom: 1px solid #1C2430;
+      z-index: 5;
+    }
+    .bar-left, .bar-right {
+      display: flex; align-items: center; gap: 10px; min-width: 0;
+    }
+    .bar-right { justify-content: flex-end; }
+    .bar-center {
+      display: flex; align-items: flex-end; justify-content: center; gap: 4px;
+      flex-wrap: wrap;
+    }
+    .timer {
+      display: inline-flex; align-items: center; gap: 8px;
+      color: var(--muted); font-size: 13px; font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .timer svg { width: 14px; height: 14px; stroke: var(--muted); fill: none; stroke-width: 1.7; }
+
+    .ctrl {
+      appearance: none; border: 0; background: transparent; color: var(--text);
+      width: 64px; padding: 6px 4px 4px; border-radius: 8px; cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      font: inherit; font-size: 11px; font-weight: 600; color: var(--muted);
+    }
+    .ctrl:hover { background: var(--bar-hover); color: var(--text); }
+    .ctrl .icon {
+      width: 36px; height: 36px; border-radius: 8px;
+      display: grid; place-items: center;
+      background: #1B2430;
+    }
+    .ctrl:hover .icon { background: #243041; }
+    .ctrl.off .icon { background: #3A4452; }
+    .ctrl.off { color: var(--muted); }
+    .ctrl.active .icon { background: var(--accent); color: #04262B; }
+    .ctrl svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+    .ctrl .icon { color: var(--text); }
+    .ctrl.active .icon { color: #04262B; }
+    .ctrl .badge {
+      position: absolute; top: 2px; right: 10px;
+      min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+      background: var(--accent); color: #04262B; font-size: 10px; font-weight: 700;
+      display: grid; place-items: center;
+    }
+    .ctrl-wrap { position: relative; }
+
+    .leave {
+      appearance: none; border: 0; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 8px;
+      background: var(--danger); color: #fff;
+      padding: 10px 16px; border-radius: 8px;
+      font: inherit; font-size: 14px; font-weight: 700;
+    }
+    .leave:hover { background: var(--danger-hover); }
+    .leave svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+
+    #banner {
+      display: none; padding: 8px 16px; background: #291EC8C8; color: var(--text); font-size: 13px;
+    }
+    #banner.show { display: block; }
+
+    /* —— Stage —— */
+    #stage {
+      position: relative; flex: 1; min-height: 0; background: var(--stage);
+    }
+    #primary {
+      position: absolute; inset: 0; display: grid; place-items: center;
+      background: #000;
+    }
+    #primary video, #primary .placeholder {
+      width: 100%; height: 100%; object-fit: cover;
+    }
+    #primary .placeholder {
+      display: grid; place-items: center;
+      background: radial-gradient(ellipse at center, #122033 0%, #050D16 70%);
+      font-size: 56px; font-weight: 700; color: var(--muted); letter-spacing: -0.02em;
+    }
+    #primary-name {
+      position: absolute; left: 16px; bottom: 16px;
+      font-size: 14px; font-weight: 600;
+      text-shadow: 0 1px 6px rgba(0,0,0,.8);
+      max-width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      pointer-events: none;
+    }
+    #status {
+      position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+      padding: 6px 12px; border-radius: 999px;
+      background: rgba(10, 22, 36, 0.72); color: var(--muted);
+      font-size: 12px; font-weight: 600; pointer-events: none;
+    }
+    #status.live { color: var(--accent); }
+    #status.error { color: #FF8A7A; }
+
+    /* Self-view PiP */
+    #pip {
+      position: absolute; right: 16px; bottom: 16px;
+      width: min(240px, 32vw); aspect-ratio: 16 / 10;
+      border-radius: 10px; overflow: hidden;
+      border: 1px solid var(--pip-border);
+      background: #0B1522; box-shadow: 0 8px 28px rgba(0,0,0,.45);
+      z-index: 3;
+    }
+    #pip video, #pip .placeholder {
+      width: 100%; height: 100%; object-fit: cover;
+    }
+    #pip .placeholder {
+      display: grid; place-items: center;
+      font-size: 22px; font-weight: 700; color: var(--muted);
+      background: #122033;
+    }
+    #pip .pip-label {
+      position: absolute; left: 8px; bottom: 6px;
+      font-size: 11px; font-weight: 600; text-shadow: 0 1px 4px #000;
+    }
+    #pip.hidden { display: none; }
+
+    #roster {
+      display: none; position: absolute; inset: 0; z-index: 4;
+      background: rgba(5, 13, 22, 0.92); padding: 24px;
+      overflow: auto;
+    }
+    #roster.open { display: block; }
+    #roster h2 { margin: 0 0 16px; font-size: 18px; }
+    #roster-list { display: flex; flex-direction: column; gap: 10px; max-width: 420px; }
+    .roster-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 12px; border-radius: 10px; background: #122033;
+    }
+    .roster-avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      display: grid; place-items: center;
+      background: #1A3852; font-weight: 700; font-size: 13px;
+    }
+
+    .speaking #primary, .speaking#pip { outline: 2px solid var(--accent); outline-offset: -2px; }
+  </style>
+</head>
+<body>
+  <header id="toolbar">
+    <div class="bar-left">
+      <div class="timer" title="Call duration">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span id="timer">00:00</span>
+      </div>
+    </div>
+
+    <div class="bar-center">
+      <button class="ctrl" id="mic" type="button" title="Microphone">
+        <span class="icon"><svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></span>
+        Mic
+      </button>
+      <button class="ctrl" id="cam" type="button" title="Camera">
+        <span class="icon"><svg viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></span>
+        Camera
+      </button>
+      <button class="ctrl" id="share" type="button" title="Share screen">
+        <span class="icon"><svg viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></span>
+        Share
+      </button>
+      <button class="ctrl" id="chat" type="button" title="Chat" disabled>
+        <span class="icon"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+        Chat
+      </button>
+      <div class="ctrl-wrap">
+        <button class="ctrl" id="people" type="button" title="People">
+          <span class="icon"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+          People
+        </button>
+        <span class="badge" id="people-count" hidden>0</span>
+      </div>
+      <button class="ctrl" id="hold" type="button" title="Hold" disabled>
+        <span class="icon"><svg viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></span>
+        Hold
+      </button>
+      <button class="ctrl" id="record" type="button" title="Record" disabled>
+        <span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/></svg></span>
+        Record
+      </button>
+      <button class="ctrl" id="more" type="button" title="More" disabled>
+        <span class="icon"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg></span>
+        More
+      </button>
+    </div>
+
+    <div class="bar-right">
+      <button class="leave" id="leave" type="button" title="Leave">
+        <svg viewBox="0 0 24 24"><path d="M10 9l-6 3 6 3"/><path d="M4 12h12"/><path d="M15 5h3a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-3"/></svg>
+        Leave
+      </button>
+    </div>
+  </header>
+
+  <div id="banner"></div>
+
+  <div id="stage">
+    <div id="status">Connecting…</div>
+    <div id="primary">
+      <div class="placeholder" id="primary-ph">?</div>
+    </div>
+    <div id="primary-name"></div>
+
+    <div id="pip">
+      <div class="placeholder" id="pip-ph">You</div>
+      <div class="pip-label">You</div>
+    </div>
+
+    <aside id="roster" aria-label="People in this call">
+      <h2>People</h2>
+      <div id="roster-list"></div>
+    </aside>
+  </div>
+
+  <script src="livekit-client.umd.min.js"></script>
+  <script>
+    const LivekitClient = window.LivekitClient;
+    // Prefer query string; keep hash as a fallback for older join links.
+    const params = new URLSearchParams(
+      location.search ? location.search.slice(1) : location.hash.replace(/^#/, ""));
+    const url = params.get("u");
+    const token = params.get("t");
+
+    const statusEl = document.getElementById("status");
+    const banner = document.getElementById("banner");
+    const primary = document.getElementById("primary");
+    const primaryPh = document.getElementById("primary-ph");
+    const primaryName = document.getElementById("primary-name");
+    const pip = document.getElementById("pip");
+    const pipPh = document.getElementById("pip-ph");
+    const timerEl = document.getElementById("timer");
+    const peopleCount = document.getElementById("people-count");
+    const roster = document.getElementById("roster");
+    const rosterList = document.getElementById("roster-list");
+
+    /** @type {Map<string, { name: string, isLocal: boolean, hasVideo: boolean }>} */
+    const people = new Map();
+    let primaryId = null;
+    let localId = null;
+    let startedAt = null;
+    let timerHandle = null;
+
+    function setStatus(text, kind) {
+      statusEl.textContent = text;
+      statusEl.className = kind || "";
+      if (kind === "live") statusEl.style.opacity = "0";
+      else statusEl.style.opacity = "1";
+    }
+
+    function showBanner(text) {
+      banner.textContent = text;
+      banner.classList.toggle("show", Boolean(text));
+    }
+
+    function initials(name) {
+      return (name || "?")
+        .split(/\s+/).filter(Boolean).slice(0, 2)
+        .map(p => p[0].toUpperCase()).join("") || "?";
+    }
+
+    function formatDuration(ms) {
+      const total = Math.max(0, Math.floor(ms / 1000));
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      const mm = String(m).padStart(2, "0");
+      const ss = String(s).padStart(2, "0");
+      return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+    }
+
+    function startTimer() {
+      startedAt = Date.now();
+      timerHandle = setInterval(() => {
+        timerEl.textContent = formatDuration(Date.now() - startedAt);
+      }, 1000);
+    }
+
+    function upsertPerson(id, name, isLocal) {
+      const existing = people.get(id) || { name, isLocal, hasVideo: false };
+      existing.name = name || existing.name;
+      existing.isLocal = isLocal;
+      people.set(id, existing);
+      refreshPeopleUi();
+      if (!primaryId && !isLocal) setPrimary(id);
+      if (!primaryId && isLocal && people.size === 1) setPrimary(id);
+    }
+
+    function removePerson(id) {
+      people.delete(id);
+      if (primaryId === id) {
+        primaryId = null;
+        const next = [...people.keys()].find(k => k !== localId) || localId;
+        if (next) setPrimary(next);
+      }
+      refreshPeopleUi();
+    }
+
+    function refreshPeopleUi() {
+      const count = people.size;
+      peopleCount.textContent = String(count);
+      peopleCount.hidden = count === 0;
+      rosterList.innerHTML = "";
+      for (const [, p] of people) {
+        const row = document.createElement("div");
+        row.className = "roster-row";
+        row.innerHTML =
+          `<div class="roster-avatar">${initials(p.name)}</div>` +
+          `<div>${p.name}${p.isLocal ? " (you)" : ""}</div>`;
+        rosterList.appendChild(row);
+      }
+    }
+
+    function ensureVideo(container, isLocal) {
+      let video = container.querySelector("video");
+      if (!video) {
+        video = document.createElement("video");
+        video.autoplay = true;
+        video.playsInline = true;
+        video.muted = isLocal;
+        container.insertBefore(video, container.firstChild);
+      }
+      return video;
+    }
+
+    function setPrimary(id) {
+      primaryId = id;
+      const info = people.get(id);
+      primaryName.textContent = info ? (info.isLocal ? `${info.name} (you)` : info.name) : "";
+      primaryPh.textContent = initials(info?.name);
+      // Move existing videos: keep tracks attached where they are via track.attach below.
+    }
+
+    function attachTrack(identity, name, track, isLocal) {
+      upsertPerson(identity, name, isLocal);
+      if (isLocal) localId = identity;
+
+      if (track.kind === "audio" && !isLocal) {
+        const audio = track.attach();
+        audio.autoplay = true;
+        document.body.appendChild(audio);
+        return;
+      }
+      if (track.kind !== "video") return;
+
+      const info = people.get(identity);
+      if (info) info.hasVideo = true;
+
+      if (isLocal) {
+        pipPh.style.display = "none";
+        const video = ensureVideo(pip, true);
+        track.attach(video);
+        // If alone, also show on primary.
+        if (people.size === 1 || primaryId === identity) {
+          primaryPh.style.display = "none";
+          const main = ensureVideo(primary, true);
+          track.attach(main);
+          setPrimary(identity);
+        }
+        return;
+      }
+
+      // Remote → primary stage
+      setPrimary(identity);
+      primaryPh.style.display = "none";
+      const video = ensureVideo(primary, false);
+      track.attach(video);
+    }
+
+    function detachTrack(identity, track) {
+      track.detach();
+      if (track.kind !== "video") return;
+      const info = people.get(identity);
+      if (info) info.hasVideo = false;
+
+      if (identity === localId) {
+        const video = pip.querySelector("video");
+        if (video && !video.srcObject?.getVideoTracks().length) {
+          video.remove();
+          pipPh.style.display = "";
+        }
+      }
+      if (identity === primaryId) {
+        const video = primary.querySelector("video");
+        if (video && !video.srcObject?.getVideoTracks().length) {
+          video.remove();
+          primaryPh.style.display = "";
+        }
+      }
+    }
+
+    function signalLeave() {
+      try {
+        if (typeof invokeCSharpAction === "function") invokeCSharpAction("leave");
+      } catch (_) { /* optional bridge */ }
+      try { location.hash = "meetjoe-leave=" + Date.now(); } catch (_) { /* ignore */ }
+    }
+
+    async function main() {
+      if (!url || !token) {
+        setStatus("Missing join details. Re-open media from MeetJoe.", "error");
+        return;
+      }
+      if (!window.isSecureContext && !/^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/i.test(location.origin)) {
+        showBanner("Camera and microphone need a secure context (https or localhost).");
+      }
+
+      const room = new LivekitClient.Room({
+        adaptiveStream: true,
+        dynacast: true,
+        videoCaptureDefaults: {
+          resolution: LivekitClient.VideoPresets.h720.resolution,
+        },
+        publishDefaults: {
+          videoEncoding: LivekitClient.VideoPresets.h720.encoding,
+          simulcast: true,
+        },
+      });
+
+      room
+        .on(LivekitClient.RoomEvent.TrackSubscribed, (track, _pub, participant) => {
+          attachTrack(participant.identity, participant.name || participant.identity, track, false);
+        })
+        .on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, _pub, participant) => {
+          detachTrack(participant.identity, track);
+        })
+        .on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
+          removePerson(participant.identity);
+        })
+        .on(LivekitClient.RoomEvent.ActiveSpeakersChanged, (speakers) => {
+          const ids = new Set(speakers.map(s => s.identity));
+          primary.classList.toggle("speaking", primaryId && ids.has(primaryId));
+          pip.classList.toggle("speaking", localId && ids.has(localId));
+        })
+        .on(LivekitClient.RoomEvent.Disconnected, () => {
+          setStatus("Disconnected", "error");
+          if (timerHandle) clearInterval(timerHandle);
+        });
+
+      try {
+        await room.connect(url, token);
+        const me = room.localParticipant;
+        localId = me.identity;
+        upsertPerson(me.identity, me.name || "You", true);
+        pipPh.textContent = initials(me.name || "You");
+
+        const micBtn = document.getElementById("mic");
+        const camBtn = document.getElementById("cam");
+
+        // Enable mic/camera independently so a camera denial still allows talking.
+        try {
+          await me.setMicrophoneEnabled(true);
+          micBtn.classList.toggle("off", false);
+        } catch (micErr) {
+          console.error(micErr);
+          micBtn.classList.toggle("off", true);
+          showBanner("Microphone is blocked. Allow mic access for MeetJoe (System Settings → Privacy) and rejoin.");
+        }
+        try {
+          await me.setCameraEnabled(true);
+          camBtn.classList.toggle("off", false);
+        } catch (camErr) {
+          console.error(camErr);
+          camBtn.classList.toggle("off", true);
+          const prior = banner.classList.contains("show") ? banner.textContent + " " : "";
+          showBanner(prior + "Camera is blocked; audio can still work.");
+        }
+
+        for (const pub of me.trackPublications.values()) {
+          if (pub.track) attachTrack(me.identity, me.name || "You", pub.track, true);
+        }
+        for (const participant of room.remoteParticipants.values()) {
+          upsertPerson(participant.identity, participant.name || participant.identity, false);
+          for (const pub of participant.trackPublications.values()) {
+            if (pub.isSubscribed && pub.track)
+              attachTrack(participant.identity, participant.name || participant.identity, pub.track, false);
+          }
+        }
+        setStatus("Live", "live");
+        startTimer();
+      } catch (err) {
+        console.error(err);
+        setStatus(err?.message || "Could not connect", "error");
+        showBanner("Check that LiveKit is running and that this page was opened from MeetJoe.");
+        return;
+      }
+
+      const micBtn = document.getElementById("mic");
+      const camBtn = document.getElementById("cam");
+      const shareBtn = document.getElementById("share");
+      const peopleBtn = document.getElementById("people");
+      const leaveBtn = document.getElementById("leave");
+
+      micBtn.onclick = async () => {
+        const on = !room.localParticipant.isMicrophoneEnabled;
+        await room.localParticipant.setMicrophoneEnabled(on);
+        micBtn.classList.toggle("off", !on);
+      };
+      camBtn.onclick = async () => {
+        const on = !room.localParticipant.isCameraEnabled;
+        await room.localParticipant.setCameraEnabled(on);
+        camBtn.classList.toggle("off", !on);
+        if (!on) {
+          pip.querySelector("video")?.remove();
+          pipPh.style.display = "";
+        }
+      };
+      shareBtn.onclick = async () => {
+        const sharing = room.localParticipant.isScreenShareEnabled;
+        await room.localParticipant.setScreenShareEnabled(!sharing);
+        shareBtn.classList.toggle("active", !sharing);
+      };
+      peopleBtn.onclick = () => {
+        roster.classList.toggle("open");
+        peopleBtn.classList.toggle("active", roster.classList.contains("open"));
+      };
+      leaveBtn.onclick = async () => {
+        await room.disconnect();
+        if (timerHandle) clearInterval(timerHandle);
+        setStatus("You left. Close this view from MeetJoe.", "error");
+        signalLeave();
+      };
+
+      window.addEventListener("beforeunload", () => room.disconnect());
+    }
+
+    main();
+  </script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+# Build output
+bin/
+obj/
+artifacts/
+publish/
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+.DS_Store
+
+# Local runtime data (signing keys, uploads, etc.)
+.data/
+
+# Secrets
+*.env
+!.env.example
+appsettings.Local.json
+
+# Cursor local
+.cursor/

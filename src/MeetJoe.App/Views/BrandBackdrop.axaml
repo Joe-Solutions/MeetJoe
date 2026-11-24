@@ -1,0 +1,35 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="MeetJoe.App.Views.BrandBackdrop"
+             IsHitTestVisible="False">
+  <!-- The full-bleed mesh gradient behind sign-in: soft pools of teal and blue on the canvas navy. -->
+  <Panel>
+    <Border Background="{StaticResource Brush.Canvas}" />
+    <Border>
+      <Border.Background>
+        <RadialGradientBrush Center="12%,8%" GradientOrigin="12%,8%" RadiusX="65%" RadiusY="65%">
+          <GradientStop Color="#381EC8C8" Offset="0" />
+          <GradientStop Color="#001EC8C8" Offset="1" />
+        </RadialGradientBrush>
+      </Border.Background>
+    </Border>
+    <Border>
+      <Border.Background>
+        <RadialGradientBrush Center="92%,88%" GradientOrigin="92%,88%" RadiusX="70%" RadiusY="70%">
+          <GradientStop Color="#4D2A6FB5" Offset="0" />
+          <GradientStop Color="#002A6FB5" Offset="1" />
+        </RadialGradientBrush>
+      </Border.Background>
+    </Border>
+    <Border>
+      <Border.Background>
+        <RadialGradientBrush Center="78%,12%" GradientOrigin="78%,12%" RadiusX="45%" RadiusY="45%">
+          <GradientStop Color="#2E17344D" Offset="0" />
+          <GradientStop Color="#0017344D" Offset="1" />
+        </RadialGradientBrush>
+      </Border.Background>
+    </Border>
+    <!-- Film grain, filled in by the code-behind, so the gradients don't show banding. -->
+    <Border x:Name="Grain" />
+  </Panel>
+</UserControl>

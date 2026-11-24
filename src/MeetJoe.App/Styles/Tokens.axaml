@@ -1,0 +1,62 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Design tokens. Source of truth: docs/DESIGN.md. -->
+
+  <!-- Brand palette -->
+  <Color x:Key="Color.Canvas">#0B1F33</Color>
+  <Color x:Key="Color.Panel">#122A40</Color>
+  <Color x:Key="Color.Border">#1E3A52</Color>
+  <Color x:Key="Color.TextPrimary">#E8F1F5</Color>
+  <Color x:Key="Color.TextMuted">#8AA0B2</Color>
+  <Color x:Key="Color.Accent">#1EC8C8</Color>
+  <Color x:Key="Color.Danger">#E85D4C</Color>
+  <Color x:Key="Color.Warning">#E0A84A</Color>
+
+  <!-- Derived tones: steps of the same navy and teal for states and layers -->
+  <Color x:Key="Color.Rail">#081828</Color>
+  <Color x:Key="Color.Field">#0E2538</Color>
+  <Color x:Key="Color.PanelHover">#163149</Color>
+  <Color x:Key="Color.PanelRaised">#1A3852</Color>
+  <Color x:Key="Color.AccentHover">#3AD6D6</Color>
+  <Color x:Key="Color.AccentPressed">#17A9A9</Color>
+  <Color x:Key="Color.AccentSoft">#291EC8C8</Color>
+  <Color x:Key="Color.OnAccent">#04262B</Color>
+  <Color x:Key="Color.DangerSoft">#26E85D4C</Color>
+
+  <SolidColorBrush x:Key="Brush.Canvas" Color="{StaticResource Color.Canvas}" />
+  <SolidColorBrush x:Key="Brush.Panel" Color="{StaticResource Color.Panel}" />
+  <SolidColorBrush x:Key="Brush.Border" Color="{StaticResource Color.Border}" />
+  <SolidColorBrush x:Key="Brush.TextPrimary" Color="{StaticResource Color.TextPrimary}" />
+  <SolidColorBrush x:Key="Brush.TextMuted" Color="{StaticResource Color.TextMuted}" />
+  <SolidColorBrush x:Key="Brush.Accent" Color="{StaticResource Color.Accent}" />
+  <SolidColorBrush x:Key="Brush.Danger" Color="{StaticResource Color.Danger}" />
+  <SolidColorBrush x:Key="Brush.Warning" Color="{StaticResource Color.Warning}" />
+  <SolidColorBrush x:Key="Brush.Rail" Color="{StaticResource Color.Rail}" />
+  <SolidColorBrush x:Key="Brush.Field" Color="{StaticResource Color.Field}" />
+  <SolidColorBrush x:Key="Brush.PanelHover" Color="{StaticResource Color.PanelHover}" />
+  <SolidColorBrush x:Key="Brush.PanelRaised" Color="{StaticResource Color.PanelRaised}" />
+  <SolidColorBrush x:Key="Brush.AccentHover" Color="{StaticResource Color.AccentHover}" />
+  <SolidColorBrush x:Key="Brush.AccentPressed" Color="{StaticResource Color.AccentPressed}" />
+  <SolidColorBrush x:Key="Brush.AccentSoft" Color="{StaticResource Color.AccentSoft}" />
+  <SolidColorBrush x:Key="Brush.OnAccent" Color="{StaticResource Color.OnAccent}" />
+  <SolidColorBrush x:Key="Brush.DangerSoft" Color="{StaticResource Color.DangerSoft}" />
+
+  <FontFamily x:Key="Font.Ui">avares://MeetJoe.App/Assets/Fonts#Manrope</FontFamily>
+
+  <!-- Text inputs: recolour the Fluent text control instead of re-templating it -->
+  <SolidColorBrush x:Key="TextControlBackground" Color="{StaticResource Color.Field}" />
+  <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="{StaticResource Color.Field}" />
+  <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="{StaticResource Color.Field}" />
+  <SolidColorBrush x:Key="TextControlBackgroundDisabled" Color="{StaticResource Color.Field}" />
+  <SolidColorBrush x:Key="TextControlBorderBrush" Color="{StaticResource Color.Border}" />
+  <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#2C5273" />
+  <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="{StaticResource Color.Accent}" />
+  <SolidColorBrush x:Key="TextControlForeground" Color="{StaticResource Color.TextPrimary}" />
+  <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="{StaticResource Color.TextPrimary}" />
+  <SolidColorBrush x:Key="TextControlForegroundFocused" Color="{StaticResource Color.TextPrimary}" />
+  <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#6B8294" />
+  <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="#6B8294" />
+  <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="#6B8294" />
+  <Thickness x:Key="TextControlBorderThemeThickness">1</Thickness>
+  <Thickness x:Key="TextControlBorderThemeThicknessFocused">1</Thickness>
+</ResourceDictionary>

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="..\MeetJoe.Application\MeetJoe.Application.csproj" />
+    <ProjectReference Include="..\MeetJoe.Infrastructure\MeetJoe.Infrastructure.csproj" />
+    <ProjectReference Include="..\MeetJoe.Contracts\MeetJoe.Contracts.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="OpenIddict.AspNetCore" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="MeetJoe.Api.Tests" />
+  </ItemGroup>
+</Project>

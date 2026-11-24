@@ -1,0 +1,74 @@
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml;
+using AvaloniaWebView;
+using MeetJoe.App.Services;
+using MeetJoe.App.ViewModels;
+using MeetJoe.App.Views;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace MeetJoe.App;
+
+public partial class App : Application
+{
+    public override void RegisterServices()
+    {
+        base.RegisterServices();
+        AvaloniaWebViewBuilder.Initialize(default);
+    }
+
+    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+
+    public override void OnFrameworkInitializationCompleted()
+    {
+        var platform = new AvaloniaPlatformServices();
+        var services = BuildServices(AppConfig.FromEnvironment(), platform);
+        var main = services.GetRequiredService<MainViewModel>();
+
+        switch (ApplicationLifetime)
+        {
+            case IClassicDesktopStyleApplicationLifetime desktop:
+                var window = new MainWindow { DataContext = main };
+                platform.TopLevelAccessor = () => window;
+                desktop.MainWindow = window;
+                desktop.Exit += (_, _) => services.Dispose();
+                break;
+
+            // Mobile hosts (Phase 7) show the same root view without a window.
+            case ISingleViewApplicationLifetime singleView:
+                var view = new MainView { DataContext = main };
+                platform.TopLevelAccessor = () => TopLevel.GetTopLevel(view);
+                singleView.MainView = view;
+                break;
+        }
+
+        base.OnFrameworkInitializationCompleted();
+    }
+
+    internal static ServiceProvider BuildServices(AppConfig config, IPlatformServices platform)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(config);
+        services.AddSingleton(platform);
+        services.AddSingleton<ICallTonePlayer, CallTonePlayer>();
+
+        services.AddSingleton<IAuthService>(_ => new AuthService(
+            new HttpClient { BaseAddress = config.ApiBaseUri, Timeout = TimeSpan.FromSeconds(30) }));
+
+        services.AddSingleton<IMeetJoeApi>(provider => new MeetJoeApi(
+            new HttpClient(new AuthHeaderHandler(provider.GetRequiredService<IAuthService>())
+            {
+                InnerHandler = new SocketsHttpHandler(),
+            })
+            {
+                BaseAddress = config.ApiBaseUri,
+                // Long enough for a 50 MB upload on a slow connection.
+                Timeout = TimeSpan.FromMinutes(5),
+            }));
+
+        services.AddSingleton<IRealtimeClient, RealtimeClient>();
+        services.AddSingleton<MainViewModel>();
+        return services.BuildServiceProvider();
+    }
+}

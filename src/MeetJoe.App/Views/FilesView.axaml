@@ -1,0 +1,59 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeetJoe.App.ViewModels"
+             xmlns:c="using:MeetJoe.App.Controls"
+             x:Class="MeetJoe.App.Views.FilesView"
+             x:DataType="vm:FilesViewModel">
+  <Grid RowDefinitions="Auto,*">
+    <Border Classes="stageheader">
+      <DockPanel>
+        <Button DockPanel.Dock="Right" Classes="ghost square" VerticalAlignment="Center" ToolTip.Tip="Refresh"
+                Command="{Binding LoadCommand}">
+          <c:Icon Data="{StaticResource Icon.Refresh}" Size="17" />
+        </Button>
+        <TextBlock Classes="h1" VerticalAlignment="Center" Text="Files" />
+      </DockPanel>
+    </Border>
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Margin="24,12,24,32">
+        <TextBlock Classes="error" Margin="0,8,0,0" Text="{Binding ErrorMessage}"
+                   IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+        <StackPanel Margin="0,12,0,0" Spacing="4" IsVisible="{Binding IsEmpty}">
+          <TextBlock Classes="h2" Text="No files yet" />
+          <TextBlock Classes="muted" Text="Files shared in your chats and channels are collected here." />
+        </StackPanel>
+
+        <ItemsControl ItemsSource="{Binding Files}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:FileViewModel">
+              <Border BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,0,1" Padding="0,12">
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="14">
+                  <c:Icon Data="{StaticResource Icon.File}" Size="22" VerticalAlignment="Center"
+                          TextElement.Foreground="{StaticResource Brush.TextMuted}" />
+                  <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding FileName}" FontWeight="SemiBold" MaxLines="1"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock Classes="muted small" MaxLines="1" TextTrimming="CharacterEllipsis">
+                      <Run Text="{Binding Location}" /><Run Text="  ·  " /><Run Text="{Binding SharedText}" />
+                    </TextBlock>
+                  </StackPanel>
+                  <TextBlock Grid.Column="2" Classes="muted small" VerticalAlignment="Center" Text="{Binding Status}" />
+                  <TextBlock Grid.Column="3" Classes="muted small" VerticalAlignment="Center" Text="{Binding SizeText}" />
+                  <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <Button Classes="secondary" Padding="12,6" MinHeight="32" Content="View"
+                            Command="{Binding ViewCommand}" />
+                    <Button Classes="ghost square" ToolTip.Tip="Download" Command="{Binding DownloadCommand}">
+                      <c:Icon Data="{StaticResource Icon.Download}" Size="17" />
+                    </Button>
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

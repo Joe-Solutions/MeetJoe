@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Integration tests: the real API in-process against a real PostgreSQL (see ApiFactory). -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\MeetJoe.Api\MeetJoe.Api.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
+  </ItemGroup>
+</Project>

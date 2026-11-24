@@ -1,0 +1,73 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeetJoe.App.ViewModels"
+             xmlns:c="using:MeetJoe.App.Controls"
+             x:Class="MeetJoe.App.Views.CallsView"
+             x:DataType="vm:CallsViewModel">
+  <!-- History only — active call chrome lives on the shell so it stays in-app across sections. -->
+  <Grid RowDefinitions="Auto,*">
+    <Border Classes="stageheader">
+      <TextBlock Classes="h1" VerticalAlignment="Center" Text="Calls" />
+    </Border>
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel MaxWidth="720" HorizontalAlignment="Left" Margin="24,24,24,32" Spacing="8">
+        <TextBlock Classes="error" Text="{Binding ErrorMessage}"
+                   IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+        <Border Background="{StaticResource Brush.AccentSoft}" CornerRadius="10" Padding="16"
+                IsVisible="{Binding IsInCall}" Margin="0,0,0,12">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <StackPanel Spacing="4">
+              <TextBlock Classes="h2" Text="{Binding CallStatusLabel}" />
+              <TextBlock Text="{Binding ActivePeerName}" FontWeight="SemiBold" />
+              <TextBlock Classes="muted small" Text="Voice and video stay inside MeetJoe." />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <Button Classes="primary" Content="Return to call" Command="{Binding ExpandStageCommand}" />
+              <Button Classes="danger" Content="Leave" Command="{Binding HangUpCommand}" />
+            </StackPanel>
+          </Grid>
+        </Border>
+
+        <TextBlock Classes="h2" Text="History" Margin="0,8,0,4" />
+        <TextBlock Classes="muted" Text="No calls yet. Start one from a chat." IsVisible="{Binding IsEmpty}" />
+
+        <ItemsControl ItemsSource="{Binding History}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:CallHistoryItemViewModel">
+              <Border BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,0,1" Padding="0,12">
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="14">
+                  <c:Avatar DisplayName="{Binding Title}" Width="36" Height="36" />
+                  <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                    <TextBlock Classes="small callstatus"
+                               Classes.missed="{Binding IsMissedStatus}"
+                               Classes.duration="{Binding IsDurationStatus}"
+                               Classes.rejected="{Binding IsRejectedStatus}"
+                               Text="{Binding StatusText}" />
+                  </StackPanel>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                      <Button Classes="danger" Padding="12,6" MinHeight="32" Content="End"
+                              IsVisible="{Binding IsActive}"
+                              Command="{Binding $parent[UserControl].((vm:CallsViewModel)DataContext).EndCallCommand}"
+                              CommandParameter="{Binding}" />
+                      <Button Classes="secondary" Padding="12,6" MinHeight="32" Content="Message"
+                              Command="{Binding $parent[UserControl].((vm:CallsViewModel)DataContext).MessageCommand}"
+                              CommandParameter="{Binding}" />
+                      <Button Classes="secondary" Padding="12,6" MinHeight="32" Content="Call"
+                              IsVisible="{Binding !IsActive}"
+                              Command="{Binding $parent[UserControl].((vm:CallsViewModel)DataContext).CallAgainCommand}"
+                              CommandParameter="{Binding}" />
+                    </StackPanel>
+                  <TextBlock Grid.Column="3" Classes="muted small" VerticalAlignment="Center"
+                             Text="{Binding TimeText}" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

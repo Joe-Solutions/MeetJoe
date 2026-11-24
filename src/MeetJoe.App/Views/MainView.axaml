@@ -1,0 +1,12 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeetJoe.App.ViewModels"
+             xmlns:c="using:MeetJoe.App.Controls"
+             x:Class="MeetJoe.App.Views.MainView"
+             x:DataType="vm:MainViewModel">
+  <TransitioningContentControl Content="{Binding Current}">
+    <TransitioningContentControl.PageTransition>
+      <c:SlideFadeTransition Offset="0" Duration="0:0:0.22" />
+    </TransitioningContentControl.PageTransition>
+  </TransitioningContentControl>
+</UserControl>

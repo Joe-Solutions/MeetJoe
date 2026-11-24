@@ -1,0 +1,325 @@
+using System.Security.Claims;
+using MeetJoe.Api.Common;
+using MeetJoe.Application.Activity;
+using MeetJoe.Application.Calls;
+using MeetJoe.Application.Chat;
+using MeetJoe.Application.Files;
+using MeetJoe.Application.Meetings;
+using MeetJoe.Application.Organizations;
+using MeetJoe.Application.Presence;
+using MeetJoe.Application.Profiles;
+using MeetJoe.Application.Search;
+using MeetJoe.Application.Workspaces;
+using MeetJoe.Contracts;
+
+namespace MeetJoe.Api.Endpoints;
+
+/// <summary>
+/// The REST surface, one section per feature. Handlers only translate HTTP to application calls;
+/// access rules live in the application services.
+/// </summary>
+internal static class ApiEndpoints
+{
+    public static void MapApiEndpoints(this IEndpointRouteBuilder app)
+    {
+        var api = app.MapGroup("/api").RequireAuthorization();
+
+        MapProfile(api);
+        MapOrganizations(api);
+        MapChat(api);
+        MapActivity(api);
+        MapWorkspaces(api);
+        MapFiles(api);
+        MapMeetings(api);
+        MapCalls(api);
+        MapSearch(api);
+    }
+
+    private static void MapProfile(RouteGroupBuilder api)
+    {
+        api.MapGet("/me", (ClaimsPrincipal user, ProfileService profiles, CancellationToken ct) =>
+            profiles.GetAsync(user.GetUserId(), ct));
+
+        api.MapPut("/me", (UpdateProfileRequest request, ClaimsPrincipal user, ProfileService profiles, CancellationToken ct) =>
+            profiles.UpdateAsync(user.GetUserId(), request, ct));
+
+        api.MapPut("/me/presence", (SetPresenceRequest request, ClaimsPrincipal user, PresenceService presence, CancellationToken ct) =>
+            presence.SetAvailabilityAsync(user.GetUserId(), request.Availability, ct));
+    }
+
+    private static void MapOrganizations(RouteGroupBuilder api)
+    {
+        api.MapGet("/orgs", (ClaimsPrincipal user, OrganizationService orgs, CancellationToken ct) =>
+            orgs.GetMineAsync(user.GetUserId(), ct));
+
+        api.MapPost("/orgs", (CreateOrganizationRequest request, ClaimsPrincipal user, OrganizationService orgs, CancellationToken ct) =>
+            orgs.CreateAsync(user.GetUserId(), request, ct));
+
+        api.MapPost("/orgs/join", (JoinOrganizationRequest request, ClaimsPrincipal user, OrganizationService orgs, CancellationToken ct) =>
+            orgs.JoinAsync(user.GetUserId(), request, ct));
+
+        api.MapGet("/orgs/{orgId:guid}/members", (Guid orgId, ClaimsPrincipal user, OrganizationService orgs, CancellationToken ct) =>
+            orgs.GetMembersAsync(user.GetUserId(), orgId, ct));
+
+        api.MapPost("/orgs/{orgId:guid}/leave", async (Guid orgId, ClaimsPrincipal user, OrganizationService orgs, CancellationToken ct) =>
+        {
+            await orgs.LeaveAsync(user.GetUserId(), orgId, ct);
+            return Results.NoContent();
+        });
+    }
+
+    private static void MapChat(RouteGroupBuilder api)
+    {
+        api.MapGet("/orgs/{orgId:guid}/conversations", (Guid orgId, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
+            chat.GetConversationsAsync(user.GetUserId(), orgId, ct));
+
+        api.MapPost("/orgs/{orgId:guid}/conversations",
+            (Guid orgId, CreateConversationRequest request, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
+                chat.CreateConversationAsync(user.GetUserId(), orgId, request, ct));
+
+        api.MapGet("/conversations/{id:guid}/messages",
+            (Guid id, DateTimeOffset? before, int? limit, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
+                chat.GetMessagesAsync(user.GetUserId(), id, null, before, limit, ct));
+
+        api.MapPost("/conversations/{id:guid}/read", async (Guid id, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
+        {
+            await chat.MarkReadAsync(user.GetUserId(), id, ct);
+            return Results.NoContent();
+        });
+
+        api.MapPut("/conversations/{id:guid}/prefs",
+            (Guid id, UpdateConversationPrefsRequest request, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
+                chat.UpdateConversationPrefsAsync(user.GetUserId(), id, request, ct));
+
+        api.MapGet("/channels/{id:guid}/messages",
+            (Guid id, DateTimeOffset? before, int? limit, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
+                chat.GetMessagesAsync(user.GetUserId(), null, id, before, limit, ct));
+
+        api.MapPost("/channels/{id:guid}/read", async (Guid id, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
+        {
+            await chat.MarkChannelReadAsync(user.GetUserId(), id, ct);
+            return Results.NoContent();
+        });
+
+        // Same operation as ChatHub.SendMessage, for clients without a realtime connection.
+        api.MapPost("/messages", (SendMessageRequest request, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
+            chat.SendAsync(user.GetUserId(), request, ct));
+
+        api.MapGet("/messages/{id:guid}/replies",
+            (Guid id, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
+                chat.GetRepliesAsync(user.GetUserId(), id, ct));
+
+        api.MapPut("/messages/{id:guid}",
+            (Guid id, EditMessageRequest request, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
+                chat.EditAsync(user.GetUserId(), id, request, ct));
+
+        api.MapDelete("/messages/{id:guid}",
+            (Guid id, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
+                chat.DeleteAsync(user.GetUserId(), id, ct));
+
+        api.MapPost("/messages/{id:guid}/reactions",
+            (Guid id, ToggleReactionRequest request, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
+                chat.ToggleReactionAsync(user.GetUserId(), id, request, ct));
+    }
+
+    private static void MapActivity(RouteGroupBuilder api)
+    {
+        api.MapGet("/orgs/{orgId:guid}/activity",
+            (Guid orgId, int? limit, ClaimsPrincipal user, ActivityService activity, CancellationToken ct) =>
+                activity.GetAsync(user.GetUserId(), orgId, limit, ct));
+
+        api.MapPost("/orgs/{orgId:guid}/activity/read",
+            async (Guid orgId, ClaimsPrincipal user, ActivityService activity, CancellationToken ct) =>
+            {
+                await activity.MarkAllReadAsync(user.GetUserId(), orgId, ct);
+                return Results.NoContent();
+            });
+
+        api.MapPost("/activity/{id:guid}/read",
+            async (Guid id, ClaimsPrincipal user, ActivityService activity, CancellationToken ct) =>
+            {
+                await activity.MarkReadAsync(user.GetUserId(), id, ct);
+                return Results.NoContent();
+            });
+    }
+
+    private static void MapWorkspaces(RouteGroupBuilder api)
+    {
+        api.MapGet("/orgs/{orgId:guid}/workspaces", (Guid orgId, ClaimsPrincipal user, WorkspaceService workspaces, CancellationToken ct) =>
+            workspaces.GetWorkspacesAsync(user.GetUserId(), orgId, ct));
+
+        api.MapPost("/orgs/{orgId:guid}/workspaces",
+            (Guid orgId, CreateWorkspaceRequest request, ClaimsPrincipal user, WorkspaceService workspaces, CancellationToken ct) =>
+                workspaces.CreateAsync(user.GetUserId(), orgId, request, ct));
+
+        api.MapGet("/workspaces/{id:guid}/members", (Guid id, ClaimsPrincipal user, WorkspaceService workspaces, CancellationToken ct) =>
+            workspaces.GetMembersAsync(user.GetUserId(), id, ct));
+
+        api.MapPost("/workspaces/{id:guid}/members",
+            async (Guid id, AddWorkspaceMemberRequest request, ClaimsPrincipal user, WorkspaceService workspaces, CancellationToken ct) =>
+            {
+                await workspaces.AddMemberAsync(user.GetUserId(), id, request, ct);
+                return Results.NoContent();
+            });
+
+        api.MapPost("/workspaces/{id:guid}/channels",
+            (Guid id, CreateChannelRequest request, ClaimsPrincipal user, WorkspaceService workspaces, CancellationToken ct) =>
+                workspaces.CreateChannelAsync(user.GetUserId(), id, request, ct));
+
+        api.MapGet("/channels/{id:guid}/members",
+            (Guid id, ClaimsPrincipal user, WorkspaceService workspaces, CancellationToken ct) =>
+                workspaces.GetChannelMembersAsync(user.GetUserId(), id, ct));
+
+        api.MapPost("/channels/{id:guid}/members",
+            async (Guid id, AddChannelMemberRequest request, ClaimsPrincipal user, WorkspaceService workspaces, CancellationToken ct) =>
+            {
+                await workspaces.AddChannelMemberAsync(user.GetUserId(), id, request, ct);
+                return Results.NoContent();
+            });
+
+        api.MapDelete("/channels/{id:guid}/members/{userId:guid}",
+            async (Guid id, Guid userId, ClaimsPrincipal user, WorkspaceService workspaces, CancellationToken ct) =>
+            {
+                await workspaces.RemoveChannelMemberAsync(user.GetUserId(), id, userId, ct);
+                return Results.NoContent();
+            });
+
+        api.MapPut("/channels/{id:guid}/prefs",
+            (Guid id, UpdateChannelPrefsRequest request, ClaimsPrincipal user, WorkspaceService workspaces, CancellationToken ct) =>
+                workspaces.UpdateChannelPrefsAsync(user.GetUserId(), id, request, ct));
+    }
+
+    private static void MapFiles(RouteGroupBuilder api)
+    {
+        api.MapGet("/orgs/{orgId:guid}/files", (Guid orgId, ClaimsPrincipal user, FileService files, CancellationToken ct) =>
+            files.ListAsync(user.GetUserId(), orgId, ct));
+
+        // Bearer-token API with no cookies, so there is no cross-site request to forge.
+        api.MapPost("/conversations/{id:guid}/files",
+                (Guid id, IFormFile file, ClaimsPrincipal user, FileService files, CancellationToken ct) =>
+                    UploadAsync(id, null, file, user, files, ct))
+            .DisableAntiforgery();
+
+        api.MapPost("/channels/{id:guid}/files",
+                (Guid id, IFormFile file, ClaimsPrincipal user, FileService files, CancellationToken ct) =>
+                    UploadAsync(null, id, file, user, files, ct))
+            .DisableAntiforgery();
+
+        api.MapGet("/files/{id:guid}/content",
+            async (Guid id, ClaimsPrincipal user, FileService files, HttpContext http, CancellationToken ct) =>
+            {
+                var file = await files.GetForDownloadAsync(user.GetUserId(), id, ct);
+
+                // Uploaded content is untrusted: always a download, never rendered, never sniffed.
+                http.Response.Headers.XContentTypeOptions = "nosniff";
+                http.Response.ContentLength = file.Size;
+                return Results.Stream(
+                    body => files.CopyContentAsync(file, body, ct),
+                    contentType: "application/octet-stream",
+                    fileDownloadName: file.FileName);
+            });
+    }
+
+    private static async Task<FileDto> UploadAsync(
+        Guid? conversationId, Guid? channelId, IFormFile file, ClaimsPrincipal user, FileService files, CancellationToken ct)
+    {
+        await using var content = file.OpenReadStream();
+        return await files.UploadAsync(
+            user.GetUserId(), conversationId, channelId, file.FileName, file.ContentType, file.Length, content, ct);
+    }
+
+    private static void MapMeetings(RouteGroupBuilder api)
+    {
+        api.MapGet("/orgs/{orgId:guid}/meetings", (Guid orgId, ClaimsPrincipal user, MeetingService meetings, CancellationToken ct) =>
+            meetings.GetActiveAsync(user.GetUserId(), orgId, ct));
+
+        api.MapGet("/orgs/{orgId:guid}/calendar",
+            (Guid orgId, DateTimeOffset from, DateTimeOffset to, ClaimsPrincipal user, MeetingService meetings, CancellationToken ct) =>
+                meetings.GetCalendarAsync(user.GetUserId(), orgId, from, to, ct));
+
+        api.MapPost("/orgs/{orgId:guid}/meetings",
+            (Guid orgId, CreateMeetingRequest request, ClaimsPrincipal user, MeetingService meetings, CancellationToken ct) =>
+                meetings.CreateAsync(user.GetUserId(), orgId, request, ct));
+
+        api.MapPost("/orgs/{orgId:guid}/meetings/schedule",
+            (Guid orgId, ScheduleMeetingRequest request, ClaimsPrincipal user, MeetingService meetings, CancellationToken ct) =>
+                meetings.ScheduleAsync(user.GetUserId(), orgId, request, ct));
+
+        api.MapPost("/meetings/{id:guid}/join", (Guid id, ClaimsPrincipal user, MeetingService meetings, CancellationToken ct) =>
+            meetings.JoinAsync(user.GetUserId(), id, ct));
+
+        api.MapPost("/meetings/{id:guid}/leave", async (Guid id, ClaimsPrincipal user, MeetingService meetings, CancellationToken ct) =>
+        {
+            await meetings.LeaveAsync(user.GetUserId(), id, ct);
+            return Results.NoContent();
+        });
+
+        api.MapPost("/meetings/{id:guid}/end", async (Guid id, ClaimsPrincipal user, MeetingService meetings, CancellationToken ct) =>
+        {
+            await meetings.EndAsync(user.GetUserId(), id, ct);
+            return Results.NoContent();
+        });
+
+        api.MapPost("/meetings/{id:guid}/invite",
+            (Guid id, RespondInviteRequest request, ClaimsPrincipal user, MeetingService meetings, CancellationToken ct) =>
+                meetings.RespondToInviteAsync(user.GetUserId(), id, request, ct));
+
+        api.MapPost("/meetings/{id:guid}/participants",
+            (Guid id, InviteParticipantsRequest request, ClaimsPrincipal user, MeetingService meetings, CancellationToken ct) =>
+                meetings.InviteParticipantsAsync(user.GetUserId(), id, request, ct));
+
+        api.MapGet("/meetings/{id:guid}/messages",
+            (Guid id, DateTimeOffset? before, int? limit, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
+                chat.GetMeetingMessagesAsync(user.GetUserId(), id, before, limit, ct));
+
+        api.MapPost("/meetings/{id:guid}/messages",
+            (Guid id, SendMessageRequest request, ClaimsPrincipal user, MeetingService meetings, CancellationToken ct) =>
+                meetings.SendMeetingChatAsync(user.GetUserId(), id, request.Body, ct));
+
+        api.MapPost("/meetings/{id:guid}/recording",
+            (Guid id, ClaimsPrincipal user, MeetingService meetings, CancellationToken ct) =>
+                meetings.StartRecordingAsync(user.GetUserId(), id, ct));
+    }
+
+    private static void MapCalls(RouteGroupBuilder api)
+    {
+        api.MapGet("/orgs/{orgId:guid}/calls", (Guid orgId, ClaimsPrincipal user, CallService calls, CancellationToken ct) =>
+            calls.GetHistoryAsync(user.GetUserId(), orgId, ct));
+
+        api.MapPost("/orgs/{orgId:guid}/calls",
+            (Guid orgId, StartCallRequest request, ClaimsPrincipal user, CallService calls, CancellationToken ct) =>
+                calls.StartAsync(user.GetUserId(), orgId, request, ct));
+
+        api.MapPost("/calls/{id:guid}/answer", (Guid id, ClaimsPrincipal user, CallService calls, CancellationToken ct) =>
+            calls.AnswerAsync(user.GetUserId(), id, ct));
+
+        api.MapPost("/calls/{id:guid}/decline", async (Guid id, ClaimsPrincipal user, CallService calls, CancellationToken ct) =>
+        {
+            await calls.DeclineAsync(user.GetUserId(), id, ct);
+            return Results.NoContent();
+        });
+
+        api.MapPost("/calls/{id:guid}/hangup", async (Guid id, ClaimsPrincipal user, CallService calls, CancellationToken ct) =>
+        {
+            await calls.HangUpAsync(user.GetUserId(), id, ct);
+            return Results.NoContent();
+        });
+
+        api.MapPost("/calls/{id:guid}/end", async (Guid id, ClaimsPrincipal user, CallService calls, CancellationToken ct) =>
+        {
+            await calls.EndAsync(user.GetUserId(), id, ct);
+            return Results.NoContent();
+        });
+
+        api.MapPost("/calls/{id:guid}/invite",
+            (Guid id, InviteToCallRequest request, ClaimsPrincipal user, CallService calls, CancellationToken ct) =>
+                calls.InviteAsync(user.GetUserId(), id, request, ct));
+    }
+
+    private static void MapSearch(RouteGroupBuilder api)
+    {
+        api.MapGet("/orgs/{orgId:guid}/search",
+            (Guid orgId, string? q, int? limit, ClaimsPrincipal user, SearchService search, CancellationToken ct) =>
+                search.SearchAsync(user.GetUserId(), orgId, q, limit, ct));
+    }
+}

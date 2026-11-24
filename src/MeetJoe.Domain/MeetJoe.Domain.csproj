@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <!-- IdentityUser<TKey> base type only; no ASP.NET Core dependency. -->
+    <PackageReference Include="Microsoft.Extensions.Identity.Stores" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="MeetJoe.Domain.Tests" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,19 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeetJoe.App.ViewModels"
+             x:Class="MeetJoe.App.Views.PlaceholderView"
+             x:DataType="vm:PlaceholderViewModel">
+  <Grid RowDefinitions="Auto,*">
+    <Border Classes="stageheader">
+      <TextBlock Classes="h1" VerticalAlignment="Center" Text="{Binding Title}" />
+    </Border>
+
+    <StackPanel Grid.Row="1" MaxWidth="420" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+      <TextBlock Classes="h2" HorizontalAlignment="Center" Text="Not built yet" />
+      <TextBlock Classes="muted" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                 Text="{Binding Message}" />
+      <TextBlock HorizontalAlignment="Center" FontSize="12.5" FontWeight="SemiBold" Margin="0,6,0,0"
+                 Foreground="{StaticResource Brush.Accent}" Text="{Binding Phase}" />
+    </StackPanel>
+  </Grid>
+</UserControl>

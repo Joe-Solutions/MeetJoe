@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  desktop:
+    name: Desktop (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+      - name: Build MeetJoe.Desktop
+        run: dotnet build src/MeetJoe.Desktop -c Release
+      - name: Test view models and screens
+        run: dotnet test tests/MeetJoe.App.Tests -c Release
+      - name: Keep rendered screens
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ matrix.os }}
+          path: artifacts/screenshots
+          if-no-files-found: ignore
+
+  api:
+    name: API
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: meetjoe
+          POSTGRES_PASSWORD: meetjoe_ci
+          POSTGRES_DB: meetjoe
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U meetjoe -d meetjoe"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      # Each test run creates and drops its own database on this server.
+      MEETJOE_TEST_POSTGRES: Host=localhost;Port=5432;Username=meetjoe;Password=meetjoe_ci
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+      - name: Build MeetJoe.Api
+        run: dotnet build src/MeetJoe.Api -c Release
+      - name: Test domain rules
+        run: dotnet test tests/MeetJoe.Domain.Tests -c Release
+      - name: Test API
+        run: dotnet test tests/MeetJoe.Api.Tests -c Release
