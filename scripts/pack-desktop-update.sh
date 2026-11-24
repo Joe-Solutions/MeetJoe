@@ -69,6 +69,11 @@ if [[ "$RID" == osx-* ]]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "$PUBLISH/Info.plist" 2>/dev/null || true
   /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" "$PUBLISH/Info.plist" 2>/dev/null || true
   PACK_EXTRA+=(--plist "$PUBLISH/Info.plist")
+  # vpk skips codesign entirely without an identity, shipping the linker's "apphost"
+  # signature with Info.plist unbound — TCC then never lists MeetJoe for mic/camera.
+  # Ad-hoc ("-") by default; set MEETJOE_MAC_SIGN_IDENTITY to a Developer ID to keep
+  # TCC grants across updates.
+  PACK_EXTRA+=(--signAppIdentity "${MEETJOE_MAC_SIGN_IDENTITY:--}")
   if [[ -f "$ENTITLEMENTS" ]]; then
     PACK_EXTRA+=(--signEntitlements "$ENTITLEMENTS")
   fi
