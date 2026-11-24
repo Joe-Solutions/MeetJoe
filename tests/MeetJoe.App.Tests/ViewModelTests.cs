@@ -545,12 +545,16 @@ public class ShellViewModelTests
         shell.NavigateCommand.Execute(shell.RailItems.Single(i => i.Label == "Calendar"));
         await shell.Calendar.JoinCommand.ExecuteAsync(shell.Calendar.Meetings[0]);
         Assert.False(shell.ShowMeetingBanner);
+        Assert.False(shell.ShowMeetingPip);
 
         shell.NavigateCommand.Execute(shell.RailItems.Single(i => i.Label == "Chat"));
-        Assert.True(shell.ShowMeetingBanner);
+        // Live media → Teams-style PiP replaces the text banner.
+        Assert.True(shell.ShowMeetingPip);
+        Assert.False(shell.ShowMeetingBanner);
 
         shell.ReturnToMeetingCommand.Execute(null);
         Assert.Same(shell.Calendar, shell.Current);
+        Assert.False(shell.ShowMeetingPip);
     }
 }
 
