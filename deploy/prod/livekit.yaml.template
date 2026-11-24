@@ -8,10 +8,13 @@ rtc:
   node_ip: __PUBLIC_IP__
 
 # Embedded TURN — saves a coturn container on the lean t3.small.
+# Narrow relay range so the EC2 security group can allow it (default 30000–40000 is too wide).
 turn:
   enabled: true
   udp_port: 3478
   external_tls: false
+  relay_range_start: 40000
+  relay_range_end: 40100
 
 keys:
   __LIVEKIT_API_KEY__: __LIVEKIT_API_SECRET__

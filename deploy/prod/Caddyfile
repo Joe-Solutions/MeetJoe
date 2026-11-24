@@ -15,7 +15,8 @@
 
 	@livekit path /rtc* /twirp* /settings /validate*
 	handle @livekit {
-		reverse_proxy livekit:7880
+		# LiveKit runs with network_mode: host — reach it via the Docker host gateway.
+		reverse_proxy host.docker.internal:7880
 	}
 
 	handle {
