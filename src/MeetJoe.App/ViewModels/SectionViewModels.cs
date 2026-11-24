@@ -978,6 +978,7 @@ public partial class SettingsViewModel : ViewModelBase
         _availability = AvailabilityOptions.First(o => o.Status == me.Availability);
         ServerUrl = config.ApiBaseUri.ToString();
         CurrentVersion = AppVersion.Current;
+        VersionLabel = $"Version {CurrentVersion}";
         _context.People.Me.ApplyAvatar(me.AvatarUrl);
         Photo = _context.People.Me.Photo;
         _context.People.Me.PropertyChanged += OnMeChanged;
@@ -1011,6 +1012,7 @@ public partial class SettingsViewModel : ViewModelBase
     public bool CanInvite => JoinCode is not null;
     public string CurrentVersion { get; }
 
+    [ObservableProperty] private string _versionLabel = "Version";
     [ObservableProperty] private string _displayName;
     [ObservableProperty] private string _statusMessage;
     [ObservableProperty] private string? _profileStatus;
@@ -1168,16 +1170,20 @@ public partial class SettingsViewModel : ViewModelBase
     private void RefreshUpdateStatus()
     {
         var status = _updates.Status;
+        var installed = string.IsNullOrWhiteSpace(status.CurrentVersion) ? CurrentVersion : status.CurrentVersion;
+        VersionLabel = $"Version {installed}";
         UpdateStatusText = status.State switch
         {
             AppUpdateState.Checking => status.Message ?? "Checking for updates…",
             AppUpdateState.Downloading => status.Message ?? $"Downloading… {status.DownloadPercent}%",
             AppUpdateState.Updating => status.Message ?? "Installing update…",
-            AppUpdateState.Available => status.Message ?? $"Update {status.AvailableVersion} available.",
-            AppUpdateState.UpToDate => status.Message ?? $"Up to date ({status.CurrentVersion}).",
-            AppUpdateState.Unsupported => status.Message ?? "Auto-update requires an installed MeetJoe build.",
+            AppUpdateState.Available => status.Message
+                ?? $"Update {status.AvailableVersion} available — you are still on {installed}.",
+            AppUpdateState.UpToDate => status.Message ?? $"You're on the latest release ({installed}).",
+            AppUpdateState.Unsupported => status.Message
+                ?? "Auto-update requires an installed MeetJoe build. Dev runs show this version only.",
             AppUpdateState.Failed => status.Message ?? "Update check failed.",
-            _ => $"Version {CurrentVersion}",
+            _ => $"Installed build {installed}.",
         };
     }
 

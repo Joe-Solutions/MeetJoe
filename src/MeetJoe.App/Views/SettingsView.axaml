@@ -92,16 +92,14 @@
 
         <Border Classes="separator" Margin="0,28" />
 
-        <!-- Updates -->
-        <TextBlock Classes="h2" Text="Updates" />
-        <TextBlock Classes="muted" Margin="0,4,0,12" TextWrapping="Wrap"
-                   Text="MeetJoe checks for newer semver releases on startup and updates the installed app in place (delta download when available)." />
-        <TextBlock Margin="0,0,0,8">
-          <Run Text="Installed version" Foreground="{StaticResource Brush.TextMuted}" />
-          <Run Text=" · " Foreground="{StaticResource Brush.TextMuted}" />
-          <Run Text="{Binding CurrentVersion}" FontWeight="SemiBold" />
-        </TextBlock>
-        <TextBlock Classes="muted small" Text="{Binding UpdateStatusText}" TextWrapping="Wrap" Margin="0,0,0,12" />
+        <!-- About / Updates -->
+        <TextBlock Classes="h2" Text="About" />
+        <TextBlock Margin="0,12,0,4" FontSize="18" FontWeight="SemiBold"
+                   Text="{Binding VersionLabel}" />
+        <TextBlock Classes="muted small" Margin="0,0,0,12" TextWrapping="Wrap"
+                   Text="{Binding UpdateStatusText}" />
+        <TextBlock Classes="muted" Margin="0,0,0,12" TextWrapping="Wrap"
+                   Text="Installed builds check for newer releases on startup and update in place. After an update, this version number should match the release you received." />
         <Button Classes="secondary" Content="Check for updates" Command="{Binding CheckForUpdatesCommand}"
                 IsEnabled="{Binding !IsCheckingUpdates}" />
 
