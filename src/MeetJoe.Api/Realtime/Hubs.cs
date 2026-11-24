@@ -87,8 +87,9 @@ public sealed class MeetingHub(MeetingService meetings) : Hub
         meetings.MuteParticipantAsync(Context.User.GetUserId(), meetingId, userId, Context.ConnectionAborted);
 
     [HubMethodName(MeetingHubMethods.SendChat)]
-    public Task<MessageDto> SendChat(Guid meetingId, string? body) =>
-        meetings.SendMeetingChatAsync(Context.User.GetUserId(), meetingId, body, Context.ConnectionAborted);
+    public Task<MessageDto> SendChat(Guid meetingId, string? body, IReadOnlyList<Guid>? attachmentIds = null) =>
+        meetings.SendMeetingChatAsync(
+            Context.User.GetUserId(), meetingId, body, Context.ConnectionAborted, attachmentIds);
 }
 
 [Authorize]

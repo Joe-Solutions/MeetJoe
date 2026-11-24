@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using MeetJoe.App.Controls;
 using MeetJoe.App.Services;
 using MeetJoe.Contracts;
 
@@ -121,12 +122,15 @@ public partial class MeetingViewModel : ObservableObject
     public bool IsActive { get; private set; }
     public bool HasEnded { get; private set; }
     public bool CanJoin { get; private set; }
+    public RecurrenceKind Recurrence { get; private set; }
     public IReadOnlyList<PersonViewModel> Participants { get; private set; } = [];
     public IReadOnlyList<PersonViewModel> Lobby { get; private set; } = [];
     public IReadOnlyList<MeetingInviteDto> Invites { get; private set; } = [];
     public IReadOnlyList<Guid> RaisedHands { get; private set; } = [];
     public string Summary { get; private set; } = string.Empty;
     public string WhenText { get; private set; } = string.Empty;
+    public string RecurrenceText { get; private set; } = string.Empty;
+    public bool HasRecurrence => RecurrenceText.Length > 0;
     public InviteStatus? MyInviteStatus { get; private set; }
 
     public void Apply(MeetingDto meeting, PeopleStore people)
@@ -143,6 +147,7 @@ public partial class MeetingViewModel : ObservableObject
         IsActive = meeting.IsActive;
         HasEnded = !meeting.IsActive;
         CanJoin = meeting.IsActive;
+        Recurrence = meeting.Recurrence;
         Participants = meeting.Participants.Select(people.Get).ToList();
         Lobby = meeting.Lobby.Select(people.Get).ToList();
         Invites = meeting.Invites;
@@ -151,6 +156,16 @@ public partial class MeetingViewModel : ObservableObject
             ? null
             : meeting.Invites.FirstOrDefault(i => i.UserId == people.MyId)?.Status;
         WhenText = meeting.StartsAt.ToLocalTime().ToString("ddd d MMM · h:mm tt");
+        RecurrenceText = meeting.Recurrence switch
+        {
+            RecurrenceKind.Daily => meeting.RecurrenceUntil is { } until
+                ? $"Repeats daily until {until.ToLocalTime():d MMM yyyy}"
+                : "Repeats daily",
+            RecurrenceKind.Weekly => meeting.RecurrenceUntil is { } until
+                ? $"Repeats weekly until {until.ToLocalTime():d MMM yyyy}"
+                : "Repeats weekly",
+            _ => string.Empty,
+        };
         Summary = HasEnded
             ? $"Hosted by {meeting.Host.DisplayName} · ended"
             : meeting.Participants.Count switch
@@ -197,6 +212,7 @@ public partial class MeetingStageViewModel : ViewModelBase
 
     [ObservableProperty] private bool _isCameraOn = true;
     [ObservableProperty] private bool _isMicOn = true;
+    [ObservableProperty] private bool _isScreenShareOn;
 
     /// <summary>True once LiveKit reports media-ready; Avalonia tiles hide so the WebView can paint.</summary>
     [ObservableProperty]
@@ -212,6 +228,10 @@ public partial class MeetingStageViewModel : ViewModelBase
     /// <summary>Wired by the meeting stage view to the LiveKit WebView host.</summary>
     public Func<Task>? ToggleCameraHandler { get; set; }
     public Func<Task>? ToggleMicHandler { get; set; }
+    public Func<Task>? ToggleScreenShareHandler { get; set; }
+
+    /// <summary>Raised so the stage can scroll chat to the latest bubble (own send / open chat).</summary>
+    public event Action? ChatFollowRequested;
 
     public void ApplyActiveSpeakers(IReadOnlyCollection<Guid> speakerIds)
     {
@@ -270,10 +290,12 @@ public partial class MeetingStageViewModel : ViewModelBase
         };
 
     public ObservableCollection<RoomChatMessageViewModel> ChatMessages { get; } = [];
+    public ObservableCollection<PendingAttachmentViewModel> PendingAttachments { get; } = [];
     public ObservableCollection<PersonViewModel> InviteSuggestions { get; } = [];
     public IReadOnlyList<string> EmojiPalette => RoomChatMessageViewModel.EmojiPalette;
 
     [ObservableProperty] private bool _showEmojiPicker;
+    [ObservableProperty] private bool _hasPendingAttachments;
 
     partial void OnInviteQueryChanged(string value) => RefreshInviteSuggestions();
     partial void OnMeetingChanged(MeetingViewModel value) => OnPropertyChanged(nameof(ParticipantGridColumns));
@@ -295,8 +317,12 @@ public partial class MeetingStageViewModel : ViewModelBase
         IsLiveKitSurfaceReady = false;
         UnreadChatCount = 0;
         ShowEmojiPicker = false;
+        PendingAttachments.Clear();
+        HasPendingAttachments = false;
+        IsScreenShareOn = false;
         ToggleCameraHandler = null;
         ToggleMicHandler = null;
+        ToggleScreenShareHandler = null;
         _context.Realtime.MeetingUpdated -= OnMeetingUpdated;
         _context.Realtime.MeetingChat -= OnMeetingChat;
         _context.Realtime.ParticipantRemoved -= OnRemoved;
@@ -331,11 +357,16 @@ public partial class MeetingStageViewModel : ViewModelBase
     {
         ShowPeoplePanel = false;
         UnreadChatCount = 0;
+        RequestChatFollow();
     }
 
     partial void OnShowPeoplePanelChanged(bool value)
     {
-        if (!value) UnreadChatCount = 0;
+        if (!value)
+        {
+            UnreadChatCount = 0;
+            RequestChatFollow();
+        }
     }
 
     [RelayCommand]
@@ -353,6 +384,16 @@ public partial class MeetingStageViewModel : ViewModelBase
         IsMicOn = !IsMicOn;
         if (ToggleMicHandler is not null) await ToggleMicHandler.Invoke();
     }
+
+    [RelayCommand]
+    private async Task ToggleScreenShareAsync()
+    {
+        // Optimistic chrome update; MediaStateChanged corrects from the WebView.
+        IsScreenShareOn = !IsScreenShareOn;
+        if (ToggleScreenShareHandler is not null) await ToggleScreenShareHandler.Invoke();
+    }
+
+    private void RequestChatFollow() => ChatFollowRequested?.Invoke();
 
     private bool _permissionDialogOpen;
 
@@ -374,6 +415,13 @@ public partial class MeetingStageViewModel : ViewModelBase
                         "Camera access needed",
                         "MeetJoe is not allowed to use your camera, so video cannot turn on.\n\n1. Open System Settings → Privacy & Security → Camera\n2. Turn on MeetJoe\n3. Leave this meeting and join again.\n\nTip: launch MeetJoe.app (not a raw binary) so macOS can show the camera permission dialog.");
                     try { await _context.Platform.OpenUriAsync(new Uri("x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")); }
+                    catch { /* best-effort */ }
+                    break;
+                case "share":
+                    await _context.Platform.AlertAsync(
+                        "Screen sharing needed",
+                        "MeetJoe could not share your screen.\n\n1. Open System Settings → Privacy & Security → Screen Recording\n2. Turn on MeetJoe\n3. Try Share screen again.\n\nIf you cancelled the system picker, just tap Share screen again.");
+                    try { await _context.Platform.OpenUriAsync(new Uri("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")); }
                     catch { /* best-effort */ }
                     break;
                 default:
@@ -523,22 +571,57 @@ public partial class MeetingStageViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task AttachChatFileAsync()
+    {
+        if (InLobby) return;
+        try
+        {
+            var picked = await _context.Platform.PickFileAsync();
+            if (picked is null) return;
+            await using var content = await picked.OpenReadAsync();
+            var file = await _context.Api.UploadFileAsync(null, null, picked.Name, content, meetingId: Id);
+            PendingAttachments.Add(new PendingAttachmentViewModel(file));
+            HasPendingAttachments = PendingAttachments.Count > 0;
+        }
+        catch
+        {
+            // Keep composing; attach failures are transient.
+        }
+    }
+
+    [RelayCommand]
+    private void RemoveChatAttachment(PendingAttachmentViewModel attachment)
+    {
+        PendingAttachments.Remove(attachment);
+        HasPendingAttachments = PendingAttachments.Count > 0;
+    }
+
+    [RelayCommand]
     private async Task SendChatAsync()
     {
-        if (string.IsNullOrWhiteSpace(ChatDraft) || InLobby) return;
+        if (InLobby) return;
+        if (string.IsNullOrWhiteSpace(ChatDraft) && PendingAttachments.Count == 0) return;
+
         var body = ChatDraft;
+        var attachments = PendingAttachments.ToList();
         ChatDraft = string.Empty;
+        PendingAttachments.Clear();
+        HasPendingAttachments = false;
         ShowEmojiPicker = false;
         try
         {
+            var ids = attachments.Select(a => a.FileId).ToList();
             var sent = _context.Realtime.IsConnected
-                ? await _context.Realtime.SendMeetingChatAsync(Id, body)
-                : await _context.Api.SendMeetingChatAsync(Id, body);
+                ? await _context.Realtime.SendMeetingChatAsync(Id, body, ids)
+                : await _context.Api.SendMeetingChatAsync(Id, body, attachmentIds: ids);
             RoomChatMessageViewModel.TryAdd(ChatMessages, sent, _context);
+            RequestChatFollow();
         }
         catch
         {
             ChatDraft = body;
+            foreach (var attachment in attachments) PendingAttachments.Add(attachment);
+            HasPendingAttachments = PendingAttachments.Count > 0;
         }
     }
 
@@ -551,6 +634,7 @@ public partial class MeetingStageViewModel : ViewModelBase
             foreach (var message in messages)
                 ChatMessages.Add(new RoomChatMessageViewModel(message, _context));
             RoomChatMessageViewModel.ApplyGrouping(ChatMessages);
+            RequestChatFollow();
         }
         catch
         {
@@ -575,7 +659,9 @@ public partial class MeetingStageViewModel : ViewModelBase
     {
         if (message.MeetingId != Id) return;
         if (!RoomChatMessageViewModel.TryAdd(ChatMessages, message, _context)) return;
-        if (!ShowChatPanel && message.Sender.Id != _context.People.MyId)
+        if (message.Sender.Id == _context.People.MyId)
+            RequestChatFollow();
+        else if (!ShowChatPanel)
             UnreadChatCount++;
     }
 
@@ -627,6 +713,7 @@ public partial class CalendarViewModel : ViewModelBase
     public CalendarViewModel(SessionContext context)
     {
         _context = context;
+        _scheduleRecurrence = RecurrenceOptions[0];
         SelectedDay = new DateTimeOffset(DateTime.Today);
         var today = DateTime.Today;
         DisplayMonth = new DateTime(today.Year, today.Month, 1);
@@ -638,9 +725,17 @@ public partial class CalendarViewModel : ViewModelBase
 
     public ObservableCollection<MeetingViewModel> Meetings { get; } = [];
     public ObservableCollection<MeetingViewModel> Upcoming { get; } = [];
-    public ObservableCollection<PersonViewModel> InviteCandidates { get; } = [];
     public ObservableCollection<CalendarDayCellViewModel> MonthDays { get; } = [];
     public ObservableCollection<MeetingViewModel> SelectedDayMeetings { get; } = [];
+    public ObservableCollection<PersonViewModel> ScheduleInvitees { get; } = [];
+    public ObservableCollection<PersonViewModel> ScheduleInviteSuggestions { get; } = [];
+
+    public IReadOnlyList<RecurrenceOption> RecurrenceOptions { get; } =
+    [
+        new(RecurrenceKind.None, "Does not repeat"),
+        new(RecurrenceKind.Daily, "Daily"),
+        new(RecurrenceKind.Weekly, "Weekly"),
+    ];
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsEmpty))]
@@ -652,6 +747,14 @@ public partial class CalendarViewModel : ViewModelBase
     [ObservableProperty] private string _scheduleDescription = string.Empty;
     [ObservableProperty] private string _scheduleStartsAtText = DateTimeOffset.Now.AddHours(1).ToString("yyyy-MM-dd HH:mm");
     [ObservableProperty] private bool _scheduleLobbyEnabled;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowRecurrenceUntil))]
+    private RecurrenceOption _scheduleRecurrence = null!;
+    [ObservableProperty] private string _scheduleRecurrenceUntilText = string.Empty;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasScheduleInviteSuggestions))]
+    private string _scheduleInviteEmail = string.Empty;
+    [ObservableProperty] private string? _scheduleInviteStatus;
     [ObservableProperty] private DateTimeOffset _selectedDay;
     [ObservableProperty] private string _selectedDayLabel = string.Empty;
 
@@ -670,6 +773,9 @@ public partial class CalendarViewModel : ViewModelBase
     public bool IsEmpty => !IsLoading && Meetings.Count == 0 && Upcoming.Count == 0;
     public bool IsInMeeting => Stage is not null;
     public bool HasSelectedDayMeetings => SelectedDayMeetings.Count > 0;
+    public bool ShowRecurrenceUntil => ScheduleRecurrence.Kind != RecurrenceKind.None;
+    public bool HasScheduleInvitees => ScheduleInvitees.Count > 0;
+    public bool HasScheduleInviteSuggestions => ScheduleInviteSuggestions.Count > 0;
     public string MonthLabel => DisplayMonth.ToString("MMMM yyyy");
     public string SelectedDayMeetingsHeading =>
         ScheduleSelectedDate is { } day
@@ -714,11 +820,9 @@ public partial class CalendarViewModel : ViewModelBase
             foreach (var meeting in calendar.Where(m => m.IsScheduled).OrderBy(m => m.StartsAt))
                 _scheduledMeetings.Add(new MeetingViewModel(meeting, _context.People));
 
-            InviteCandidates.Clear();
-            foreach (var person in _context.People.People.Where(p => !p.IsMe)) InviteCandidates.Add(person);
-
             RebuildMonthGrid();
             RefreshSelectedDayMeetings();
+            RefreshScheduleInviteSuggestions();
 
             if (Stage is { } stage)
             {
@@ -866,23 +970,162 @@ public partial class CalendarViewModel : ViewModelBase
         }
     }
 
+    partial void OnScheduleRecurrenceChanged(RecurrenceOption value)
+    {
+        if (value.Kind == RecurrenceKind.None)
+        {
+            ScheduleRecurrenceUntilText = string.Empty;
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(ScheduleRecurrenceUntilText)) return;
+        if (!DateTimeOffset.TryParse(ScheduleStartsAtText, out var startsAt))
+            startsAt = DateTimeOffset.Now.AddHours(1);
+        var until = value.Kind == RecurrenceKind.Daily
+            ? startsAt.AddDays(14)
+            : startsAt.AddDays(56);
+        ScheduleRecurrenceUntilText = until.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+    }
+
+    partial void OnScheduleInviteEmailChanged(string value) => RefreshScheduleInviteSuggestions();
+
+    [RelayCommand]
+    private void PickScheduleInviteSuggestion(PersonViewModel person)
+    {
+        ScheduleInviteEmail = person.Email;
+        AddScheduleInvite();
+    }
+
+    [RelayCommand]
+    private void AddScheduleInvite() => TryAddScheduleInvite();
+
+    private bool TryAddScheduleInvite()
+    {
+        ScheduleInviteStatus = null;
+        ErrorMessage = null;
+        var match = ResolveScheduleInvitee();
+        if (match is null)
+        {
+            ScheduleInviteStatus = string.IsNullOrWhiteSpace(ScheduleInviteEmail)
+                ? "Enter an email address to invite someone."
+                : "No one in your organization matches that email.";
+            ErrorMessage = ScheduleInviteStatus;
+            return false;
+        }
+
+        if (ScheduleInvitees.Any(p => p.Id == match.Id))
+        {
+            ScheduleInviteEmail = string.Empty;
+            RefreshScheduleInviteSuggestions();
+            return true;
+        }
+
+        ScheduleInvitees.Add(match);
+        ScheduleInviteEmail = string.Empty;
+        ScheduleInviteStatus = null;
+        OnPropertyChanged(nameof(HasScheduleInvitees));
+        RefreshScheduleInviteSuggestions();
+        return true;
+    }
+
+    [RelayCommand]
+    private void RemoveScheduleInvite(PersonViewModel person)
+    {
+        ScheduleInvitees.Remove(person);
+        OnPropertyChanged(nameof(HasScheduleInvitees));
+        RefreshScheduleInviteSuggestions();
+    }
+
+    private PersonViewModel? ResolveScheduleInvitee()
+    {
+        var q = ScheduleInviteEmail.Trim();
+        if (q.Length == 0) return null;
+
+        var eligible = EligibleScheduleInvitees().ToList();
+        return eligible.FirstOrDefault(p => p.Email.Equals(q, StringComparison.OrdinalIgnoreCase))
+               ?? (ScheduleInviteSuggestions.Count == 1 ? ScheduleInviteSuggestions[0] : null);
+    }
+
+    private IEnumerable<PersonViewModel> EligibleScheduleInvitees()
+    {
+        var already = ScheduleInvitees.Select(p => p.Id).Append(_context.People.MyId).ToHashSet();
+        return _context.People.People.Where(p =>
+            !p.IsMe
+            && !already.Contains(p.Id)
+            && !string.IsNullOrWhiteSpace(p.Email));
+    }
+
+    private void RefreshScheduleInviteSuggestions()
+    {
+        ScheduleInviteSuggestions.Clear();
+        var q = ScheduleInviteEmail.Trim();
+        if (q.Length == 0)
+        {
+            OnPropertyChanged(nameof(HasScheduleInviteSuggestions));
+            return;
+        }
+
+        foreach (var person in EligibleScheduleInvitees()
+                     .Where(p => p.Email.Contains(q, StringComparison.OrdinalIgnoreCase)
+                                 || p.DisplayName.Contains(q, StringComparison.OrdinalIgnoreCase))
+                     .Take(8))
+            ScheduleInviteSuggestions.Add(person);
+
+        OnPropertyChanged(nameof(HasScheduleInviteSuggestions));
+    }
+
     [RelayCommand]
     private async Task ScheduleAsync()
     {
         ErrorMessage = null;
+        ScheduleInviteStatus = null;
         try
         {
+            if (string.IsNullOrWhiteSpace(ScheduleTitle))
+                throw new ApiException("Enter a meeting title.");
             if (!DateTimeOffset.TryParse(ScheduleStartsAtText, out var startsAt))
                 throw new ApiException("Enter a valid start time, e.g. 2026-11-24 15:00.");
-            var invitees = InviteCandidates.Where(p => p.IsSelected).Select(p => p.Id).ToList();
+
+            // If they typed an email but forgot Add, include it when it uniquely resolves.
+            if (!string.IsNullOrWhiteSpace(ScheduleInviteEmail) && !TryAddScheduleInvite())
+                return;
+
+            DateTimeOffset? recurrenceUntil = null;
+            var recurrence = ScheduleRecurrence.Kind;
+            if (recurrence != RecurrenceKind.None)
+            {
+                if (!string.IsNullOrWhiteSpace(ScheduleRecurrenceUntilText))
+                {
+                    if (!DateTimeOffset.TryParse(ScheduleRecurrenceUntilText, out var until))
+                        throw new ApiException("Enter a valid repeat-until time, e.g. 2026-12-31 17:00.");
+                    if (until < startsAt)
+                        throw new ApiException("Repeat until must be after the meeting start time.");
+                    recurrenceUntil = until;
+                }
+            }
+
+            var invitees = ScheduleInvitees.Select(p => p.Id).ToList();
             await _context.Api.ScheduleMeetingAsync(
                 _context.Organization.Id,
                 new ScheduleMeetingRequest(
-                    ScheduleTitle, ScheduleDescription, startsAt, startsAt.AddHours(1),
-                    ScheduleLobbyEnabled, invitees));
+                    ScheduleTitle.Trim(),
+                    string.IsNullOrWhiteSpace(ScheduleDescription) ? null : ScheduleDescription.Trim(),
+                    startsAt,
+                    startsAt.AddHours(1),
+                    ScheduleLobbyEnabled,
+                    invitees,
+                    recurrence,
+                    recurrenceUntil));
+
             ScheduleTitle = string.Empty;
             ScheduleDescription = string.Empty;
-            foreach (var person in InviteCandidates) person.IsSelected = false;
+            ScheduleLobbyEnabled = false;
+            ScheduleRecurrence = RecurrenceOptions[0];
+            ScheduleRecurrenceUntilText = string.Empty;
+            ScheduleInviteEmail = string.Empty;
+            ScheduleInvitees.Clear();
+            OnPropertyChanged(nameof(HasScheduleInvitees));
+            RefreshScheduleInviteSuggestions();
             await LoadAsync();
         }
         catch (Exception ex)
@@ -970,6 +1213,7 @@ public partial class CalendarViewModel : ViewModelBase
         if (Stage is not { } stage) return;
         stage.Detach();
         Stage = null;
+        await MeetingMediaParking.ShutdownAsync();
         try
         {
             await _context.Api.LeaveMeetingAsync(stage.Id);
@@ -991,6 +1235,7 @@ public partial class CalendarViewModel : ViewModelBase
             await _context.Api.EndMeetingAsync(stage.Id);
             stage.Detach();
             Stage = null;
+            await MeetingMediaParking.ShutdownAsync();
         }
         catch (Exception ex)
         {
@@ -1009,6 +1254,8 @@ public partial class CalendarViewModel : ViewModelBase
 }
 
 // ---- Settings ---------------------------------------------------------------
+
+public sealed record RecurrenceOption(RecurrenceKind Kind, string Label);
 
 public sealed record AvailabilityOption(PresenceStatus Status, string Label);
 

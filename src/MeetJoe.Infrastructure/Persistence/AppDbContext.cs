@@ -137,8 +137,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             e.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId);
             e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.ConversationId);
             e.HasOne<Channel>().WithMany().HasForeignKey(x => x.ChannelId);
+            e.HasOne<Meeting>().WithMany().HasForeignKey(x => x.MeetingId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Uploader).WithMany().HasForeignKey(x => x.UploaderId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => new { x.OrganizationId, x.CreatedAt });
+            e.HasIndex(x => x.MeetingId);
         });
 
         builder.Entity<Workspace>(e =>

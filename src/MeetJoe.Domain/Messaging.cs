@@ -346,7 +346,7 @@ public class Attachment(Guid messageId, Guid fileObjectId)
     public FileObject FileObject { get; private set; } = null!;
 }
 
-/// <summary>A stored file. Scoped to the conversation or channel it was shared in, which decides who can read it.</summary>
+/// <summary>A stored file. Scoped to the conversation, channel, or meeting it was shared in.</summary>
 public class FileObject
 {
     public const long MaxSizeBytes = 50L * 1024 * 1024;
@@ -359,6 +359,7 @@ public class FileObject
     public Guid UploaderId { get; private set; }
     public Guid? ConversationId { get; private set; }
     public Guid? ChannelId { get; private set; }
+    public Guid? MeetingId { get; private set; }
     public string FileName { get; private set; } = string.Empty;
     public string ContentType { get; private set; } = string.Empty;
     public long Size { get; private set; }
@@ -375,10 +376,14 @@ public class FileObject
         string? fileName,
         string? contentType,
         long size,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        Guid? meetingId = null)
     {
-        if (conversationId is null == channelId is null)
-            throw new DomainException("A file is shared in exactly one conversation or channel.");
+        var targets = (conversationId is not null ? 1 : 0)
+                      + (channelId is not null ? 1 : 0)
+                      + (meetingId is not null ? 1 : 0);
+        if (targets != 1)
+            throw new DomainException("A file is shared in exactly one conversation, channel, or meeting.");
         if (size <= 0) throw new DomainException("The file is empty.");
         if (size > MaxSizeBytes)
             throw new DomainException($"Files can be at most {MaxSizeBytes / (1024 * 1024)} MB.");
@@ -391,6 +396,7 @@ public class FileObject
             UploaderId = uploaderId,
             ConversationId = conversationId,
             ChannelId = channelId,
+            MeetingId = meetingId,
             FileName = SanitizeFileName(fileName),
             ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType.Trim(),
             Size = size,

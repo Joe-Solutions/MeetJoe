@@ -14,16 +14,22 @@ public sealed class RoomChatMessageViewModel
         IsMine = message.Sender.Id == context.People.MyId;
         TimeText = message.CreatedAt.ToLocalTime().ToString("h:mm tt");
         StartsGroup = true;
+        Attachments = (message.Attachments ?? [])
+            .Select(a => new AttachmentViewModel(a, context))
+            .ToList();
     }
 
     public Guid Id { get; }
     public string Body { get; }
+    public bool HasBody => !string.IsNullOrWhiteSpace(Body);
     public PersonViewModel Sender { get; }
     public bool IsMine { get; }
     public string TimeText { get; }
     public bool StartsGroup { get; set; }
     public bool IsContinuation => !StartsGroup;
     public bool ShowAvatar => StartsGroup && !IsMine;
+    public IReadOnlyList<AttachmentViewModel> Attachments { get; }
+    public bool HasAttachments => Attachments.Count > 0;
 
     public static readonly IReadOnlyList<string> EmojiPalette =
         ["😀", "😂", "🙂", "😍", "🤔", "👍", "👎", "👏", "🙏", "🎉", "🔥", "✅", "❌", "💡", "📌"];

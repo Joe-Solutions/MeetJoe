@@ -268,13 +268,18 @@ public sealed class MeetingService(
     }
 
     public async Task<MessageDto> SendMeetingChatAsync(
-        Guid userId, Guid meetingId, string? body, CancellationToken ct = default)
+        Guid userId,
+        Guid meetingId,
+        string? body,
+        CancellationToken ct = default,
+        IReadOnlyList<Guid>? attachmentIds = null)
     {
         var meeting = await RequireAccessibleAsync(userId, meetingId, ct);
         if (!meeting.Participants.Any(p => p.UserId == userId && p.IsPresent && !p.InLobby))
             throw AppException.Validation("Join the meeting before sending chat.");
 
-        return await chat.SendAsync(userId, new SendMessageRequest(null, null, body, null, null, meetingId), ct);
+        return await chat.SendAsync(
+            userId, new SendMessageRequest(null, null, body, attachmentIds, null, meetingId), ct);
     }
 
     public async Task<MeetingRecordingDto> StartRecordingAsync(Guid userId, Guid meetingId, CancellationToken ct = default)

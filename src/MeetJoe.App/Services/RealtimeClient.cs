@@ -172,8 +172,9 @@ public sealed class RealtimeClient(AppConfig config, IAuthService auth) : IRealt
     public Task MuteParticipantAsync(Guid meetingId, Guid userId) =>
         Require(_meeting).SendAsync(MeetingHubMethods.MuteParticipant, meetingId, userId);
 
-    public Task<MessageDto> SendMeetingChatAsync(Guid meetingId, string body) =>
-        Require(_meeting).InvokeAsync<MessageDto>(MeetingHubMethods.SendChat, meetingId, body);
+    public Task<MessageDto> SendMeetingChatAsync(
+        Guid meetingId, string? body, IReadOnlyList<Guid>? attachmentIds = null) =>
+        Require(_meeting).InvokeAsync<MessageDto>(MeetingHubMethods.SendChat, meetingId, body, attachmentIds);
 
     public Task<CallJoinDto> AnswerCallAsync(Guid callId) =>
         Require(_call).InvokeAsync<CallJoinDto>(CallHubMethods.Answer, callId);

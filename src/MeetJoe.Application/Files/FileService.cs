@@ -8,8 +8,8 @@ namespace MeetJoe.Application.Files;
 public sealed record FileDownload(string FileName, string ContentType, long Size, string StorageKey);
 
 /// <summary>
-/// Files are uploaded to a conversation or channel first, then attached to a message. Whoever can
-/// read that conversation or channel can read the file.
+/// Files are uploaded to a conversation, channel, or meeting first, then attached to a message.
+/// Whoever can read that place can read the file.
 /// </summary>
 public sealed class FileService(IAppDbContext db, IFileStorage storage, TimeProvider time)
 {
@@ -21,11 +21,13 @@ public sealed class FileService(IAppDbContext db, IFileStorage storage, TimeProv
         string? contentType,
         long size,
         Stream content,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        Guid? meetingId = null)
     {
-        var target = await db.ResolveTargetAsync(userId, conversationId, channelId, ct);
+        var target = await db.ResolveTargetAsync(userId, conversationId, channelId, ct, meetingId);
         var file = Domain.FileObject.Create(
-            target.OrganizationId, userId, conversationId, channelId, fileName, contentType, size, time.Now());
+            target.OrganizationId, userId, conversationId, channelId, fileName, contentType, size, time.Now(),
+            meetingId);
 
         await storage.PutAsync(file.StorageKey, content, size, file.ContentType, ct);
         db.Files.Add(file);
@@ -42,9 +44,10 @@ public sealed class FileService(IAppDbContext db, IFileStorage storage, TimeProv
         }
 
         var uploaderName = await db.Users.Where(u => u.Id == userId).Select(u => u.DisplayName).FirstAsync(ct);
+        var location = meetingId is not null ? "Meeting" : string.Empty;
         return new FileDto(
             file.Id, file.FileName, file.ContentType, file.Size, file.CreatedAt,
-            new UserSummaryDto(userId, uploaderName), conversationId, channelId, string.Empty);
+            new UserSummaryDto(userId, uploaderName), conversationId, channelId, location, meetingId);
     }
 
     /// <summary>Checks access and returns what is needed to stream the file.</summary>
@@ -54,7 +57,7 @@ public sealed class FileService(IAppDbContext db, IFileStorage storage, TimeProv
                    ?? throw AppException.NotFound("File");
         try
         {
-            await db.ResolveTargetAsync(userId, file.ConversationId, file.ChannelId, ct);
+            await db.ResolveTargetAsync(userId, file.ConversationId, file.ChannelId, ct, file.MeetingId);
         }
         catch (AppException)
         {

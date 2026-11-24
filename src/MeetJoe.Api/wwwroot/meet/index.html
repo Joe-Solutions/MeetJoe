@@ -100,6 +100,65 @@
       padding: 12px;
     }
     html.embed #stage { min-height: 100%; height: 100%; padding: 10px; }
+
+    /* Minimized call PiP: active speaker, or screen share when someone is presenting. */
+    html.pip #stage { padding: 0; position: relative; }
+    html.pip #status,
+    html.pip #banner,
+    html.pip #roster { display: none !important; }
+    html.pip #grid {
+      display: block;
+      height: 100%;
+      width: 100%;
+      padding: 0;
+      gap: 0;
+      grid-template-columns: 1fr !important;
+      grid-auto-rows: 1fr;
+    }
+    html.pip #grid[data-count="0"]::after { font-size: 13px; }
+    html.pip .tile {
+      display: none !important;
+      border-radius: 0;
+      border: 0;
+      box-shadow: none;
+      min-height: 0;
+      width: 100%;
+      height: 100%;
+    }
+    html.pip .tile.pip-focus {
+      display: flex !important;
+    }
+    html.pip .tile-live { display: none !important; }
+    html.pip .tile-avatar {
+      width: min(120px, 46%);
+      font-size: clamp(36px, 12vw, 56px);
+    }
+    html.pip .tile-name {
+      left: 12px; right: 12px; bottom: 12px;
+      font-size: 13px; font-weight: 700;
+    }
+    /* PiP + screen share: fill the mini window with the presenter surface. */
+    html.pip #present { display: none !important; }
+    html.pip.pip-presenting #present.show {
+      display: block !important;
+      position: absolute;
+      inset: 0;
+      margin: 0;
+      border-radius: 0;
+      border: 0;
+      box-shadow: none;
+      z-index: 4;
+    }
+    html.pip.pip-presenting #grid { display: none !important; }
+    html.pip.pip-presenting #present-label {
+      left: 10px; right: 10px; bottom: 10px;
+      font-size: 12px; font-weight: 700;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    html.pip.pip-presenting #present video {
+      object-fit: contain;
+      background: #050910;
+    }
     #status {
       position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
       padding: 6px 12px; border-radius: 999px;
@@ -109,6 +168,42 @@
     /* Connected: no center "Live" chip — each tile already has its own Live badge. */
     #status.live { display: none; }
     #status.error { color: #FF8A7A; opacity: 1; }
+
+    /* Spotlight for screen share; filmstrip of cameras stays in #grid. */
+    #present {
+      display: none;
+      position: relative;
+      flex: 1 1 auto;
+      min-height: 0;
+      margin: 4px;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #0A1018;
+      border: 1px solid var(--tile-border);
+      box-shadow: 0 2px 12px rgba(0,0,0,.28);
+    }
+    #present.show { display: block; }
+    #present video {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: contain;
+      background: #050910;
+    }
+    #present video.hidden { display: none; }
+    #present-label {
+      position: absolute; left: 12px; bottom: 12px; z-index: 2;
+      padding: 5px 10px; border-radius: 8px;
+      background: rgba(10, 22, 36, 0.78); color: var(--text);
+      font-size: 12px; font-weight: 600;
+      pointer-events: none;
+    }
+    #stage.presenting #grid {
+      flex: 0 0 auto;
+      height: 118px;
+      min-height: 118px;
+      grid-auto-rows: minmax(0, 1fr);
+    }
+    #stage.presenting .tile { min-height: 0; }
 
     #grid {
       flex: 1; min-height: 0;
@@ -297,6 +392,10 @@
 
   <div id="stage">
     <div id="status">Connecting…</div>
+    <div id="present" aria-live="polite">
+      <video id="present-video" autoplay playsinline class="hidden"></video>
+      <div id="present-label"></div>
+    </div>
     <div id="grid" data-count="0" style="--cols: 1"></div>
 
     <aside id="roster" aria-label="People in this call">
@@ -456,15 +555,102 @@
       syncTile(identity);
     }
 
+    let pipMode = false;
+    /** @type {string[]} */
+    let lastActiveSpeakerIds = [];
+    /** Sticky last talker so PiP can snap back after screen share ends. */
+    /** @type {string|null} */
+    let lastHeardSpeakerId = null;
+    /** @type {string|null} */
+    let screenSharePresenterId = null;
+
+    function isScreenShareActive() {
+      return !!document.getElementById("present")?.classList.contains("show");
+    }
+
     function layoutGrid() {
-      const count = people.size;
-      grid.dataset.count = String(count);
-      grid.style.setProperty("--cols", String(columnsFor(count)));
-      // Keep DOM order: local last (Meet-like “You” often at end), remotes first by join.
       const remotes = [...people.entries()].filter(([, p]) => !p.isLocal);
       const locals = [...people.entries()].filter(([, p]) => p.isLocal);
       for (const [id] of [...remotes, ...locals]) ensureTile(id);
+
+      if (pipMode) {
+        applyPipFocus();
+        return;
+      }
+
+      const count = people.size;
+      grid.dataset.count = String(count);
+      grid.style.setProperty("--cols", String(columnsFor(count)));
     }
+
+    function rememberActiveSpeakers(ids) {
+      lastActiveSpeakerIds = Array.isArray(ids) ? ids.filter(Boolean) : [];
+      // Prefer a remote talker; otherwise keep whoever is speaking (incl. local).
+      const remote = lastActiveSpeakerIds.find(id => people.has(id) && !people.get(id)?.isLocal);
+      const any = lastActiveSpeakerIds.find(id => people.has(id));
+      if (remote || any) lastHeardSpeakerId = remote || any;
+    }
+
+    function choosePipFocusId() {
+      // After screen share stops: current talker → last talker → remote video → anyone.
+      const prefer = (id) => (id && people.has(id) ? id : null);
+      for (const id of lastActiveSpeakerIds) {
+        const remote = prefer(id);
+        if (remote && !people.get(remote)?.isLocal) return remote;
+      }
+      for (const id of lastActiveSpeakerIds) {
+        const hit = prefer(id);
+        if (hit) return hit;
+      }
+      const sticky = prefer(lastHeardSpeakerId);
+      if (sticky) return sticky;
+      for (const [id, p] of people) {
+        if (!p.isLocal && p.hasVideo) return id;
+      }
+      for (const [id, p] of people) {
+        if (!p.isLocal) return id;
+      }
+      return localId || [...people.keys()][0] || null;
+    }
+
+    function applyPipFocus() {
+      const presenting = isScreenShareActive();
+      document.documentElement.classList.toggle("pip-presenting", pipMode && presenting);
+
+      if (presenting) {
+        // Screen share fills the mini window; hide camera tiles.
+        for (const [, p] of people) p.el?.classList.remove("pip-focus");
+        grid.dataset.count = "1";
+        grid.style.setProperty("--cols", "1");
+        const video = document.getElementById("present-video");
+        if (video) {
+          const play = video.play();
+          if (play && typeof play.catch === "function") play.catch(() => {});
+        }
+        return;
+      }
+
+      // Share ended (or never started): show the person currently talking.
+      const id = choosePipFocusId();
+      grid.dataset.count = id ? "1" : "0";
+      grid.style.setProperty("--cols", "1");
+      for (const [pid, p] of people) {
+        if (!p.el) continue;
+        p.el.classList.toggle("pip-focus", pid === id);
+      }
+    }
+
+    window.meetjoeSetPipMode = (on) => {
+      pipMode = !!on;
+      document.documentElement.classList.toggle("pip", pipMode);
+      if (!pipMode) document.documentElement.classList.remove("pip-presenting");
+      if (pipMode) applyPipFocus();
+      else {
+        for (const [, p] of people) p.el?.classList.remove("pip-focus");
+        layoutGrid();
+      }
+      return pipMode;
+    };
 
     function refreshPeopleUi() {
       const count = people.size;
@@ -516,6 +702,57 @@
       return video;
     }
 
+    function screenShareSource() {
+      return LivekitClient?.Track?.Source?.ScreenShare || "screen_share";
+    }
+
+    function isScreenShareTrack(track) {
+      if (!track) return false;
+      const src = track.source;
+      const screenShare = screenShareSource();
+      return src === screenShare || src === "screen_share";
+    }
+
+    function clearScreenShare() {
+      const present = document.getElementById("present");
+      const video = document.getElementById("present-video");
+      if (video) {
+        try { video.srcObject = null; } catch (_) {}
+        video.classList.add("hidden");
+      }
+      present?.classList.remove("show");
+      document.getElementById("stage")?.classList.remove("presenting");
+      screenSharePresenterId = null;
+      if (pipMode) applyPipFocus();
+    }
+
+    function attachScreenShare(identity, name, track, isLocal) {
+      upsertPerson(identity, name, isLocal);
+      if (isLocal) localId = identity;
+      const present = document.getElementById("present");
+      const video = document.getElementById("present-video");
+      const label = document.getElementById("present-label");
+      if (!present || !video) return;
+      if (track.isMuted) {
+        clearScreenShare();
+        return;
+      }
+      track.detach();
+      track.attach(video);
+      video.muted = true;
+      video.classList.remove("hidden");
+      present.classList.add("show");
+      document.getElementById("stage")?.classList.add("presenting");
+      screenSharePresenterId = identity;
+      if (label) {
+        const who = isLocal ? "You" : (name || "Someone");
+        label.textContent = who + " is presenting";
+      }
+      const play = video.play();
+      if (play && typeof play.catch === "function") play.catch(() => {});
+      if (pipMode) applyPipFocus();
+    }
+
     function attachTrack(identity, name, track, isLocal) {
       upsertPerson(identity, name, isLocal);
       if (isLocal) localId = identity;
@@ -554,6 +791,12 @@
       }
       if (track.kind !== "video") return;
 
+      // Screen share uses the spotlight; never replace a camera tile.
+      if (isScreenShareTrack(track)) {
+        attachScreenShare(identity, name, track, isLocal);
+        return;
+      }
+
       const info = people.get(identity);
       if (!info) return;
       // Muted camera (off) must show initials — a muted LiveKit video track paints black.
@@ -579,6 +822,10 @@
     function detachTrack(identity, track) {
       try { track.detach(); } catch (_) {}
       if (track.kind !== "video") return;
+      if (isScreenShareTrack(track)) {
+        clearScreenShare();
+        return;
+      }
       clearTileVideo(identity);
     }
 
@@ -586,7 +833,7 @@
     function refreshLocalVideoPreview(room) {
       if (!room?.localParticipant) return;
       const me = room.localParticipant;
-      const screenShare = LivekitClient?.Track?.Source?.ScreenShare || "screen_share";
+      const screenShare = screenShareSource();
       for (const pub of me.trackPublications.values()) {
         if (pub.kind !== "video" || !pub.track || pub.isMuted) continue;
         // Skip screen-share; only the camera preview belongs in the avatar tile.
@@ -635,7 +882,7 @@
     /** Keep camera-off tiles on initials if a mute/unmute event was missed. */
     function refreshVideoFromRoom() {
       if (!activeRoom) return;
-      const screenShare = LivekitClient?.Track?.Source?.ScreenShare || "screen_share";
+      const screenShare = screenShareSource();
       const apply = (identity, participant, isLocal) => {
         let hasCam = false;
         for (const pub of participant.trackPublications.values()) {
@@ -854,10 +1101,13 @@
           } catch (_) { /* ignore non-JSON */ }
         })
         .on(LivekitClient.RoomEvent.ActiveSpeakersChanged, (speakers) => {
-          const ids = new Set(speakers.map(s => s.identity));
+          rememberActiveSpeakers(speakers.map(s => s.identity));
+          const ids = new Set(lastActiveSpeakerIds);
           for (const [id, p] of people) {
             p.el?.classList.toggle("speaking", ids.has(id));
           }
+          // While presenting, keep the share surface; otherwise follow the talker.
+          if (pipMode) applyPipFocus();
           notifyHost("speakers:" + [...ids].join(","));
         })
         .on(LivekitClient.RoomEvent.AudioPlaybackStatusChanged, () => {
@@ -887,33 +1137,42 @@
         const micBtn = document.getElementById("mic");
         const camBtn = document.getElementById("cam");
 
+        // Prefer host/session prefs (minimize → return must not force cam/mic back on).
+        const pref = window.meetjoePreferredMedia || {};
+        const wantMic = pref.mic !== false;
+        const wantCam = pref.camera !== false;
+
         try {
-          await me.setMicrophoneEnabled(true);
-          micBtn.classList.toggle("off", false);
+          await me.setMicrophoneEnabled(wantMic);
+          micBtn.classList.toggle("off", !wantMic);
           const info = people.get(me.identity);
-          if (info) { info.muted = false; syncTile(me.identity); }
-          notifyHost("mic-on");
-          await ensureAudioPlayback();
+          if (info) { info.muted = !wantMic; syncTile(me.identity); }
+          notifyHost(wantMic ? "mic-on" : "mic-off");
+          if (wantMic) await ensureAudioPlayback();
         } catch (micErr) {
           console.error(micErr);
           micBtn.classList.toggle("off", true);
           const info = people.get(me.identity);
           if (info) { info.muted = true; syncTile(me.identity); }
           notifyHost("mic-off");
-          notifyHost("permission-mic");
-          showBanner("Microphone is blocked. Allow mic access for MeetJoe in System Settings, then rejoin.");
+          if (wantMic) {
+            notifyHost("permission-mic");
+            showBanner("Microphone is blocked. Allow mic access for MeetJoe in System Settings, then rejoin.");
+          }
         }
         try {
-          await me.setCameraEnabled(true);
-          camBtn.classList.toggle("off", false);
-          notifyHost("camera-on");
+          await me.setCameraEnabled(wantCam);
+          camBtn.classList.toggle("off", !wantCam);
+          notifyHost(wantCam ? "camera-on" : "camera-off");
         } catch (camErr) {
           console.error(camErr);
           camBtn.classList.toggle("off", true);
           notifyHost("camera-off");
-          notifyHost("permission-camera");
-          const prior = banner.classList.contains("show") ? banner.textContent + " " : "";
-          showBanner(prior + "Camera is blocked. Allow camera access for MeetJoe in System Settings.");
+          if (wantCam) {
+            notifyHost("permission-camera");
+            const prior = banner.classList.contains("show") ? banner.textContent + " " : "";
+            showBanner(prior + "Camera is blocked. Allow camera access for MeetJoe in System Settings.");
+          }
         }
 
         for (const pub of me.trackPublications.values()) {
@@ -955,11 +1214,30 @@
       function reportMediaState() {
         const camOn = !!room.localParticipant.isCameraEnabled;
         const micOn = !!room.localParticipant.isMicrophoneEnabled;
+        const shareOn = !!room.localParticipant.isScreenShareEnabled;
         camBtn.classList.toggle("off", !camOn);
         micBtn.classList.toggle("off", !micOn);
+        shareBtn.classList.toggle("active", shareOn);
+        window.meetjoePreferredMedia = { camera: camOn, mic: micOn };
         notifyHost(camOn ? "camera-on" : "camera-off");
         notifyHost(micOn ? "mic-on" : "mic-off");
+        notifyHost(shareOn ? "share-on" : "share-off");
       }
+
+      window.meetjoeApplyPreferredMedia = async () => {
+        const pref = window.meetjoePreferredMedia || {};
+        const wantCam = pref.camera !== false;
+        const wantMic = pref.mic !== false;
+        try {
+          if (!!room.localParticipant.isCameraEnabled !== wantCam)
+            await setCameraEnabled(wantCam);
+        } catch (_) { /* permission banner handled in setCameraEnabled */ }
+        try {
+          if (!!room.localParticipant.isMicrophoneEnabled !== wantMic)
+            await setMicEnabled(wantMic);
+        } catch (_) { /* permission banner handled in setMicEnabled */ }
+        reportMediaState();
+      };
 
       async function setCameraEnabled(on) {
         try {
@@ -1000,10 +1278,26 @@
         return !!room.localParticipant.isMicrophoneEnabled;
       }
 
-      window.meetjoeToggleCamera = async () => {
-        const wantOn = !room.localParticipant.isCameraEnabled;
+      // Absolute setters — host passes the desired state so a concurrent preferred-media
+      // sync cannot invert a user click (toggle-relative-to-LiveKit was racing).
+      window.meetjoeSetCameraEnabled = async (wantOn) => {
+        wantOn = !!wantOn;
+        if (!wantOn) {
+          clearTileVideo(room.localParticipant.identity);
+          if (localId && localId !== room.localParticipant.identity)
+            clearTileVideo(localId);
+          window.meetjoePreferredMedia = {
+            camera: false,
+            mic: !!room.localParticipant.isMicrophoneEnabled,
+          };
+          notifyHost("camera-off");
+        }
         try {
-          await ensureAudioPlayback();
+          if (wantOn) await ensureAudioPlayback();
+          if (!!room.localParticipant.isCameraEnabled === wantOn) {
+            reportMediaState();
+            return wantOn;
+          }
           const on = await setCameraEnabled(wantOn);
           if (wantOn && !on) notifyHost("permission-camera");
           return on;
@@ -1015,10 +1309,23 @@
           return false;
         }
       };
-      window.meetjoeToggleMic = async () => {
-        const wantOn = !room.localParticipant.isMicrophoneEnabled;
+      window.meetjoeSetMicEnabled = async (wantOn) => {
+        wantOn = !!wantOn;
+        if (!wantOn) {
+          const info = people.get(localId);
+          if (info) { info.muted = true; syncTile(localId); }
+          window.meetjoePreferredMedia = {
+            camera: !!room.localParticipant.isCameraEnabled,
+            mic: false,
+          };
+          notifyHost("mic-off");
+        }
         try {
-          await ensureAudioPlayback();
+          if (wantOn) await ensureAudioPlayback();
+          if (!!room.localParticipant.isMicrophoneEnabled === wantOn) {
+            reportMediaState();
+            return wantOn;
+          }
           const on = await setMicEnabled(wantOn);
           if (wantOn && !on) notifyHost("permission-mic");
           return on;
@@ -1030,19 +1337,41 @@
           return false;
         }
       };
+      window.meetjoeToggleCamera = async () =>
+        window.meetjoeSetCameraEnabled(!room.localParticipant.isCameraEnabled);
+      window.meetjoeToggleMic = async () =>
+        window.meetjoeSetMicEnabled(!room.localParticipant.isMicrophoneEnabled);
+      window.meetjoeToggleScreenShare = async () => {
+        const wantOn = !room.localParticipant.isScreenShareEnabled;
+        try {
+          await room.localParticipant.setScreenShareEnabled(wantOn);
+          const on = !!room.localParticipant.isScreenShareEnabled;
+          shareBtn.classList.toggle("active", on);
+          notifyHost(on ? "share-on" : "share-off");
+          if (wantOn && !on) {
+            notifyHost("permission-share");
+            showBanner("Screen sharing was cancelled or blocked. Allow Screen Recording for MeetJoe in System Settings if needed.");
+          }
+          return on;
+        } catch (err) {
+          console.error(err);
+          shareBtn.classList.toggle("active", false);
+          notifyHost("share-off");
+          notifyHost("permission-share");
+          showBanner("Could not share screen. Allow Screen Recording for MeetJoe in System Settings, then try again.");
+          return false;
+        }
+      };
       window.meetjoeMediaState = () => ({
         camera: !!room.localParticipant.isCameraEnabled,
         mic: !!room.localParticipant.isMicrophoneEnabled,
+        share: !!room.localParticipant.isScreenShareEnabled,
       });
 
       micBtn.onclick = async () => { await window.meetjoeToggleMic(); };
       camBtn.onclick = async () => { await window.meetjoeToggleCamera(); };
+      shareBtn.onclick = async () => { await window.meetjoeToggleScreenShare(); };
       reportMediaState();
-      shareBtn.onclick = async () => {
-        const sharing = room.localParticipant.isScreenShareEnabled;
-        await room.localParticipant.setScreenShareEnabled(!sharing);
-        shareBtn.classList.toggle("active", !sharing);
-      };
       peopleBtn.onclick = () => {
         roster.classList.toggle("open");
         peopleBtn.classList.toggle("active", roster.classList.contains("open"));

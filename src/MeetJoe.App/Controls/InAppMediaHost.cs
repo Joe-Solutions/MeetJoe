@@ -18,10 +18,21 @@ public sealed class InAppMediaHost : Panel
     private Action? _onLeave;
     private bool _pageReady;
     private string? _pendingScript;
+    private string? _preferredMediaScript;
 
     public bool IsCameraEnabled { get; private set; } = true;
     public bool IsMicEnabled { get; private set; } = true;
+    public bool IsScreenShareEnabled { get; private set; }
     public bool IsAvailable => _webView is not null;
+
+    /// <summary>
+    /// Seed preferred cam/mic before LiveKit connect (e.g. after minimize → return reconnects).
+    /// </summary>
+    public void ApplyPreferredMedia(bool cameraOn, bool micOn)
+    {
+        IsCameraEnabled = cameraOn;
+        IsMicEnabled = micOn;
+    }
 
     public event Action? MediaStateChanged;
     public event Action? MediaReady;
@@ -104,6 +115,7 @@ public sealed class InAppMediaHost : Panel
         _navigatedUrl = null;
         _pageReady = false;
         _pendingScript = null;
+        _preferredMediaScript = null;
         _permissionAlerted.Clear();
 
         var web = _webView;
@@ -130,15 +142,118 @@ public sealed class InAppMediaHost : Panel
         Children.Clear();
     }
 
-    public Task ToggleCameraAsync() => ToggleAndSyncAsync(
-        "(async function(){ try { if (window.meetjoeToggleCamera) await window.meetjoeToggleCamera(); } catch(e) { console.error(e); } })()",
-        mic: false);
+    public Task ToggleCameraAsync() => ToggleAndSyncAsync(mic: false);
 
-    public Task ToggleMicAsync() => ToggleAndSyncAsync(
-        "(async function(){ try { if (window.meetjoeToggleMic) await window.meetjoeToggleMic(); } catch(e) { console.error(e); } })()",
-        mic: true);
+    public Task ToggleMicAsync() => ToggleAndSyncAsync(mic: true);
 
-    private async Task ToggleAndSyncAsync(string toggleScript, bool mic)
+    public Task ToggleScreenShareAsync() => ToggleScreenShareCoreAsync();
+
+    /// <summary>
+    /// Minimized call PiP: LiveKit page shows only the active speaker (video or initials).
+    /// </summary>
+    public Task SetPipModeAsync(bool enabled)
+    {
+        var flag = enabled ? "true" : "false";
+        var script =
+            $"(function(){{ try {{ if (window.meetjoeSetPipMode) window.meetjoeSetPipMode({flag}); }} catch(e) {{ console.error(e); }} }})()";
+        return RunPageScriptAsync(script);
+    }
+
+    /// <summary>Push chrome cam/mic preference into the page and enforce it on the LiveKit room.</summary>
+    public async Task SyncPreferredMediaToPageAsync()
+    {
+        await PushPreferredMediaAsync().ConfigureAwait(true);
+        await RunPageScriptAsync(
+            "(async function(){ try { if (window.meetjoeApplyPreferredMedia) await window.meetjoeApplyPreferredMedia(); } catch(e) { console.error(e); } })()")
+            .ConfigureAwait(true);
+    }
+
+    private Task PushPreferredMediaAsync()
+    {
+        var cam = IsCameraEnabled ? "true" : "false";
+        var mic = IsMicEnabled ? "true" : "false";
+        var script = $"(function(){{ window.meetjoePreferredMedia={{camera:{cam},mic:{mic}}}; }})()";
+        EnsureWebView();
+        if (_webView is null) return Task.CompletedTask;
+        if (!_pageReady)
+        {
+            // Keep separate from _pendingScript so PiP / toggle scripts are not overwritten.
+            _preferredMediaScript = script;
+            return Task.CompletedTask;
+        }
+
+        return _webView.ExecuteScriptAsync(script);
+    }
+
+    private Task RunPageScriptAsync(string script)
+    {
+        EnsureWebView();
+        if (_webView is null) return Task.CompletedTask;
+        if (!_pageReady)
+        {
+            _pendingScript = script;
+            return Task.CompletedTask;
+        }
+
+        return _webView.ExecuteScriptAsync(script);
+    }
+
+    private async Task ToggleScreenShareCoreAsync()
+    {
+        const string toggleScript =
+            "(async function(){ try { if (window.meetjoeToggleScreenShare) await window.meetjoeToggleScreenShare(); } catch(e) { console.error(e); } })()";
+
+        EnsureWebView();
+        if (_webView is null)
+        {
+            IsScreenShareEnabled = !IsScreenShareEnabled;
+            MediaStateChanged?.Invoke();
+            return;
+        }
+
+        var wantEnabled = !IsScreenShareEnabled;
+        IsScreenShareEnabled = wantEnabled;
+        MediaStateChanged?.Invoke();
+
+        // Screen share uses getDisplayMedia (system picker) — not AVCapture camera/mic TCC.
+
+        if (!_pageReady)
+        {
+            _pendingScript = toggleScript;
+            return;
+        }
+
+        try
+        {
+            await _webView.ExecuteScriptAsync(toggleScript);
+            if (wantEnabled)
+            {
+                // Screen picker can take a moment; verify in the background without blocking chrome.
+                _ = VerifyScreenShareEnabledAsync();
+            }
+        }
+        catch
+        {
+            _pendingScript = toggleScript;
+            if (wantEnabled) RequestPermissionAlert("share");
+        }
+    }
+
+    private async Task VerifyScreenShareEnabledAsync()
+    {
+        try
+        {
+            await Task.Delay(900);
+            await PushMediaStateAsync();
+            if (!IsScreenShareEnabled) RequestPermissionAlert("share");
+        }
+        catch
+        {
+            // Best-effort.
+        }
+    }
+
+    private async Task ToggleAndSyncAsync(bool mic)
     {
         EnsureWebView();
         if (_webView is null)
@@ -153,6 +268,8 @@ public sealed class InAppMediaHost : Panel
         var wantEnabled = mic ? !IsMicEnabled : !IsCameraEnabled;
         if (mic) IsMicEnabled = wantEnabled;
         else IsCameraEnabled = wantEnabled;
+        // Keep page prefs in sync so a reconnect / PiP return cannot fight this click.
+        _ = PushPreferredMediaAsync();
         MediaStateChanged?.Invoke();
 
         // Ask macOS TCC first so the system permission dialog can appear (requires .app + Info.plist).
@@ -166,36 +283,54 @@ public sealed class InAppMediaHost : Panel
             {
                 if (mic) IsMicEnabled = false;
                 else IsCameraEnabled = false;
+                _ = PushPreferredMediaAsync();
                 MediaStateChanged?.Invoke();
                 RequestPermissionAlert(mic ? "mic" : "camera");
                 return;
             }
         }
 
+        var flag = wantEnabled ? "true" : "false";
+        var setScript = mic
+            ? $"(async function(){{ try {{ if (window.meetjoeSetMicEnabled) await window.meetjoeSetMicEnabled({flag}); }} catch(e) {{ console.error(e); }} }})()"
+            : $"(async function(){{ try {{ if (window.meetjoeSetCameraEnabled) await window.meetjoeSetCameraEnabled({flag}); }} catch(e) {{ console.error(e); }} }})()";
+
         if (!_pageReady)
         {
-            _pendingScript = toggleScript;
+            _pendingScript = setScript;
             return;
         }
 
         try
         {
-            await _webView.ExecuteScriptAsync(toggleScript);
-            // Button click is a user gesture — unlock WKWebView remote audio autoplay.
-            await _webView.ExecuteScriptAsync(
-                "(async function(){ try { if (window.meetjoeEnsureAudio) await window.meetjoeEnsureAudio(); } catch(e){} })()");
-            await Task.Delay(400);
-            await PushMediaStateAsync();
-
-            // If the user tried to turn media on but LiveKit/OS kept it off, warn about permissions.
-            var stillOff = mic ? !IsMicEnabled : !IsCameraEnabled;
-            if (wantEnabled && stillOff)
-                RequestPermissionAlert(mic ? "mic" : "camera");
+            // Absolute set (not toggle) so preferred-media apply cannot invert the click.
+            await _webView.ExecuteScriptAsync(setScript);
+            if (wantEnabled)
+            {
+                await _webView.ExecuteScriptAsync(
+                    "(async function(){ try { if (window.meetjoeEnsureAudio) await window.meetjoeEnsureAudio(); } catch(e){} })()");
+                _ = VerifyMediaEnabledAsync(mic);
+            }
         }
         catch
         {
-            _pendingScript = toggleScript;
+            _pendingScript = setScript;
             if (wantEnabled) RequestPermissionAlert(mic ? "mic" : "camera");
+        }
+    }
+
+    private async Task VerifyMediaEnabledAsync(bool mic)
+    {
+        try
+        {
+            await Task.Delay(600);
+            await PushMediaStateAsync();
+            var stillOff = mic ? !IsMicEnabled : !IsCameraEnabled;
+            if (stillOff) RequestPermissionAlert(mic ? "mic" : "camera");
+        }
+        catch
+        {
+            // Best-effort permission probe.
         }
     }
 
@@ -205,7 +340,7 @@ public sealed class InAppMediaHost : Panel
         try
         {
             await _webView.ExecuteScriptAsync(
-                "(function(){ try { if (window.meetjoeMediaState) { var s=window.meetjoeMediaState(); var send=window.meetjoeNotifyHost||function(){}; send(s.camera?'camera-on':'camera-off'); send(s.mic?'mic-on':'mic-off'); } } catch(e){} })()");
+                "(function(){ try { if (window.meetjoeMediaState) { var s=window.meetjoeMediaState(); var send=window.meetjoeNotifyHost||function(){}; send(s.camera?'camera-on':'camera-off'); send(s.mic?'mic-on':'mic-off'); send(s.share?'share-on':'share-off'); } } catch(e){} })()");
         }
         catch { /* ignore */ }
     }
@@ -258,6 +393,13 @@ public sealed class InAppMediaHost : Panel
         Dispatcher.UIThread.Post(() => MediaReady?.Invoke());
 
         await Task.Delay(500);
+        if (_preferredMediaScript is { } preferred)
+        {
+            _preferredMediaScript = null;
+            try { await _webView!.ExecuteScriptAsync(preferred); }
+            catch { /* page may still be connecting */ }
+        }
+
         if (_pendingScript is { } pending)
         {
             _pendingScript = null;
@@ -285,8 +427,15 @@ public sealed class InAppMediaHost : Panel
             return;
         }
 
-        if (string.Equals(message, "media-ready", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(message, "audio-ok", StringComparison.OrdinalIgnoreCase)
+        if (string.Equals(message, "media-ready", StringComparison.OrdinalIgnoreCase))
+        {
+            // Page waits ~450ms after this before enabling devices — seed prefs first.
+            _ = PushPreferredMediaAsync();
+            Dispatcher.UIThread.Post(() => MediaReady?.Invoke());
+            return;
+        }
+
+        if (string.Equals(message, "audio-ok", StringComparison.OrdinalIgnoreCase)
             || string.Equals(message, "audio-blocked", StringComparison.OrdinalIgnoreCase))
         {
             Dispatcher.UIThread.Post(() => MediaReady?.Invoke());
@@ -306,6 +455,14 @@ public sealed class InAppMediaHost : Panel
             IsCameraEnabled = false;
             MediaStateChanged?.Invoke();
             RaisePermissionNeeded("camera");
+            return;
+        }
+
+        if (string.Equals(message, "permission-share", StringComparison.OrdinalIgnoreCase))
+        {
+            IsScreenShareEnabled = false;
+            MediaStateChanged?.Invoke();
+            RaisePermissionNeeded("share");
             return;
         }
 
@@ -333,6 +490,20 @@ public sealed class InAppMediaHost : Panel
         if (string.Equals(message, "mic-off", StringComparison.OrdinalIgnoreCase))
         {
             IsMicEnabled = false;
+            MediaStateChanged?.Invoke();
+            return;
+        }
+
+        if (string.Equals(message, "share-on", StringComparison.OrdinalIgnoreCase))
+        {
+            IsScreenShareEnabled = true;
+            MediaStateChanged?.Invoke();
+            return;
+        }
+
+        if (string.Equals(message, "share-off", StringComparison.OrdinalIgnoreCase))
+        {
+            IsScreenShareEnabled = false;
             MediaStateChanged?.Invoke();
             return;
         }

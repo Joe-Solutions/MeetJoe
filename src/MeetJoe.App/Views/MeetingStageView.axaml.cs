@@ -1,9 +1,11 @@
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using MeetJoe.App.Controls;
 using MeetJoe.App.ViewModels;
 
@@ -22,6 +24,13 @@ public partial class MeetingStageView : UserControl
         // Tunnel so Enter is seen before the text box inserts a newline.
         LiveChatComposer.AddHandler(KeyDownEvent, OnChatKeyDown, RoutingStrategies.Tunnel);
         LobbyChatComposer.AddHandler(KeyDownEvent, OnChatKeyDown, RoutingStrategies.Tunnel);
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        // Keep LiveKit alive in shell PiP while the user browses other sections.
+        ParkMediaHost();
     }
 
     private void BindViewModel(CalendarViewModel? vm)
@@ -48,15 +57,35 @@ public partial class MeetingStageView : UserControl
     {
         UnbindStage();
         _stage = stage;
-        if (_stage is not null) _stage.PropertyChanged += OnStagePropertyChanged;
+        if (_stage is not null)
+        {
+            _stage.PropertyChanged += OnStagePropertyChanged;
+            _stage.ChatFollowRequested += OnChatFollowRequested;
+            OnChatFollowRequested();
+        }
+
         SyncMediaHost();
     }
 
     private void UnbindStage()
     {
-        if (_stage is not null) _stage.PropertyChanged -= OnStagePropertyChanged;
+        if (_stage is not null)
+        {
+            _stage.PropertyChanged -= OnStagePropertyChanged;
+            _stage.ChatFollowRequested -= OnChatFollowRequested;
+        }
+
         _stage = null;
     }
+
+    private void OnChatFollowRequested() =>
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (LiveChatScroller.IsEffectivelyVisible)
+                LiveChatScroller.ScrollToEnd();
+            if (LobbyChatScroller.IsEffectivelyVisible)
+                LobbyChatScroller.ScrollToEnd();
+        }, DispatcherPriority.Loaded);
 
     private void OnStagePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -89,6 +118,16 @@ public partial class MeetingStageView : UserControl
         OpenMedia(_stage.MediaPageUri);
     }
 
+    private void ParkMediaHost()
+    {
+        if (_stage is not { IsMediaOpen: true }) return;
+        if (MediaHost.Children.OfType<InAppMediaHost>().FirstOrDefault() is not { } host) return;
+
+        MediaHost.Children.Remove(host);
+        MeetingMediaParking.Park(host);
+        _ = host.SetPipModeAsync(true);
+    }
+
     private async Task TearDownMediaAsync()
     {
         var hosts = MediaHost.Children.OfType<InAppMediaHost>().ToList();
@@ -99,12 +138,28 @@ public partial class MeetingStageView : UserControl
         }
 
         MediaHost.Children.Clear();
+        // Only kill the parked PiP host when the meeting itself is ending (not when parking).
+        if (_stage is not { IsMediaOpen: true })
+            await MeetingMediaParking.ShutdownAsync();
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void OpenMedia(Uri uri)
     {
-        if (MediaHost.Children.OfType<InAppMediaHost>().FirstOrDefault() is not { } host)
+        var host = MediaHost.Children.OfType<InAppMediaHost>().FirstOrDefault();
+        var reclaimed = false;
+        if (host is null)
+        {
+            host = MeetingMediaParking.Take();
+            if (host is not null)
+            {
+                reclaimed = true;
+                MediaHost.Children.Clear();
+                MediaHost.Children.Add(host);
+            }
+        }
+
+        if (host is null)
         {
             host = new InAppMediaHost();
             host.SetLeaveHandler(() =>
@@ -115,9 +170,10 @@ public partial class MeetingStageView : UserControl
             host.MediaStateChanged += () =>
             {
                 if (_stage is null) return;
+                // Avoid layout→preferred-media reapply racing cam/mic clicks.
                 _stage.IsCameraOn = host.IsCameraEnabled;
                 _stage.IsMicOn = host.IsMicEnabled;
-                LayoutMediaHost(host);
+                _stage.IsScreenShareOn = host.IsScreenShareEnabled;
             };
             host.ActiveSpeakersChanged += ids =>
             {
@@ -146,12 +202,17 @@ public partial class MeetingStageView : UserControl
 
         if (_stage is not null)
         {
+            host.ApplyPreferredMedia(_stage.IsCameraOn, _stage.IsMicOn);
             _stage.ToggleCameraHandler = () => host.ToggleCameraAsync();
             _stage.ToggleMicHandler = () => host.ToggleMicAsync();
+            _stage.ToggleScreenShareHandler = () => host.ToggleScreenShareAsync();
         }
 
         host.Show(uri);
         LayoutMediaHost(host);
+        _ = host.SetPipModeAsync(false);
+        // Only enforce prefs when coming back from PiP — not on every OpenMedia.
+        if (reclaimed) _ = host.SyncPreferredMediaToPageAsync();
     }
 
     /// <summary>

@@ -33,7 +33,42 @@
             </StackPanel>
             <Border Classes="messagebubble" Classes.mine="{Binding IsMine}"
                     Classes.continuation="{Binding IsContinuation}">
-              <c:MarkdownText Markdown="{Binding Body}" TextWrapping="Wrap" LineHeight="19" FontSize="13" />
+              <StackPanel Spacing="6">
+                <c:MarkdownText Markdown="{Binding Body}" TextWrapping="Wrap" LineHeight="19" FontSize="13"
+                                IsVisible="{Binding HasBody}" />
+                <ItemsControl ItemsSource="{Binding Attachments}" IsVisible="{Binding HasAttachments}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:AttachmentViewModel">
+                      <StackPanel Margin="0,2,0,0" Spacing="4">
+                        <Border IsVisible="{Binding IsImage}" CornerRadius="8" ClipToBounds="True"
+                                Background="{StaticResource Brush.PanelRaised}" MaxWidth="220">
+                          <Panel>
+                            <TextBlock Classes="muted small" Margin="8" Text="Loading image…"
+                                       IsVisible="{Binding IsLoadingPreview}" />
+                            <Button Classes="ghost" Padding="0" Cursor="Hand" Background="Transparent"
+                                    Command="{Binding OpenFullscreenCommand}"
+                                    IsVisible="{Binding Preview, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                    ToolTip.Tip="View full screen">
+                              <Image Source="{Binding Preview}" MaxWidth="220" MaxHeight="180" Stretch="Uniform" />
+                            </Button>
+                          </Panel>
+                        </Border>
+                        <Button Classes="secondary" Padding="10,5" HorizontalAlignment="Left"
+                                Command="{Binding DownloadCommand}"
+                                IsVisible="{Binding ShowFileChip}"
+                                ToolTip.Tip="Save this file">
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <c:Icon Data="{StaticResource Icon.File}" Size="14" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding FileName}" MaxWidth="140" TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center" FontSize="12" />
+                            <TextBlock Classes="muted small" Text="{Binding SizeText}" VerticalAlignment="Center" />
+                          </StackPanel>
+                        </Button>
+                      </StackPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
             </Border>
           </StackPanel>
         </DockPanel>

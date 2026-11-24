@@ -315,7 +315,12 @@ internal sealed class FakeApi : IMeetJoeApi
     public Dictionary<Guid, byte[]> FileContents { get; } = new();
 
     public Task<FileDto> UploadFileAsync(
-        Guid? conversationId, Guid? channelId, string fileName, Stream content, CancellationToken ct = default)
+        Guid? conversationId,
+        Guid? channelId,
+        string fileName,
+        Stream content,
+        CancellationToken ct = default,
+        Guid? meetingId = null)
     {
         using var buffer = new MemoryStream();
         content.CopyTo(buffer);
@@ -324,7 +329,7 @@ internal sealed class FakeApi : IMeetJoeApi
         var contentType = FileTypes.ResolveContentType(fileName, buffer);
         var file = new FileDto(
             Guid.NewGuid(), fileName, contentType, bytes.Length, DateTimeOffset.Now,
-            MeSummary, conversationId, channelId, "Chat");
+            MeSummary, conversationId, channelId, meetingId is null ? "Chat" : "Meeting", meetingId);
         Files.Add(file);
         FileContents[file.Id] = bytes;
         return Task.FromResult(file);
@@ -420,9 +425,10 @@ internal sealed class FakeApi : IMeetJoeApi
     public Task<IReadOnlyList<MessageDto>> GetMeetingMessagesAsync(Guid meetingId, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<MessageDto>>([]);
 
-    public Task<MessageDto> SendMeetingChatAsync(Guid meetingId, string body, CancellationToken ct = default) =>
+    public Task<MessageDto> SendMeetingChatAsync(
+        Guid meetingId, string? body, CancellationToken ct = default, IReadOnlyList<Guid>? attachmentIds = null) =>
         Task.FromResult(new MessageDto(
-            Guid.NewGuid(), null, null, MeSummary, body, DateTimeOffset.Now, [], null, null, false, 0, null, meetingId));
+            Guid.NewGuid(), null, null, MeSummary, body ?? string.Empty, DateTimeOffset.Now, [], null, null, false, 0, null, meetingId));
 
     public Task<MeetingRecordingDto> StartRecordingAsync(Guid meetingId, CancellationToken ct = default) =>
         Task.FromResult(new MeetingRecordingDto(
@@ -542,7 +548,8 @@ internal sealed class FakeRealtime(FakeApi api) : IRealtimeClient
     public Task RejectAsync(Guid meetingId, Guid userId) => Task.CompletedTask;
     public Task RemoveParticipantAsync(Guid meetingId, Guid userId) => Task.CompletedTask;
     public Task MuteParticipantAsync(Guid meetingId, Guid userId) => Task.CompletedTask;
-    public Task<MessageDto> SendMeetingChatAsync(Guid meetingId, string body) => api.SendMeetingChatAsync(meetingId, body);
+    public Task<MessageDto> SendMeetingChatAsync(Guid meetingId, string? body, IReadOnlyList<Guid>? attachmentIds = null) =>
+        api.SendMeetingChatAsync(meetingId, body, attachmentIds: attachmentIds);
     public Task<CallJoinDto> AnswerCallAsync(Guid callId) => api.AnswerCallAsync(callId);
     public Task DeclineCallAsync(Guid callId) => api.DeclineCallAsync(callId);
     public Task HangUpCallAsync(Guid callId) => api.HangUpCallAsync(callId);
