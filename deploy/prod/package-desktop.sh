@@ -7,6 +7,8 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PUBLISH="$ROOT/artifacts/publish"
 OUT="$ROOT/artifacts/downloads"
 STAGE="$ROOT/artifacts/package-stage"
+VERSION="$(sed -n 's/.*<Version>\([^<]*\)<\/Version>.*/\1/p' "$ROOT/Directory.Build.props" | head -1)"
+VERSION="${VERSION:-0.0.0}"
 
 export PATH="${HOME}/.dotnet:${PATH}"
 export DOTNET_ROOT="${HOME}/.dotnet"
@@ -14,7 +16,7 @@ export DOTNET_CLI_TELEMETRY_OPTOUT=1
 
 mkdir -p "$OUT" "$STAGE"
 
-echo "==> Publish osx-arm64"
+echo "==> Publish osx-arm64 (v${VERSION})"
 dotnet publish "$ROOT/src/MeetJoe.Desktop/MeetJoe.Desktop.csproj" \
   -c Release -r osx-arm64 --self-contained true \
   -o "$PUBLISH/osx-arm64"
@@ -27,43 +29,23 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 rsync -a --delete "$PUBLISH/osx-arm64/" "$APP/Contents/MacOS/"
 chmod +x "$APP/Contents/MacOS/MeetJoe"
 
-cat > "$APP/Contents/Info.plist" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>CFBundleDevelopmentRegion</key>
-	<string>en</string>
-	<key>CFBundleExecutable</key>
-	<string>MeetJoe</string>
-	<key>CFBundleIdentifier</key>
-	<string>com.joesolutions.meetjoe</string>
-	<key>CFBundleInfoDictionaryVersion</key>
-	<string>6.0</string>
-	<key>CFBundleName</key>
-	<string>MeetJoe</string>
-	<key>CFBundleDisplayName</key>
-	<string>MeetJoe</string>
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
-	<key>CFBundleShortVersionString</key>
-	<string>0.1.1</string>
-	<key>CFBundleVersion</key>
-	<string>0.1.1</string>
-	<key>LSMinimumSystemVersion</key>
-	<string>12.0</string>
-	<key>NSHighResolutionCapable</key>
-	<true/>
-	<key>NSCameraUsageDescription</key>
-	<string>MeetJoe uses the camera for video calls and meetings.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>MeetJoe uses the microphone so you can talk in calls and meetings.</string>
-</dict>
-</plist>
-PLIST
+# Canonical Info.plist + icon (TCC prompts require usage strings + a real .app bundle).
+cp "$ROOT/src/MeetJoe.Desktop/Info.plist" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" "$APP/Contents/Info.plist"
+ICON_SRC="$ROOT/src/MeetJoe.Desktop/Assets/AppIcon.icns"
+if [[ ! -f "$ICON_SRC" ]]; then
+  echo "Missing AppIcon.icns at $ICON_SRC" >&2
+  exit 1
+fi
+cp "$ICON_SRC" "$APP/Contents/Resources/AppIcon.icns"
 
-# Ad-hoc sign so macOS will launch the .app (not notarized — first open may need right-click → Open).
-codesign --force --deep --sign - "$APP" 2>/dev/null || true
+ENTITLEMENTS="$ROOT/src/MeetJoe.Desktop/MeetJoe.entitlements"
+# Ad-hoc sign with hardened runtime + entitlements so camera/mic TCC dialogs can appear.
+# Not notarized — first open may still need right-click → Open.
+codesign --force --deep --options runtime \
+  --entitlements "$ENTITLEMENTS" \
+  --sign - "$APP"
 
 echo "==> Build DMG"
 DMG_STAGE="$STAGE/dmg"
@@ -72,9 +54,10 @@ mkdir -p "$DMG_STAGE"
 cp -R "$APP" "$DMG_STAGE/MeetJoe.app"
 ln -sf /Applications "$DMG_STAGE/Applications"
 DMG_OUT="$OUT/MeetJoe-mac-arm64.dmg"
-rm -f "$DMG_OUT"
+rm -f "$DMG_OUT" "$OUT/MeetJoe-${VERSION}-mac-arm64.dmg"
 hdiutil create -volname "MeetJoe" -srcfolder "$DMG_STAGE" -ov -format UDZO "$DMG_OUT" >/dev/null
-echo "Wrote $DMG_OUT ($(du -h "$DMG_OUT" | cut -f1))"
+cp -f "$DMG_OUT" "$OUT/MeetJoe-${VERSION}-mac-arm64.dmg"
+echo "Wrote $DMG_OUT and MeetJoe-${VERSION}-mac-arm64.dmg ($(du -h "$DMG_OUT" | cut -f1))"
 
 echo "==> Publish win-x64"
 dotnet publish "$ROOT/src/MeetJoe.Desktop/MeetJoe.Desktop.csproj" \
@@ -90,15 +73,19 @@ WIN_NSIS="$STAGE/nsis"
 rm -rf "$WIN_NSIS"
 mkdir -p "$WIN_NSIS/win-payload"
 rsync -a --delete "$PUBLISH/win-x64/" "$WIN_NSIS/win-payload/"
-cp "$ROOT/deploy/prod/meetjoe-win.nsi" "$WIN_NSIS/meetjoe-win.nsi"
+# Inject current semver into the NSIS script.
+sed "s/^!define APP_VERSION .*/!define APP_VERSION \"${VERSION}\"/" \
+  "$ROOT/deploy/prod/meetjoe-win.nsi" > "$WIN_NSIS/meetjoe-win.nsi"
 (
   cd "$WIN_NSIS"
   makensis -V2 meetjoe-win.nsi
 )
 WIN_OUT="$OUT/MeetJoe-Setup-win-x64.exe"
-rm -f "$WIN_OUT"
+rm -f "$WIN_OUT" "$OUT/MeetJoe-${VERSION}-Setup-win-x64.exe"
 mv "$WIN_NSIS/MeetJoe-Setup-win-x64.exe" "$WIN_OUT"
-echo "Wrote $WIN_OUT ($(du -h "$WIN_OUT" | cut -f1))"
+cp -f "$WIN_OUT" "$OUT/MeetJoe-${VERSION}-Setup-win-x64.exe"
+echo "Wrote $WIN_OUT and MeetJoe-${VERSION}-Setup-win-x64.exe ($(du -h "$WIN_OUT" | cut -f1))"
 
 echo "Done."
-ls -lh "$OUT"/MeetJoe-mac-arm64.dmg "$OUT"/MeetJoe-Setup-win-x64.exe
+ls -lh "$OUT"/MeetJoe-mac-arm64.dmg "$OUT"/MeetJoe-Setup-win-x64.exe \
+  "$OUT"/MeetJoe-${VERSION}-mac-arm64.dmg "$OUT"/MeetJoe-${VERSION}-Setup-win-x64.exe

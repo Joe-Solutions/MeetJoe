@@ -1,5 +1,6 @@
 #if OSX
 using System.Runtime.InteropServices;
+using Avalonia.Threading;
 using Foundation;
 using ObjCRuntime;
 
@@ -8,7 +9,8 @@ namespace MeetJoe.Desktop;
 /// <summary>
 /// Triggers the real macOS TCC camera/mic dialog via AVFoundation.
 /// WKWebView Grant alone is not enough — the host process must be authorized,
-/// and the process must run from an .app bundle that includes Info.plist usage strings.
+/// and the process must run from an .app bundle that includes Info.plist usage strings
+/// plus camera/mic entitlements when signed with hardened runtime.
 /// </summary>
 internal static class MacOsMediaPermissions
 {
@@ -19,12 +21,25 @@ internal static class MacOsMediaPermissions
 
     private delegate void AccessCallback(bool granted);
 
-    public static Task<bool> EnsureAsync(string kind) =>
-        kind.Equals("mic", StringComparison.OrdinalIgnoreCase)
-            ? EnsureMediaAsync(MediaAudio)
-            : EnsureMediaAsync(MediaVideo);
+    public static Task<bool> EnsureAsync(string kind)
+    {
+        var mediaType = kind.Equals("mic", StringComparison.OrdinalIgnoreCase) ? MediaAudio : MediaVideo;
+        if (Dispatcher.UIThread.CheckAccess())
+            return BeginRequest(mediaType);
 
-    private static Task<bool> EnsureMediaAsync(string mediaType)
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Dispatcher.UIThread.Post(() =>
+        {
+            BeginRequest(mediaType).ContinueWith(
+                t => tcs.TrySetResult(t is { IsCompletedSuccessfully: true, Result: true }),
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        });
+        return tcs.Task;
+    }
+
+    private static Task<bool> BeginRequest(string mediaType)
     {
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         try
@@ -32,7 +47,7 @@ internal static class MacOsMediaPermissions
             var cls = Class.GetHandle("AVCaptureDevice");
             if (cls == IntPtr.Zero)
             {
-                tcs.TrySetResult(true);
+                tcs.TrySetResult(false);
                 return tcs.Task;
             }
 
@@ -48,6 +63,7 @@ internal static class MacOsMediaPermissions
 
             if (status != StatusNotDetermined)
             {
+                // Denied / Restricted — macOS will not show another dialog.
                 tcs.TrySetResult(false);
                 return tcs.Task;
             }
@@ -69,7 +85,7 @@ internal static class MacOsMediaPermissions
         }
         catch
         {
-            tcs.TrySetResult(true);
+            tcs.TrySetResult(false);
         }
 
         return tcs.Task;

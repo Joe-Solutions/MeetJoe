@@ -14,6 +14,9 @@ fi
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$PLIST" "$APP/Contents/Info.plist"
+if [[ -f "$ROOT/src/MeetJoe.Desktop/Assets/AppIcon.icns" ]]; then
+  cp "$ROOT/src/MeetJoe.Desktop/Assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+fi
 # Launcher keeps deps next to the real binary (output dir) while presenting a bundle id to macOS.
 cat > "$APP/Contents/MacOS/MeetJoe" <<EOF
 #!/bin/bash
