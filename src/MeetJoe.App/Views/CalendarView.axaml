@@ -106,7 +106,7 @@
             <StackPanel Spacing="12">
               <TextBlock Classes="h2" FontSize="20" Text="Pick a date" />
               <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
-                         Text="Days with scheduled meetings are highlighted. Select a day to see its meetings below." />
+                         Text="Days with scheduled meetings are highlighted. Today also lists live Meet now rooms. Select a day to see its meetings below." />
 
               <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,6,0,4">
                 <TextBlock Classes="h2" FontSize="18" VerticalAlignment="Center" Text="{Binding MonthLabel}" />

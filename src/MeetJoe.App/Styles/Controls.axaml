@@ -66,6 +66,21 @@
     <Setter Property="CaretBrush" Value="{DynamicResource Brush.Accent}" />
   </Style>
 
+  <!-- Single-line composer for meeting / call chat (aligned with Send). -->
+  <Style Selector="TextBox.roomcomposer">
+    <Setter Property="AcceptsReturn" Value="False" />
+    <Setter Property="TextWrapping" Value="NoWrap" />
+    <Setter Property="MinHeight" Value="38" />
+    <Setter Property="MaxHeight" Value="38" />
+    <Setter Property="Padding" Value="12,0" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="TextBox.roomcomposer /template/ TextBlock#PART_Watermark">
+    <Setter Property="TextWrapping" Value="NoWrap" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+
   <!-- A text box with no chrome of its own, for use inside the composer. -->
   <Style Selector="TextBox.bare">
     <Setter Property="Background" Value="Transparent" />

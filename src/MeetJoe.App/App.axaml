@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:MeetJoe.App.ViewModels"
              xmlns:v="using:MeetJoe.App.Views"
+             xmlns:c="using:MeetJoe.App.Controls"
              x:Class="MeetJoe.App.App"
              RequestedThemeVariant="Dark">
   <Application.Resources>
@@ -10,6 +11,33 @@
         <ResourceInclude Source="avares://MeetJoe.App/Styles/Tokens.axaml" />
         <ResourceInclude Source="avares://MeetJoe.App/Styles/Icons.axaml" />
       </ResourceDictionary.MergedDictionaries>
+
+      <!-- DM-style bubbles for meeting / call room chat -->
+      <DataTemplate x:Key="RoomChatMessageTemplate" x:DataType="vm:RoomChatMessageViewModel">
+        <DockPanel Classes="message" Classes.first="{Binding StartsGroup}"
+                   Classes.mine="{Binding IsMine}" Classes.continuation="{Binding IsContinuation}"
+                   MaxWidth="260">
+          <Panel DockPanel.Dock="Left" Width="36" IsVisible="{Binding !IsMine}">
+            <c:Avatar Width="28" Height="28" VerticalAlignment="Top" Margin="0,2,0,0"
+                      DisplayName="{Binding Sender.DisplayName}" Photo="{Binding Sender.Photo}"
+                      IsVisible="{Binding ShowAvatar}"
+                      Surface="{StaticResource Brush.Panel}" />
+          </Panel>
+          <StackPanel Classes="messagebody" Classes.mine="{Binding IsMine}" Spacing="2">
+            <StackPanel Classes="messagemeta" Classes.mine="{Binding IsMine}"
+                        Orientation="Horizontal" Spacing="6"
+                        IsVisible="{Binding StartsGroup}">
+              <TextBlock Text="{Binding Sender.DisplayName}" FontWeight="Bold" FontSize="12"
+                         IsVisible="{Binding !IsMine}" />
+              <TextBlock Classes="muted" FontSize="11" VerticalAlignment="Center" Text="{Binding TimeText}" />
+            </StackPanel>
+            <Border Classes="messagebubble" Classes.mine="{Binding IsMine}"
+                    Classes.continuation="{Binding IsContinuation}">
+              <c:MarkdownText Markdown="{Binding Body}" TextWrapping="Wrap" LineHeight="19" FontSize="13" />
+            </Border>
+          </StackPanel>
+        </DockPanel>
+      </DataTemplate>
     </ResourceDictionary>
   </Application.Resources>
 

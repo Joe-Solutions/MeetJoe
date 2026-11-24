@@ -134,7 +134,10 @@ public partial class CallsViewModel : ViewModelBase
     }
 
     public ObservableCollection<CallHistoryItemViewModel> History { get; } = [];
-    public ObservableCollection<MessageDto> ChatMessages { get; } = [];
+    public ObservableCollection<RoomChatMessageViewModel> ChatMessages { get; } = [];
+    public IReadOnlyList<string> EmojiPalette => RoomChatMessageViewModel.EmojiPalette;
+
+    [ObservableProperty] private bool _showEmojiPicker;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsEmpty))]
@@ -167,7 +170,9 @@ public partial class CallsViewModel : ViewModelBase
     /// <summary>Full immersive stage vs Teams-style floating bar while browsing.</summary>
     [ObservableProperty] private bool _isStageExpanded;
 
-    [ObservableProperty] private bool _showAddPeople;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowConnectingTiles))]
+    private bool _showAddPeople;
     [ObservableProperty] private string? _addPeopleStatus;
 
     [ObservableProperty]
@@ -179,6 +184,11 @@ public partial class CallsViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowChatPanel))]
     private bool _showPeoplePanel = true;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasUnreadChat))]
+    [NotifyPropertyChangedFor(nameof(UnreadChatBadge))]
+    private int _unreadChatCount;
+
     [ObservableProperty] private string _chatDraft = string.Empty;
 
     [ObservableProperty] private bool _isCameraOn = true;
@@ -188,13 +198,23 @@ public partial class CallsViewModel : ViewModelBase
     /// True once the LiveKit page reports it is connected and painting. Until then the
     /// Avalonia roster grid stays visible so the stage is never blank.
     /// </summary>
-    [ObservableProperty] private bool _isLiveKitSurfaceReady;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowConnectingTiles))]
+    private bool _isLiveKitSurfaceReady;
+
+    /// <summary>
+    /// Avalonia roster tiles while LiveKit is connecting, or while the native WebView is
+    /// hidden so the Add people dialog can paint above it on macOS.
+    /// </summary>
+    public bool ShowConnectingTiles => ShowAddPeople || !IsLiveKitSurfaceReady;
 
     public ObservableCollection<PersonViewModel> InviteSuggestions { get; } = [];
     public ObservableCollection<CallRosterItemViewModel> Roster { get; } = [];
 
     public bool HasInviteSuggestions => InviteSuggestions.Count > 0;
     public bool ShowChatPanel => !ShowPeoplePanel;
+    public bool HasUnreadChat => UnreadChatCount > 0;
+    public string UnreadChatBadge => UnreadChatCount > 99 ? "99+" : UnreadChatCount.ToString();
 
     /// <summary>Wired by the shell to the LiveKit WebView host.</summary>
     public Func<Task>? ToggleCameraHandler { get; set; }
@@ -388,6 +408,8 @@ public partial class CallsViewModel : ViewModelBase
         IsStageExpanded = false;
         ShowAddPeople = false;
         ShowPeoplePanel = true;
+        UnreadChatCount = 0;
+        ShowEmojiPicker = false;
         ChatDraft = string.Empty;
         ChatMessages.Clear();
         ToggleCameraHandler = null;
@@ -461,7 +483,16 @@ public partial class CallsViewModel : ViewModelBase
     private void ShowPeople() => ShowPeoplePanel = true;
 
     [RelayCommand]
-    private void ShowChat() => ShowPeoplePanel = false;
+    private void ShowChat()
+    {
+        ShowPeoplePanel = false;
+        UnreadChatCount = 0;
+    }
+
+    partial void OnShowPeoplePanelChanged(bool value)
+    {
+        if (!value) UnreadChatCount = 0;
+    }
 
     [RelayCommand]
     private async Task ToggleCameraAsync()
@@ -547,18 +578,30 @@ public partial class CallsViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private void ToggleEmojiPicker() => ShowEmojiPicker = !ShowEmojiPicker;
+
+    [RelayCommand]
+    private void InsertEmoji(string emoji)
+    {
+        if (string.IsNullOrEmpty(emoji)) return;
+        ChatDraft += emoji;
+        ShowEmojiPicker = false;
+    }
+
+    [RelayCommand]
     private async Task SendChatAsync()
     {
         if (string.IsNullOrWhiteSpace(ChatDraft) || ActiveCall is null) return;
         var body = ChatDraft.Trim();
         ChatDraft = string.Empty;
+        ShowEmojiPicker = false;
         try
         {
             var request = new SendMessageRequest(ActiveCall.ConversationId, null, body, null);
             var sent = _context.Realtime.IsConnected
                 ? await _context.Realtime.SendMessageAsync(request)
                 : await _context.Api.SendMessageAsync(request);
-            if (ChatMessages.All(m => m.Id != sent.Id)) ChatMessages.Add(sent);
+            RoomChatMessageViewModel.TryAdd(ChatMessages, sent, _context);
         }
         catch
         {
@@ -675,7 +718,8 @@ public partial class CallsViewModel : ViewModelBase
         {
             var messages = await _context.Api.GetMessagesAsync(ActiveCall.ConversationId, null, null);
             foreach (var message in messages.OrderBy(m => m.CreatedAt))
-                ChatMessages.Add(message);
+                ChatMessages.Add(new RoomChatMessageViewModel(message, _context));
+            RoomChatMessageViewModel.ApplyGrouping(ChatMessages);
         }
         catch
         {
@@ -686,7 +730,9 @@ public partial class CallsViewModel : ViewModelBase
     private void OnConversationMessage(MessageDto message)
     {
         if (ActiveCall is null || message.ConversationId != ActiveCall.ConversationId) return;
-        if (ChatMessages.All(m => m.Id != message.Id)) ChatMessages.Add(message);
+        if (!RoomChatMessageViewModel.TryAdd(ChatMessages, message, _context)) return;
+        if (!ShowChatPanel && message.Sender.Id != _context.People.MyId)
+            UnreadChatCount++;
     }
 
     private void RefreshRoster()

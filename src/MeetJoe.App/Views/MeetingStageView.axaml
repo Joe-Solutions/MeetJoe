@@ -17,11 +17,12 @@
         </StackPanel>
       </Border>
 
-      <!-- Avalonia tiles stay visible; LiveKit WebView is an uncovered PiP for A/V. -->
+      <!-- LiveKit WebView fills the stage grid; Avalonia tiles only while connecting. -->
       <Panel Grid.Row="1" Background="{StaticResource Brush.Rail}">
         <ItemsControl ItemsSource="{Binding Stage.Meeting.Participants}" Margin="16"
                       VerticalAlignment="Center" HorizontalAlignment="Stretch"
-                      IsHitTestVisible="False" ZIndex="1">
+                      IsHitTestVisible="False" ZIndex="1"
+                      IsVisible="{Binding Stage.ShowConnectingTiles}">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
               <UniformGrid Columns="{Binding $parent[UserControl].((vm:CalendarViewModel)DataContext).Stage.ParticipantGridColumns}" />
@@ -71,9 +72,8 @@
         </ItemsControl>
 
         <Panel x:Name="MediaHost"
-               Width="320" Height="180"
-               HorizontalAlignment="Left" VerticalAlignment="Bottom"
-               Margin="12" ZIndex="5"
+               HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+               ZIndex="5"
                IsHitTestVisible="False" />
       </Panel>
 
@@ -93,6 +93,12 @@
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <c:Icon Data="{StaticResource Icon.ChatBubble}" Size="15" />
                 <TextBlock Text="Chat" VerticalAlignment="Center" />
+                <Border IsVisible="{Binding Stage.HasUnreadChat}" Background="{StaticResource Brush.Accent}"
+                        CornerRadius="9" MinWidth="18" Height="18" Padding="5,0" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding Stage.UnreadChatBadge}" FontSize="11" FontWeight="Bold"
+                             Foreground="{StaticResource Brush.OnAccent}"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
               </StackPanel>
             </Button>
           </StackPanel>
@@ -146,26 +152,41 @@
             </ScrollViewer>
           </DockPanel>
 
-          <!-- Meeting chat -->
+          <!-- Meeting chat (DM-style bubbles) -->
           <Grid Grid.Row="1" RowDefinitions="*,Auto" IsVisible="{Binding Stage.ShowChatPanel}">
-            <ScrollViewer Margin="12,8,12,0">
-              <ItemsControl ItemsSource="{Binding Stage.ChatMessages}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="contracts:MessageDto">
-                    <StackPanel Margin="0,0,0,10" Spacing="2">
-                      <TextBlock FontWeight="SemiBold" FontSize="12" Text="{Binding Sender.DisplayName}" />
-                      <TextBlock TextWrapping="Wrap" FontSize="13" Text="{Binding Body}" />
-                    </StackPanel>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
+            <ScrollViewer Margin="8,8,8,0">
+              <ItemsControl ItemsSource="{Binding Stage.ChatMessages}"
+                            ItemTemplate="{StaticResource RoomChatMessageTemplate}"
+                            VerticalAlignment="Bottom" />
             </ScrollViewer>
-            <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="10">
-              <TextBox x:Name="LiveChatComposer" Text="{Binding Stage.ChatDraft}"
-                       Watermark="Message the room" />
-              <Button Grid.Column="1" Classes="primary" Margin="6,0,0,0" Content="Send"
-                      ToolTip.Tip="Send (Enter)" Command="{Binding Stage.SendChatCommand}" />
-            </Grid>
+            <StackPanel Grid.Row="1" Margin="8,6,8,8" Spacing="4">
+              <Border Classes="emojipicker" IsVisible="{Binding Stage.ShowEmojiPicker}">
+                <ItemsControl ItemsSource="{Binding Stage.EmojiPalette}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <WrapPanel />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="x:String">
+                      <Button Classes="emoji" Content="{Binding}"
+                              Command="{Binding $parent[UserControl].((vm:CalendarViewModel)DataContext).Stage.InsertEmojiCommand}"
+                              CommandParameter="{Binding}" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </Border>
+              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+                <Button Classes="ghost square" VerticalAlignment="Center" ToolTip.Tip="Emoji"
+                        Command="{Binding Stage.ToggleEmojiPickerCommand}">
+                  <c:Icon Data="{StaticResource Icon.Smile}" Size="16" />
+                </Button>
+                <TextBox x:Name="LiveChatComposer" Grid.Column="1" Classes="roomcomposer"
+                         Text="{Binding Stage.ChatDraft}" Watermark="Message the room" />
+                <Button Grid.Column="2" Classes="primary" Content="Send" VerticalAlignment="Center"
+                        ToolTip.Tip="Send (Enter)" Command="{Binding Stage.SendChatCommand}" />
+              </Grid>
+            </StackPanel>
           </Grid>
         </Grid>
       </Border>
@@ -197,7 +218,16 @@
           </Button>
           <Button Classes="secondary" Width="52" Height="52" Padding="0" CornerRadius="26"
                   ToolTip.Tip="Chat" Command="{Binding Stage.ShowChatCommand}">
-            <c:Icon Data="{StaticResource Icon.ChatBubble}" Size="22" />
+            <Panel>
+              <c:Icon Data="{StaticResource Icon.ChatBubble}" Size="22" />
+              <Border IsVisible="{Binding Stage.HasUnreadChat}" Background="{StaticResource Brush.Accent}"
+                      CornerRadius="8" MinWidth="16" Height="16" Padding="4,0"
+                      HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-2,-2,0">
+                <TextBlock Text="{Binding Stage.UnreadChatBadge}" FontSize="10" FontWeight="Bold"
+                           Foreground="{StaticResource Brush.OnAccent}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+            </Panel>
           </Button>
           <Button Classes="secondary" Width="52" Height="52" Padding="0" CornerRadius="26"
                   ToolTip.Tip="Add people" Command="{Binding Stage.BeginAddPeopleCommand}">
@@ -299,24 +329,39 @@
               Background="{StaticResource Brush.Panel}">
         <Grid RowDefinitions="Auto,*,Auto">
           <TextBlock Classes="h2" Margin="14,12" Text="Meeting chat" />
-          <ScrollViewer Grid.Row="1" Margin="12,0">
-            <ItemsControl ItemsSource="{Binding Stage.ChatMessages}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="contracts:MessageDto">
-                  <StackPanel Margin="0,0,0,10" Spacing="2">
-                    <TextBlock FontWeight="SemiBold" FontSize="12" Text="{Binding Sender.DisplayName}" />
-                    <TextBlock TextWrapping="Wrap" FontSize="13" Text="{Binding Body}" />
-                  </StackPanel>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+          <ScrollViewer Grid.Row="1" Margin="8,0">
+            <ItemsControl ItemsSource="{Binding Stage.ChatMessages}"
+                          ItemTemplate="{StaticResource RoomChatMessageTemplate}"
+                          VerticalAlignment="Bottom" />
           </ScrollViewer>
-          <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="10" IsVisible="{Binding !Stage.InLobby}">
-            <TextBox x:Name="LobbyChatComposer" Text="{Binding Stage.ChatDraft}"
-                     Watermark="Message the room" />
-            <Button Grid.Column="1" Classes="primary" Margin="6,0,0,0" Content="Send"
-                    ToolTip.Tip="Send (Enter)" Command="{Binding Stage.SendChatCommand}" />
-          </Grid>
+          <StackPanel Grid.Row="2" Margin="8,6,8,8" Spacing="4" IsVisible="{Binding !Stage.InLobby}">
+            <Border Classes="emojipicker" IsVisible="{Binding Stage.ShowEmojiPicker}">
+              <ItemsControl ItemsSource="{Binding Stage.EmojiPalette}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="x:String">
+                    <Button Classes="emoji" Content="{Binding}"
+                            Command="{Binding $parent[UserControl].((vm:CalendarViewModel)DataContext).Stage.InsertEmojiCommand}"
+                            CommandParameter="{Binding}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Border>
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+              <Button Classes="ghost square" VerticalAlignment="Center" ToolTip.Tip="Emoji"
+                      Command="{Binding Stage.ToggleEmojiPickerCommand}">
+                <c:Icon Data="{StaticResource Icon.Smile}" Size="16" />
+              </Button>
+              <TextBox x:Name="LobbyChatComposer" Grid.Column="1" Classes="roomcomposer"
+                       Text="{Binding Stage.ChatDraft}" Watermark="Message the room" />
+              <Button Grid.Column="2" Classes="primary" Content="Send" VerticalAlignment="Center"
+                      ToolTip.Tip="Send (Enter)" Command="{Binding Stage.SendChatCommand}" />
+            </Grid>
+          </StackPanel>
         </Grid>
       </Border>
 

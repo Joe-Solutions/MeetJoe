@@ -189,7 +189,9 @@ public partial class MeetingStageViewModel : ViewModelBase
     [ObservableProperty] private bool _inLobby;
     [ObservableProperty] private string _chatDraft = string.Empty;
     [ObservableProperty] private bool _handRaised;
-    [ObservableProperty] private bool _showAddPeople;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowConnectingTiles))]
+    private bool _showAddPeople;
     [ObservableProperty] private string? _addPeopleStatus;
     [ObservableProperty] private bool _isMediaOpen;
 
@@ -197,7 +199,15 @@ public partial class MeetingStageViewModel : ViewModelBase
     [ObservableProperty] private bool _isMicOn = true;
 
     /// <summary>True once LiveKit reports media-ready; Avalonia tiles hide so the WebView can paint.</summary>
-    [ObservableProperty] private bool _isLiveKitSurfaceReady;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowConnectingTiles))]
+    private bool _isLiveKitSurfaceReady;
+
+    /// <summary>
+    /// Avalonia participant tiles while LiveKit is connecting, or while the native WebView is
+    /// hidden so the Add people dialog can paint above it on macOS.
+    /// </summary>
+    public bool ShowConnectingTiles => ShowAddPeople || !IsLiveKitSurfaceReady;
 
     /// <summary>Wired by the meeting stage view to the LiveKit WebView host.</summary>
     public Func<Task>? ToggleCameraHandler { get; set; }
@@ -239,7 +249,14 @@ public partial class MeetingStageViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowChatPanel))]
     private bool _showPeoplePanel = true;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasUnreadChat))]
+    [NotifyPropertyChangedFor(nameof(UnreadChatBadge))]
+    private int _unreadChatCount;
+
     public bool ShowChatPanel => !ShowPeoplePanel;
+    public bool HasUnreadChat => UnreadChatCount > 0;
+    public string UnreadChatBadge => UnreadChatCount > 99 ? "99+" : UnreadChatCount.ToString();
     public bool HasInviteSuggestions => InviteSuggestions.Count > 0;
 
     /// <summary>Meet-style tile columns for the center participant grid.</summary>
@@ -252,8 +269,11 @@ public partial class MeetingStageViewModel : ViewModelBase
             _ => 4,
         };
 
-    public ObservableCollection<MessageDto> ChatMessages { get; } = [];
+    public ObservableCollection<RoomChatMessageViewModel> ChatMessages { get; } = [];
     public ObservableCollection<PersonViewModel> InviteSuggestions { get; } = [];
+    public IReadOnlyList<string> EmojiPalette => RoomChatMessageViewModel.EmojiPalette;
+
+    [ObservableProperty] private bool _showEmojiPicker;
 
     partial void OnInviteQueryChanged(string value) => RefreshInviteSuggestions();
     partial void OnMeetingChanged(MeetingViewModel value) => OnPropertyChanged(nameof(ParticipantGridColumns));
@@ -273,6 +293,8 @@ public partial class MeetingStageViewModel : ViewModelBase
     {
         IsMediaOpen = false;
         IsLiveKitSurfaceReady = false;
+        UnreadChatCount = 0;
+        ShowEmojiPicker = false;
         ToggleCameraHandler = null;
         ToggleMicHandler = null;
         _context.Realtime.MeetingUpdated -= OnMeetingUpdated;
@@ -305,7 +327,16 @@ public partial class MeetingStageViewModel : ViewModelBase
     private void ShowPeople() => ShowPeoplePanel = true;
 
     [RelayCommand]
-    private void ShowChat() => ShowPeoplePanel = false;
+    private void ShowChat()
+    {
+        ShowPeoplePanel = false;
+        UnreadChatCount = 0;
+    }
+
+    partial void OnShowPeoplePanelChanged(bool value)
+    {
+        if (!value) UnreadChatCount = 0;
+    }
 
     [RelayCommand]
     private async Task ToggleCameraAsync()
@@ -481,17 +512,29 @@ public partial class MeetingStageViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private void ToggleEmojiPicker() => ShowEmojiPicker = !ShowEmojiPicker;
+
+    [RelayCommand]
+    private void InsertEmoji(string emoji)
+    {
+        if (string.IsNullOrEmpty(emoji)) return;
+        ChatDraft += emoji;
+        ShowEmojiPicker = false;
+    }
+
+    [RelayCommand]
     private async Task SendChatAsync()
     {
         if (string.IsNullOrWhiteSpace(ChatDraft) || InLobby) return;
         var body = ChatDraft;
         ChatDraft = string.Empty;
+        ShowEmojiPicker = false;
         try
         {
             var sent = _context.Realtime.IsConnected
                 ? await _context.Realtime.SendMeetingChatAsync(Id, body)
                 : await _context.Api.SendMeetingChatAsync(Id, body);
-            if (ChatMessages.All(m => m.Id != sent.Id)) ChatMessages.Add(sent);
+            RoomChatMessageViewModel.TryAdd(ChatMessages, sent, _context);
         }
         catch
         {
@@ -505,7 +548,9 @@ public partial class MeetingStageViewModel : ViewModelBase
         {
             var messages = await _context.Api.GetMeetingMessagesAsync(Id);
             ChatMessages.Clear();
-            foreach (var message in messages) ChatMessages.Add(message);
+            foreach (var message in messages)
+                ChatMessages.Add(new RoomChatMessageViewModel(message, _context));
+            RoomChatMessageViewModel.ApplyGrouping(ChatMessages);
         }
         catch
         {
@@ -529,7 +574,9 @@ public partial class MeetingStageViewModel : ViewModelBase
     private void OnMeetingChat(MessageDto message)
     {
         if (message.MeetingId != Id) return;
-        if (ChatMessages.All(m => m.Id != message.Id)) ChatMessages.Add(message);
+        if (!RoomChatMessageViewModel.TryAdd(ChatMessages, message, _context)) return;
+        if (!ShowChatPanel && message.Sender.Id != _context.People.MyId)
+            UnreadChatCount++;
     }
 
     private void OnRemoved(Guid meetingId, Guid userId)
@@ -662,8 +709,9 @@ public partial class CalendarViewModel : ViewModelBase
             foreach (var meeting in calendar.Where(m => m.StartsAt >= dayStart && m.StartsAt < dayEnd.AddDays(7)))
                 Upcoming.Add(new MeetingViewModel(meeting, _context.People));
 
+            // Date grid + “On this day” are for scheduled items; Meet now rooms live under Happening now.
             _scheduledMeetings.Clear();
-            foreach (var meeting in calendar.OrderBy(m => m.StartsAt))
+            foreach (var meeting in calendar.Where(m => m.IsScheduled).OrderBy(m => m.StartsAt))
                 _scheduledMeetings.Add(new MeetingViewModel(meeting, _context.People));
 
             InviteCandidates.Clear();
@@ -777,10 +825,23 @@ public partial class CalendarViewModel : ViewModelBase
         if (ScheduleSelectedDate is not { } selected) return;
 
         var day = selected.Date;
+        var seen = new HashSet<Guid>();
         foreach (var meeting in _scheduledMeetings
                      .Where(m => m.StartsAt.ToLocalTime().Date == day)
                      .OrderBy(m => m.StartsAt))
+        {
             SelectedDayMeetings.Add(meeting);
+            seen.Add(meeting.Id);
+        }
+
+        // Same calendar day: also surface live Meet now rooms so the right rail matches Happening now.
+        if (day == DateTime.Today)
+        {
+            foreach (var meeting in Meetings
+                         .Where(m => m.IsActive && !seen.Contains(m.Id) && m.StartsAt.ToLocalTime().Date == day)
+                         .OrderByDescending(m => m.StartsAt))
+                SelectedDayMeetings.Add(meeting);
+        }
 
         OnPropertyChanged(nameof(HasSelectedDayMeetings));
         OnPropertyChanged(nameof(SelectedDayMeetingsHeading));

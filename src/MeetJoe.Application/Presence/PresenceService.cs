@@ -1,4 +1,5 @@
 using MeetJoe.Application.Common;
+using MeetJoe.Application.Meetings;
 using MeetJoe.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Domain = MeetJoe.Domain;
@@ -9,7 +10,11 @@ namespace MeetJoe.Application.Presence;
 /// A user's visible status is Offline while they have no live connection, and otherwise the
 /// availability they chose.
 /// </summary>
-public sealed class PresenceService(IAppDbContext db, IPresenceStore store, IRealtimePublisher realtime)
+public sealed class PresenceService(
+    IAppDbContext db,
+    IPresenceStore store,
+    IRealtimePublisher realtime,
+    MeetingService meetings)
 {
     public async Task ConnectedAsync(Guid userId, string connectionId, CancellationToken ct = default)
     {
@@ -18,7 +23,11 @@ public sealed class PresenceService(IAppDbContext db, IPresenceStore store, IRea
 
     public async Task DisconnectedAsync(Guid userId, string connectionId, CancellationToken ct = default)
     {
-        if (await store.RemoveConnectionAsync(userId, connectionId)) await BroadcastAsync(userId, ct);
+        if (!await store.RemoveConnectionAsync(userId, connectionId)) return;
+
+        // Last connection dropped (quit, crash, or network). Free ghost meeting seats.
+        await meetings.LeavePresentMeetingsAsync(userId, ct);
+        await BroadcastAsync(userId, ct);
     }
 
     public async Task<PresenceDto> SetAvailabilityAsync(Guid userId, PresenceStatus status, CancellationToken ct = default)
