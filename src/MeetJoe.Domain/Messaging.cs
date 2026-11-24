@@ -78,7 +78,8 @@ public class ConversationMember(Guid conversationId, Guid userId, DateTimeOffset
     public Guid ConversationId { get; private set; } = conversationId;
     public Guid UserId { get; private set; } = userId;
     public DateTimeOffset JoinedAt { get; private set; } = joinedAt;
-    public DateTimeOffset LastReadAt { get; private set; } = joinedAt;
+    // One tick before join so messages created in the same instant as the membership still count as unread.
+    public DateTimeOffset LastReadAt { get; private set; } = joinedAt.AddTicks(-1);
     public bool IsMuted { get; private set; }
     public bool IsPinned { get; private set; }
     public DateTimeOffset? PinnedAt { get; private set; }

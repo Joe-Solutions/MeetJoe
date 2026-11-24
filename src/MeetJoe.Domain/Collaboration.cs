@@ -142,7 +142,8 @@ public class ChannelMember
         UserId = userId;
         Role = role;
         JoinedAt = joinedAt;
-        LastReadAt = joinedAt;
+        // One tick before join so same-instant posts still count as unread for other members.
+        LastReadAt = joinedAt.AddTicks(-1);
     }
 
     public Guid ChannelId { get; private set; }
