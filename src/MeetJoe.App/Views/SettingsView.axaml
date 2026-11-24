@@ -99,7 +99,7 @@
         <TextBlock Classes="muted small" Margin="0,0,0,12" TextWrapping="Wrap"
                    Text="{Binding UpdateStatusText}" />
         <TextBlock Classes="muted" Margin="0,0,0,12" TextWrapping="Wrap"
-                   Text="Installed builds check for newer releases on startup and update in place. After an update, this version number should match the release you received." />
+                   Text="Install from meetjoe.joesolutions.ph once. After that, Check for updates (and startup checks) download only what’s new and restart into it — no uninstall / full re-download." />
         <Button Classes="secondary" Content="Check for updates" Command="{Binding CheckForUpdatesCommand}"
                 IsEnabled="{Binding !IsCheckingUpdates}" />
 

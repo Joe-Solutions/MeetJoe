@@ -62,3 +62,5 @@ Secrets (repo): `MEETJOE_SSH_KEY`, `MEETJOE_HOST`, `MEETJOE_SSH_USER`, `MEETJOE_
 Deploy temporarily allowlists the GitHub Actions runner IP on the MeetJoe SG for SSH, then revokes it. Server `/opt/meetjoe/deploy/prod/.env` is never overwritten by CI.
 
 Desktop DMG / Windows Setup are built locally via `deploy/prod/package-desktop.sh` and copied into `deploy/prod/site/downloads/` on the host (not produced by Actions yet).
+
+**In-app updates (Velopack):** run `./scripts/pack-desktop-update.sh <version> osx-arm64` (and `win-x64`), copy `src/MeetJoe.Api/releases/desktop/` onto the host at `deploy/prod/desktop-releases/` (compose mounts it at `/app/releases/desktop`). Clients need one Velopack install from the site; later versions apply via Settings → Check for updates.

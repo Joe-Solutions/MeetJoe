@@ -83,13 +83,13 @@ public sealed class VelopackAppUpdateService(AppConfig config) : IAppUpdateServi
                     SetStatus(
                         AppUpdateState.Unsupported,
                         available: remote,
-                        message: $"Version {remote} is available. Install MeetJoe from the packaged release to receive automatic updates.");
+                        message: $"Version {remote} is available. Install from meetjoe.joesolutions.ph once — then Check for updates applies newer builds in place.");
                 }
                 else
                 {
                     SetStatus(
                         AppUpdateState.Unsupported,
-                        message: "Dev builds do not auto-update. Packaged installs update in place via semver.");
+                        message: "This copy was not installed via the MeetJoe updater. Install from meetjoe.joesolutions.ph once; later versions update in place (no full re-download).");
                 }
                 return;
             }

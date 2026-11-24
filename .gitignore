@@ -3,6 +3,13 @@ bin/
 obj/
 artifacts/
 publish/
+.tools/
+
+# Velopack packages (deployed to host, not committed)
+src/MeetJoe.Api/releases/desktop/**
+!src/MeetJoe.Api/releases/desktop/.gitkeep
+deploy/prod/desktop-releases/
+
 
 # IDE
 .vs/

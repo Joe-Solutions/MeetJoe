@@ -62,6 +62,8 @@ services:
       LiveKit__ApiSecret: ${LIVEKIT_API_SECRET}
     volumes:
       - api-keys:/var/meetjoe/keys
+      # Velopack desktop update feed (nupkgs + releases.*.json per RID)
+      - ./desktop-releases:/app/releases/desktop
     depends_on:
       postgres:
         condition: service_healthy
