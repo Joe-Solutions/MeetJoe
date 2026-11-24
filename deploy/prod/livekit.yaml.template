@@ -4,7 +4,9 @@ port: 7880
 rtc:
   tcp_port: 7881
   udp_port: 7882
-  use_external_ip: true
+  # Host networking already has the real NIC; do not STUN-discover docker0/br bridges
+  # (those private 172.x candidates break remote audio/ICE).
+  use_external_ip: false
   node_ip: __PUBLIC_IP__
 
 # Embedded TURN — saves a coturn container on the lean t3.small.
