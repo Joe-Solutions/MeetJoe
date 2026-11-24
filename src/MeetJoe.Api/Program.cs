@@ -11,10 +11,19 @@ using MeetJoe.Domain;
 using MeetJoe.Infrastructure;
 using MeetJoe.Infrastructure.Persistence;
 using MeetJoe.Infrastructure.Presence;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Trust X-Forwarded-* from the reverse proxy (Caddy) so OpenIddict sees HTTPS.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -38,6 +47,7 @@ builder.WebHost.ConfigureKestrel(kestrel =>
 
 var app = builder.Build();
 
+app.UseForwardedHeaders();
 app.UseExceptionHandler();
 app.UseRateLimiter();
 app.UseDefaultFiles();

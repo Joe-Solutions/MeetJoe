@@ -1,0 +1,155 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: meetjoe-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: joe-solutions/meetjoe-api
+
+jobs:
+  build-image:
+    name: Build API image
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Image tags
+        id: meta
+        run: |
+          TAG="sha-${GITHUB_SHA::12}"
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/prod/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.image }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to EC2
+    needs: build-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Runner public IP
+        id: ip
+        run: |
+          IPV4="$(curl -4fsS --max-time 10 https://api.ipify.org)"
+          echo "ipv4=$IPV4" >> "$GITHUB_OUTPUT"
+          echo "Runner IPv4: $IPV4"
+
+      - name: Whitelist runner SSH in security group
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          aws ec2 authorize-security-group-ingress \
+            --group-id "${{ secrets.MEETJOE_SG_ID }}" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${{ steps.ip.outputs.ipv4 }}/32,Description=gha-meetjoe-deploy}]" \
+            || true
+
+      - name: Prepare SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.MEETJOE_SSH_KEY }}" > ~/.ssh/meetjoe.pem
+          chmod 600 ~/.ssh/meetjoe.pem
+          ssh-keyscan -H "${{ secrets.MEETJOE_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync deploy assets (never overwrite .env or downloads)
+        run: |
+          rsync -az \
+            --exclude '.env' \
+            --exclude 'livekit.generated.yaml' \
+            --exclude 'site/downloads/' \
+            -e "ssh -i ~/.ssh/meetjoe.pem -o IdentitiesOnly=yes" \
+            deploy/prod/ \
+            "${{ secrets.MEETJOE_SSH_USER }}@${{ secrets.MEETJOE_HOST }}:/opt/meetjoe/deploy/prod/"
+
+      - name: Pull image and restart stack
+        env:
+          IMAGE: ${{ needs.build-image.outputs.image }}:${{ needs.build-image.outputs.tag }}
+          HOST: ${{ secrets.MEETJOE_HOST }}
+          SSH_USER: ${{ secrets.MEETJOE_SSH_USER }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Expand secrets/locals on the runner; keep the remote script single-quoted-safe.
+          ssh -i ~/.ssh/meetjoe.pem -o IdentitiesOnly=yes "${SSH_USER}@${HOST}" bash -s <<EOF
+          set -euo pipefail
+          IMAGE='${IMAGE}'
+          GHCR_USER='${GHCR_USER}'
+          GHCR_TOKEN='${GHCR_TOKEN}'
+          cd /opt/meetjoe
+          test -f deploy/prod/.env
+          echo "\$GHCR_TOKEN" | sg docker -c "docker login ghcr.io -u '\$GHCR_USER' --password-stdin"
+          if grep -q '^MEETJOE_API_IMAGE=' deploy/prod/.env; then
+            sed -i "s|^MEETJOE_API_IMAGE=.*|MEETJOE_API_IMAGE=\${IMAGE}|" deploy/prod/.env
+          else
+            printf '\\nMEETJOE_API_IMAGE=%s\\n' "\$IMAGE" >> deploy/prod/.env
+          fi
+          bash deploy/prod/render-config.sh
+          sg docker -c "docker compose -f deploy/prod/docker-compose.yml --env-file deploy/prod/.env pull api"
+          sg docker -c "docker compose -f deploy/prod/docker-compose.yml --env-file deploy/prod/.env up -d --remove-orphans"
+          sg docker -c "docker compose -f deploy/prod/docker-compose.yml --env-file deploy/prod/.env ps"
+          for i in \$(seq 1 15); do
+            if sg docker -c "docker exec meetjoe-prod-api-1 curl -fsS http://127.0.0.1:8080/health" | grep -q ok; then
+              echo "API healthy"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "API health check failed" >&2
+          sg docker -c "docker logs meetjoe-prod-api-1 --tail 100" || true
+          exit 1
+          EOF
+
+      - name: Smoke HTTPS
+        run: |
+          set -e
+          curl -fsS https://api.meetjoe.joesolutions.ph/health | grep -q '"status":"ok"'
+          curl -fsSI https://meetjoe.joesolutions.ph/ | head -5
+
+      - name: Revoke runner SSH rule
+        if: always()
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id "${{ secrets.MEETJOE_SG_ID }}" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${{ steps.ip.outputs.ipv4 }}/32}]" \
+            || true

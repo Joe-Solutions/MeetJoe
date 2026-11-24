@@ -72,3 +72,19 @@ jobs:
         run: dotnet test tests/MeetJoe.Domain.Tests -c Release
       - name: Test API
         run: dotnet test tests/MeetJoe.Api.Tests -c Release
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - name: Build API Dockerfile (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/prod/Dockerfile
+          push: false
+          tags: meetjoe-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

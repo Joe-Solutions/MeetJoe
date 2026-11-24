@@ -5,7 +5,11 @@ namespace MeetJoe.App.Services;
 public sealed class AppConfig
 {
     public const string ApiUrlVariable = "MEETJOE_API_URL";
+#if DEBUG
     public const string DefaultApiUrl = "http://localhost:5080";
+#else
+    public const string DefaultApiUrl = "https://api.meetjoe.joesolutions.ph";
+#endif
 
     public Uri ApiBaseUri { get; init; } = new(DefaultApiUrl);
 

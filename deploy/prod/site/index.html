@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MeetJoe</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --canvas: #0b1f33;
+      --panel: #122a40;
+      --border: #1e3a52;
+      --text: #e8f1f5;
+      --muted: #8aa0b2;
+      --accent: #1ec8c8;
+      --accent-hover: #3ad6d6;
+      --on-accent: #04262b;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      font-family: Manrope, system-ui, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(ellipse 80% 60% at 20% 10%, rgba(30, 200, 200, 0.18), transparent 55%),
+        radial-gradient(ellipse 70% 50% at 85% 80%, rgba(18, 80, 120, 0.35), transparent 50%),
+        var(--canvas);
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 3rem 1.5rem 4rem;
+      gap: 1rem;
+    }
+    .brand {
+      font-size: clamp(2.75rem, 8vw, 4.5rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin: 0;
+      line-height: 1.05;
+    }
+    .brand span { color: var(--accent); }
+    .lede {
+      max-width: 28rem;
+      margin: 0;
+      color: var(--muted);
+      font-size: 1.05rem;
+      line-height: 1.55;
+      font-weight: 400;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      justify-content: center;
+      margin-top: 1.25rem;
+      min-height: 3.1rem;
+    }
+    a.btn {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      min-width: 11rem;
+      padding: 0.85rem 1.35rem;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      text-decoration: none;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    }
+    a.btn.is-visible { display: inline-flex; }
+    a.btn.primary {
+      background: var(--accent);
+      color: var(--on-accent);
+    }
+    a.btn.primary:hover { background: var(--accent-hover); }
+    a.btn.secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    a.btn.secondary:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .note {
+      margin-top: 0.5rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    .note a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .note a:hover { text-decoration: underline; }
+    .alt {
+      display: none;
+      margin: 0;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    .alt.is-visible { display: block; }
+    .alt button {
+      background: none;
+      border: none;
+      color: var(--accent);
+      font: inherit;
+      cursor: pointer;
+      padding: 0;
+      text-decoration: underline;
+    }
+    footer {
+      padding: 1.25rem;
+      text-align: center;
+      font-size: 0.8rem;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      background: rgba(8, 24, 40, 0.55);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1 class="brand">Meet<span>Joe</span></h1>
+    <p class="lede">Elegant collaboration for Mac and Windows — chat, workspaces, and live meetings.</p>
+    <div class="actions" id="actions">
+      <a class="btn primary" id="btn-mac" href="/downloads/MeetJoe-mac-arm64.dmg">Download for Mac</a>
+      <a class="btn primary" id="btn-win" href="/downloads/MeetJoe-Setup-win-x64.exe">Download for Windows</a>
+    </div>
+    <p class="alt" id="alt-mac">Need Windows? <button type="button" data-show="win">Download for Windows</button></p>
+    <p class="alt" id="alt-win">On a Mac? <button type="button" data-show="mac">Download for Mac</button></p>
+    <p class="note" id="hint-mac">Open the DMG, drag <strong>MeetJoe</strong> into Applications, then launch it. First open: right-click → Open.</p>
+    <p class="note" id="hint-win" hidden>Run the installer, then launch <strong>MeetJoe</strong> from the Start menu or Desktop. Windows may warn about an unknown publisher — choose More info → Run anyway.</p>
+  </main>
+  <footer>© Joe Solutions · MeetJoe</footer>
+  <script>
+    (function () {
+      var ua = navigator.userAgent || "";
+      var platform = navigator.platform || "";
+      var isMac = /Mac|iPhone|iPad|iPod/.test(ua) || /^Mac/.test(platform);
+      var isWin = /Windows|Win64|Win32|WinCE/.test(ua) || /^Win/.test(platform);
+
+      var btnMac = document.getElementById("btn-mac");
+      var btnWin = document.getElementById("btn-win");
+      var altMac = document.getElementById("alt-mac");
+      var altWin = document.getElementById("alt-win");
+
+      var hintMac = document.getElementById("hint-mac");
+      var hintWin = document.getElementById("hint-win");
+
+      function show(target) {
+        var mac = target === "mac";
+        btnMac.classList.toggle("is-visible", mac);
+        btnWin.classList.toggle("is-visible", !mac);
+        altMac.classList.toggle("is-visible", mac);
+        altWin.classList.toggle("is-visible", !mac);
+        hintMac.hidden = !mac;
+        hintWin.hidden = mac;
+      }
+
+      // Prefer the visitor's OS; if unknown, show both primary CTAs.
+      if (isMac && !isWin) {
+        show("mac");
+      } else if (isWin && !isMac) {
+        show("win");
+      } else {
+        btnMac.classList.add("is-visible");
+        btnWin.classList.add("is-visible");
+        btnWin.classList.remove("primary");
+        btnWin.classList.add("secondary");
+      }
+
+      document.querySelectorAll("[data-show]").forEach(function (el) {
+        el.addEventListener("click", function () {
+          show(el.getAttribute("data-show"));
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

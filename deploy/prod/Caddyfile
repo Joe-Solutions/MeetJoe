@@ -1,0 +1,24 @@
+{
+	email {$ACME_EMAIL}
+}
+
+# Download / marketing site
+{$MEETJOE_SITE_DOMAIN} {
+	root * /srv/site
+	encode gzip
+	file_server
+}
+
+# API + SignalR + LiveKit signalling (WebSocket /rtc)
+{$MEETJOE_API_DOMAIN} {
+	encode gzip
+
+	@livekit path /rtc* /twirp* /settings /validate*
+	handle @livekit {
+		reverse_proxy livekit:7880
+	}
+
+	handle {
+		reverse_proxy api:8080
+	}
+}

@@ -1,0 +1,136 @@
+# MeetJoe production stack — single EC2 (t3.small), ≤ ~$20/mo target.
+#
+#   # on the server, from the repo root:
+#   cp deploy/prod/.env.example deploy/prod/.env   # fill secrets
+#   ./deploy/prod/render-config.sh
+#   docker compose -f deploy/prod/docker-compose.yml --env-file deploy/prod/.env up -d --build
+#
+# Host ports: 80/443 (Caddy), 7881/tcp + 7882/udp (LiveKit RTC),
+# 3478/udp (LiveKit embedded TURN).
+name: meetjoe-prod
+
+services:
+  caddy:
+    image: caddy:2.9-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      MEETJOE_SITE_DOMAIN: ${MEETJOE_SITE_DOMAIN}
+      MEETJOE_API_DOMAIN: ${MEETJOE_API_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./site:/srv/site:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      livekit:
+        condition: service_started
+
+  api:
+    # Local/first boot: build from Dockerfile. CI/CD can set MEETJOE_API_IMAGE to a
+    # pre-built image (e.g. ghcr.io/joe-solutions/meetjoe-api:sha) and skip --build.
+    image: ${MEETJOE_API_IMAGE:-meetjoe-prod-api:latest}
+    build:
+      context: ../..
+      dockerfile: deploy/prod/Dockerfile
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://0.0.0.0:8080
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      ConnectionStrings__Redis: redis:6379
+      Auth__KeysPath: /var/meetjoe/keys
+      Auth__RequireHttps: "true"
+      Auth__RateLimitPerMinute: "60"
+      Database__MigrateOnStartup: "true"
+      Storage__Endpoint: minio:9000
+      Storage__AccessKey: ${MINIO_ROOT_USER}
+      Storage__SecretKey: ${MINIO_ROOT_PASSWORD}
+      Storage__Bucket: ${MINIO_BUCKET}
+      Storage__UseSsl: "false"
+      LiveKit__Url: wss://${MEETJOE_API_DOMAIN}
+      LiveKit__ApiKey: ${LIVEKIT_API_KEY}
+      LiveKit__ApiSecret: ${LIVEKIT_API_SECRET}
+    volumes:
+      - api-keys:/var/meetjoe/keys
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      livekit:
+        condition: service_started
+    expose:
+      - "8080"
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      [
+        "redis-server",
+        "--save",
+        "",
+        "--appendonly",
+        "no",
+        "--maxmemory",
+        "64mb",
+        "--maxmemory-policy",
+        "allkeys-lru",
+      ]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio-data:/data
+
+  livekit:
+    image: livekit/livekit-server:v1.13
+    restart: unless-stopped
+    command: ["--config", "/etc/livekit.yaml"]
+    ports:
+      - "7881:7881"
+      - "7882:7882/udp"
+      - "3478:3478/udp"
+    volumes:
+      - ./livekit.generated.yaml:/etc/livekit.yaml:ro
+
+volumes:
+  postgres-data:
+  minio-data:
+  api-keys:
+  caddy-data:
+  caddy-config:

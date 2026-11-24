@@ -18,6 +18,10 @@ publish/
 *.env
 !.env.example
 appsettings.Local.json
+deploy/prod/livekit.generated.yaml
+deploy/prod/.env
+deploy/prod/site/downloads/*
+!deploy/prod/site/downloads/.gitkeep
 
 # Cursor local
 .cursor/
