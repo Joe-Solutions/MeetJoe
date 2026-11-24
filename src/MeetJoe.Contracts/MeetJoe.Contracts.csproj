@@ -1,2 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Shared with the net8.0 desktop client (see MeetJoe.App.csproj) and the net9.0 API. -->
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
 </Project>

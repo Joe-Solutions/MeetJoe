@@ -45,6 +45,9 @@ fi
 
 PUBLISH="$ROOT/artifacts/publish/$RID"
 RELEASES="$ROOT/src/MeetJoe.Api/releases/desktop/$RID"
+# Publish into an empty dir: `dotnet publish -o` keeps stale files from earlier builds
+# (e.g. net9 SignalR DLLs after the net8 retarget → startup crash on System.Runtime 9).
+rm -rf "$PUBLISH"
 mkdir -p "$PUBLISH" "$RELEASES"
 
 echo "==> Publishing MeetJoe $VERSION ($RID)"
@@ -74,6 +77,19 @@ if [[ "$RID" == osx-* ]]; then
   # Ad-hoc ("-") by default; set MEETJOE_MAC_SIGN_IDENTITY to a Developer ID to keep
   # TCC grants across updates.
   PACK_EXTRA+=(--signAppIdentity "${MEETJOE_MAC_SIGN_IDENTITY:--}")
+  if [[ -z "${MEETJOE_MAC_SIGN_IDENTITY:-}" ]]; then
+    # An ad-hoc designated requirement is the cdhash, so TCC treats every update as a new
+    # app and drops its mic/camera grant. vpk calls `codesign` from PATH and has no flag
+    # for extra args, so a shim pins the requirement to the bundle id instead.
+    SHIM_DIR="$(mktemp -d)"
+    trap 'rm -rf "$SHIM_DIR"' EXIT
+    cat > "$SHIM_DIR/codesign" <<'SHIM'
+#!/usr/bin/env bash
+exec /usr/bin/codesign '-r=designated => identifier "com.joesolutions.meetjoe"' "$@"
+SHIM
+    chmod +x "$SHIM_DIR/codesign"
+    export PATH="$SHIM_DIR:$PATH"
+  fi
   if [[ -f "$ENTITLEMENTS" ]]; then
     PACK_EXTRA+=(--signEntitlements "$ENTITLEMENTS")
   fi
