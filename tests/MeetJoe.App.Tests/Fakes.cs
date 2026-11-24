@@ -579,9 +579,22 @@ internal sealed class FakeAuth : IAuthService
         return Task.CompletedTask;
     }
 
+    /// <summary>When true, a saved session resumes at startup.</summary>
+    public bool HasSavedSession { get; set; }
+
+    public Task<bool> TryResumeAsync(CancellationToken ct = default)
+    {
+        if (HasSavedSession) IsSignedIn = true;
+        return Task.FromResult(IsSignedIn);
+    }
+
     public Task<string?> GetAccessTokenAsync() => Task.FromResult(IsSignedIn ? "token" : null);
 
-    public void SignOut() => IsSignedIn = false;
+    public void SignOut()
+    {
+        IsSignedIn = false;
+        HasSavedSession = false;
+    }
 
     public void Expire() => SessionExpired?.Invoke();
 }

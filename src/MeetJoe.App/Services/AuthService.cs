@@ -5,11 +5,14 @@ using MeetJoe.Contracts;
 namespace MeetJoe.App.Services;
 
 /// <summary>
-/// Signs in with the OAuth password grant and keeps the access token fresh. Tokens are held in
-/// memory only, so the user signs in again on each launch.
+/// Signs in with the OAuth password grant and keeps the access token fresh. The access token
+/// stays in memory; the refresh token is kept in <see cref="ISessionStore"/> so the next launch
+/// can sign in silently (the server's refresh tokens roll over, 14 days each).
 /// </summary>
-public sealed class AuthService(HttpClient http) : IAuthService
+public sealed class AuthService(HttpClient http, ISessionStore? store = null) : IAuthService
 {
+    private readonly ISessionStore _store = store ?? new NullSessionStore();
+
     // Refresh this long before expiry so a request never goes out with a token about to lapse.
     private static readonly TimeSpan RefreshMargin = TimeSpan.FromSeconds(60);
 
@@ -32,6 +35,30 @@ public sealed class AuthService(HttpClient http) : IAuthService
                 ["password"] = password,
             },
             ct);
+        Persist(_tokens);
+    }
+
+    public async Task<bool> TryResumeAsync(CancellationToken ct = default)
+    {
+        if (_tokens is not null) return true;
+        var refreshToken = _store.LoadRefreshToken();
+        if (refreshToken is null) return false;
+
+        try
+        {
+            _tokens = await RequestAsync(RefreshForm(refreshToken), ct);
+            Persist(_tokens);
+            return true;
+        }
+        catch (ApiException ex) when (ex.StatusCode is >= 400 and < 500)
+        {
+            _store.Clear(); // Expired or revoked.
+            return false;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            return false; // Offline: keep the token so the next launch can try again.
+        }
     }
 
     public async Task<string?> GetAccessTokenAsync()
@@ -50,14 +77,8 @@ public sealed class AuthService(HttpClient http) : IAuthService
 
             try
             {
-                _tokens = await RequestAsync(
-                    new Dictionary<string, string>
-                    {
-                        ["grant_type"] = "refresh_token",
-                        ["client_id"] = AuthConstants.DesktopClientId,
-                        ["refresh_token"] = tokens.RefreshToken,
-                    },
-                    CancellationToken.None);
+                _tokens = await RequestAsync(RefreshForm(tokens.RefreshToken), CancellationToken.None);
+                Persist(_tokens);
                 return _tokens.AccessToken;
             }
             catch (ApiException ex) when (ex.StatusCode is >= 400 and < 500)
@@ -76,14 +97,32 @@ public sealed class AuthService(HttpClient http) : IAuthService
         }
     }
 
-    public void SignOut() => _tokens = null;
+    public void SignOut()
+    {
+        _tokens = null;
+        _store.Clear();
+    }
 
     private string? Expire()
     {
         _tokens = null;
+        _store.Clear();
         SessionExpired?.Invoke();
         return null;
     }
+
+    // Refresh tokens roll: each refresh returns a new one, so save it every time.
+    private void Persist(Tokens tokens)
+    {
+        if (tokens.RefreshToken is { } refreshToken) _store.SaveRefreshToken(refreshToken);
+    }
+
+    private static Dictionary<string, string> RefreshForm(string refreshToken) => new()
+    {
+        ["grant_type"] = "refresh_token",
+        ["client_id"] = AuthConstants.DesktopClientId,
+        ["refresh_token"] = refreshToken,
+    };
 
     private async Task<Tokens> RequestAsync(Dictionary<string, string> form, CancellationToken ct)
     {

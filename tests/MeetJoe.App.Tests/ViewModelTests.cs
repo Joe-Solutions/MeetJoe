@@ -381,6 +381,28 @@ public class SignInFlowTests
     }
 
     [Fact]
+    public async Task A_saved_session_opens_the_shell_without_the_sign_in_form()
+    {
+        _world.Auth.HasSavedSession = true;
+        var app = _world.NewApp();
+
+        await app.ResumeSessionAsync();
+
+        Assert.IsType<ShellViewModel>(app.Current);
+    }
+
+    [Fact]
+    public async Task Without_a_saved_session_the_sign_in_form_stays()
+    {
+        var app = _world.NewApp();
+
+        await app.ResumeSessionAsync();
+
+        var login = Assert.IsType<LoginViewModel>(app.Current);
+        Assert.False(login.IsBusy);
+    }
+
+    [Fact]
     public async Task Signing_in_opens_the_shell_on_chat()
     {
         var app = _world.NewApp();

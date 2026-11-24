@@ -15,6 +15,9 @@ public partial class App : Application
     /// <summary>Desktop host plugs Velopack (or another installer) in before the UI starts.</summary>
     public static Func<AppConfig, IAppUpdateService>? UpdateServiceFactory { get; set; }
 
+    /// <summary>Desktop host plugs in the OS credential store so sign-in survives restarts.</summary>
+    public static Func<ISessionStore>? SessionStoreFactory { get; set; }
+
     public override void RegisterServices()
     {
         base.RegisterServices();
@@ -54,6 +57,7 @@ public partial class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+        _ = main.ResumeSessionAsync();
         _ = main.StartUpdateCheckAsync();
     }
 
@@ -68,7 +72,8 @@ public partial class App : Application
             ?? new NullAppUpdateService());
 
         services.AddSingleton<IAuthService>(_ => new AuthService(
-            new HttpClient { BaseAddress = config.ApiBaseUri, Timeout = TimeSpan.FromSeconds(30) }));
+            new HttpClient { BaseAddress = config.ApiBaseUri, Timeout = TimeSpan.FromSeconds(30) },
+            SessionStoreFactory?.Invoke()));
 
         services.AddSingleton<IMeetJoeApi>(provider => new MeetJoeApi(
             new HttpClient(new AuthHeaderHandler(provider.GetRequiredService<IAuthService>())
