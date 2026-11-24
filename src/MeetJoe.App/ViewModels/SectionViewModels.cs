@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MeetJoe.App.Controls;
@@ -213,6 +214,35 @@ public partial class MeetingStageViewModel : ViewModelBase
     [ObservableProperty] private bool _isCameraOn = true;
     [ObservableProperty] private bool _isMicOn = true;
     [ObservableProperty] private bool _isScreenShareOn;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowRecordingIndicator))]
+    private bool _isRecording;
+
+    /// <summary>True when another participant’s host is recording this room (we are not the recorder).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowRecordingIndicator))]
+    private bool _isRoomBeingRecorded;
+
+    [ObservableProperty] private string _recordingElapsed = "00:00";
+    [ObservableProperty] private string? _recordingNotice;
+
+    public bool ShowRecordingIndicator => IsRecording || IsRoomBeingRecorded;
+
+    private DispatcherTimer? _recordingUiTimer;
+    private DateTimeOffset _recordingStartedAt;
+
+    /// <summary>Elapsed since LiveKit session start (shared 1 hour limit).</summary>
+    [ObservableProperty] private string _sessionElapsed = "00:00";
+    [ObservableProperty] private string? _sessionRemaining;
+    [ObservableProperty] private bool _sessionWarningActive;
+    [ObservableProperty] private string? _sessionNotice;
+    [ObservableProperty] private bool _showSessionTimer;
+
+    private DispatcherTimer? _sessionUiTimer;
+    private DateTimeOffset _sessionStartedAt;
+    private bool _sessionExpiryHandled;
+    public const int SessionLimitMinutes = 60;
+    public const int SessionWarnMinutes = 5;
 
     /// <summary>True once LiveKit reports media-ready; Avalonia tiles hide so the WebView can paint.</summary>
     [ObservableProperty]
@@ -229,6 +259,11 @@ public partial class MeetingStageViewModel : ViewModelBase
     public Func<Task>? ToggleCameraHandler { get; set; }
     public Func<Task>? ToggleMicHandler { get; set; }
     public Func<Task>? ToggleScreenShareHandler { get; set; }
+    public Func<string, string, string, Task<bool>>? StartRecordingHandler { get; set; }
+    public Func<Task<Guid?>>? StopRecordingHandler { get; set; }
+
+    /// <summary>Host-only recording control.</summary>
+    public bool CanRecord => Meeting.IsHostedByMe && IsMediaOpen && !InLobby;
 
     /// <summary>Raised so the stage can scroll chat to the latest bubble (own send / open chat).</summary>
     public event Action? ChatFollowRequested;
@@ -298,7 +333,12 @@ public partial class MeetingStageViewModel : ViewModelBase
     [ObservableProperty] private bool _hasPendingAttachments;
 
     partial void OnInviteQueryChanged(string value) => RefreshInviteSuggestions();
-    partial void OnMeetingChanged(MeetingViewModel value) => OnPropertyChanged(nameof(ParticipantGridColumns));
+    partial void OnMeetingChanged(MeetingViewModel value)
+    {
+        OnPropertyChanged(nameof(ParticipantGridColumns));
+        OnPropertyChanged(nameof(CanRecord));
+        ToggleRecordingCommand.NotifyCanExecuteChanged();
+    }
 
     /// <summary>Where the media room lives, shown so a connection can be diagnosed.</summary>
     public string MediaServer { get; }
@@ -320,9 +360,14 @@ public partial class MeetingStageViewModel : ViewModelBase
         PendingAttachments.Clear();
         HasPendingAttachments = false;
         IsScreenShareOn = false;
+        IsRecording = false;
+        StopRecordingUiTimer();
+        StopSessionUiTimer();
         ToggleCameraHandler = null;
         ToggleMicHandler = null;
         ToggleScreenShareHandler = null;
+        StartRecordingHandler = null;
+        StopRecordingHandler = null;
         _context.Realtime.MeetingUpdated -= OnMeetingUpdated;
         _context.Realtime.MeetingChat -= OnMeetingChat;
         _context.Realtime.ParticipantRemoved -= OnRemoved;
@@ -392,6 +437,245 @@ public partial class MeetingStageViewModel : ViewModelBase
         IsScreenShareOn = !IsScreenShareOn;
         if (ToggleScreenShareHandler is not null) await ToggleScreenShareHandler.Invoke();
     }
+
+    [RelayCommand(CanExecute = nameof(CanRecord))]
+    private async Task ToggleRecordingAsync()
+    {
+        if (!CanRecord) return;
+        if (IsRecording)
+            await FinalizeRecordingAsync();
+        else
+            await BeginRecordingAsync();
+    }
+
+    /// <summary>Stop capture, upload, announce in chat, and mark recording ready. Safe on leave/end.</summary>
+    public async Task FinalizeRecordingAsync()
+    {
+        // Leave must stay snappy when the host never started a recording.
+        if (!IsRecording) return;
+        Guid? fileId = null;
+        try
+        {
+            if (StopRecordingHandler is not null)
+                fileId = await StopRecordingHandler.Invoke();
+        }
+        catch
+        {
+            fileId = null;
+        }
+
+        IsRecording = false;
+        StopRecordingUiTimer();
+        ToggleRecordingCommand.NotifyCanExecuteChanged();
+
+        if (fileId is { } id)
+        {
+            try
+            {
+                var title = string.IsNullOrWhiteSpace(Meeting.Title) ? "Meeting" : Meeting.Title;
+                await _context.Api.SendMeetingChatAsync(
+                    Id, $"Recording saved: {title}", attachmentIds: [id]);
+                await _context.Api.CompleteRecordingAsync(Id, id);
+                RecordingNotice = "Recording saved to meeting chat and Files.";
+                RequestChatFollow();
+            }
+            catch
+            {
+                try { await _context.Api.CancelRecordingAsync(Id); }
+                catch { /* best-effort */ }
+                RecordingNotice = "Recording uploaded but could not post to chat.";
+            }
+        }
+        else
+        {
+            try { await _context.Api.CancelRecordingAsync(Id); }
+            catch { /* no in-progress recording */ }
+            RecordingNotice = "Recording stopped — file was not saved.";
+        }
+    }
+
+    private async Task BeginRecordingAsync()
+    {
+        if (StartRecordingHandler is null) return;
+        try
+        {
+            await _context.Api.StartRecordingAsync(Id);
+            var token = await _context.Api.GetAccessTokenAsync();
+            if (string.IsNullOrWhiteSpace(token))
+                throw new ApiException("Sign in again to record.");
+
+            var uploadUrl = new Uri(
+                _context.Config.ApiBaseUri, $"api/meetings/{Id:D}/recording/upload").ToString();
+            var stamp = DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss");
+            var safeTitle = string.Join("_", (Meeting.Title ?? "meeting").Split(Path.GetInvalidFileNameChars()));
+            var fileName = $"{safeTitle}-{stamp}.webm";
+            var started = await StartRecordingHandler.Invoke(uploadUrl, token, fileName);
+            IsRecording = started;
+            if (started)
+            {
+                RecordingNotice = "Recording started — participants notified";
+                StartRecordingUiTimer(DateTimeOffset.Now);
+            }
+            else
+            {
+                try { await _context.Api.CancelRecordingAsync(Id); }
+                catch { /* ignore */ }
+            }
+        }
+        catch (Exception)
+        {
+            IsRecording = false;
+            StopRecordingUiTimer();
+            try { await _context.Api.CancelRecordingAsync(Id); }
+            catch { /* ignore */ }
+        }
+
+        ToggleRecordingCommand.NotifyCanExecuteChanged();
+    }
+
+    public void ApplyLocalRecordingTimer(long? startedAtUnixMs)
+    {
+        if (startedAtUnixMs is { } ms && ms > 0)
+        {
+            IsRecording = true;
+            StartRecordingUiTimer(DateTimeOffset.FromUnixTimeMilliseconds(ms));
+        }
+        else if (!IsRoomBeingRecorded)
+        {
+            StopRecordingUiTimer();
+        }
+    }
+
+    public void ApplyRoomRecording(bool active, string? byName, long? startedAtUnixMs)
+    {
+        if (IsRecording)
+        {
+            // Local host already owns the indicator.
+            if (!active) return;
+            return;
+        }
+
+        IsRoomBeingRecorded = active;
+        if (active)
+        {
+            var who = string.IsNullOrWhiteSpace(byName) ? "The host" : byName.Trim();
+            RecordingNotice = $"{who} started recording this meeting";
+            var started = startedAtUnixMs is { } ms && ms > 0
+                ? DateTimeOffset.FromUnixTimeMilliseconds(ms)
+                : DateTimeOffset.Now;
+            StartRecordingUiTimer(started);
+        }
+        else
+        {
+            RecordingNotice = "Recording stopped";
+            StopRecordingUiTimer();
+        }
+    }
+
+    private void StartRecordingUiTimer(DateTimeOffset startedAt)
+    {
+        _recordingStartedAt = startedAt;
+        TickRecordingElapsed();
+        if (_recordingUiTimer is not null) return;
+        _recordingUiTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        _recordingUiTimer.Tick += (_, _) => TickRecordingElapsed();
+        _recordingUiTimer.Start();
+    }
+
+    private void StopRecordingUiTimer()
+    {
+        _recordingUiTimer?.Stop();
+        _recordingUiTimer = null;
+        RecordingElapsed = "00:00";
+        IsRoomBeingRecorded = false;
+        if (!IsRecording)
+            RecordingNotice = null;
+    }
+
+    private void TickRecordingElapsed()
+    {
+        var elapsed = DateTimeOffset.Now - _recordingStartedAt;
+        if (elapsed < TimeSpan.Zero) elapsed = TimeSpan.Zero;
+        RecordingElapsed = elapsed.TotalHours >= 1
+            ? elapsed.ToString(@"h\:mm\:ss")
+            : elapsed.ToString(@"mm\:ss");
+    }
+
+    partial void OnIsRecordingChanged(bool value)
+    {
+        if (!value && !IsRoomBeingRecorded)
+            StopRecordingUiTimer();
+        OnPropertyChanged(nameof(ShowRecordingIndicator));
+    }
+
+    public void ApplySessionStart(long startedAtUnixMs)
+    {
+        if (startedAtUnixMs <= 0) return;
+        _sessionStartedAt = DateTimeOffset.FromUnixTimeMilliseconds(startedAtUnixMs);
+        _sessionExpiryHandled = false;
+        ShowSessionTimer = true;
+        SessionWarningActive = false;
+        TickSessionUi();
+        if (_sessionUiTimer is not null) return;
+        _sessionUiTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        _sessionUiTimer.Tick += (_, _) => TickSessionUi();
+        _sessionUiTimer.Start();
+    }
+
+    public void ApplySessionWarning()
+    {
+        SessionWarningActive = true;
+        SessionNotice = "5 minutes remaining — session ends at 1 hour.";
+    }
+
+    /// <summary>Returns true once when the page reports the hard limit (caller should leave).</summary>
+    public bool ConsumeSessionExpired()
+    {
+        if (_sessionExpiryHandled) return false;
+        _sessionExpiryHandled = true;
+        SessionWarningActive = true;
+        SessionNotice = "Time’s up — this meeting reached the 1 hour limit.";
+        SessionRemaining = "00:00 left";
+        return true;
+    }
+
+    public void StopSessionUiTimer()
+    {
+        _sessionUiTimer?.Stop();
+        _sessionUiTimer = null;
+        ShowSessionTimer = false;
+        SessionElapsed = "00:00";
+        SessionRemaining = null;
+        SessionWarningActive = false;
+        SessionNotice = null;
+        _sessionExpiryHandled = false;
+    }
+
+    private void TickSessionUi()
+    {
+        var elapsed = DateTimeOffset.Now - _sessionStartedAt;
+        if (elapsed < TimeSpan.Zero) elapsed = TimeSpan.Zero;
+        var limit = TimeSpan.FromMinutes(SessionLimitMinutes);
+        var remaining = limit - elapsed;
+        SessionElapsed = FormatClock(elapsed);
+        if (remaining <= TimeSpan.FromMinutes(SessionWarnMinutes))
+        {
+            SessionWarningActive = true;
+            SessionRemaining = FormatClock(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero) + " left";
+            if (remaining <= TimeSpan.Zero && string.IsNullOrEmpty(SessionNotice))
+                SessionNotice = "Time’s up — this meeting reached the 1 hour limit.";
+        }
+        else
+        {
+            SessionRemaining = null;
+        }
+    }
+
+    private static string FormatClock(TimeSpan value) =>
+        value.TotalHours >= 1 ? value.ToString(@"h\:mm\:ss") : value.ToString(@"mm\:ss");
+
+    partial void OnIsMediaOpenChanged(bool value) => ToggleRecordingCommand.NotifyCanExecuteChanged();
+    partial void OnInLobbyChanged(bool value) => ToggleRecordingCommand.NotifyCanExecuteChanged();
 
     private void RequestChatFollow() => ChatFollowRequested?.Invoke();
 
@@ -578,9 +862,27 @@ public partial class MeetingStageViewModel : ViewModelBase
         {
             var picked = await _context.Platform.PickFileAsync();
             if (picked is null) return;
-            await using var content = await picked.OpenReadAsync();
-            var file = await _context.Api.UploadFileAsync(null, null, picked.Name, content, meetingId: Id);
-            PendingAttachments.Add(new PendingAttachmentViewModel(file));
+            await AttachFilesAsync([picked]);
+        }
+        catch
+        {
+            // Keep composing; attach failures are transient.
+        }
+    }
+
+    /// <summary>Upload files from Attach or drag-drop onto the meeting chat composer.</summary>
+    public async Task AttachFilesAsync(IReadOnlyList<PickedFile> files)
+    {
+        if (InLobby || files.Count == 0) return;
+        try
+        {
+            foreach (var picked in files)
+            {
+                await using var content = await picked.OpenReadAsync();
+                var file = await _context.Api.UploadFileAsync(null, null, picked.Name, content, meetingId: Id);
+                PendingAttachments.Add(new PendingAttachmentViewModel(file));
+            }
+
             HasPendingAttachments = PendingAttachments.Count > 0;
         }
         catch
@@ -1211,6 +1513,8 @@ public partial class CalendarViewModel : ViewModelBase
     private async Task LeaveAsync()
     {
         if (Stage is not { } stage) return;
+        try { await stage.FinalizeRecordingAsync(); }
+        catch { /* best-effort before tear-down */ }
         stage.Detach();
         Stage = null;
         await MeetingMediaParking.ShutdownAsync();
@@ -1232,6 +1536,8 @@ public partial class CalendarViewModel : ViewModelBase
         if (Stage is not { } stage) return;
         try
         {
+            try { await stage.FinalizeRecordingAsync(); }
+            catch { /* best-effort before tear-down */ }
             await _context.Api.EndMeetingAsync(stage.Id);
             stage.Detach();
             Stage = null;

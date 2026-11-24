@@ -45,9 +45,9 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<AppExceptionHandler>();
 
-// Room for the largest allowed upload plus multipart framing.
+// Room for the largest allowed upload (recordings) plus multipart framing.
 builder.WebHost.ConfigureKestrel(kestrel =>
-    kestrel.Limits.MaxRequestBodySize = FileObject.MaxSizeBytes + 1024 * 1024);
+    kestrel.Limits.MaxRequestBodySize = FileObject.MaxRecordingSizeBytes + 1024 * 1024);
 
 var app = builder.Build();
 

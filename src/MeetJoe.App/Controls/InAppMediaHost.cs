@@ -23,7 +23,11 @@ public sealed class InAppMediaHost : Panel
     public bool IsCameraEnabled { get; private set; } = true;
     public bool IsMicEnabled { get; private set; } = true;
     public bool IsScreenShareEnabled { get; private set; }
+    public bool IsRecording { get; private set; }
     public bool IsAvailable => _webView is not null;
+
+    private TaskCompletionSource<Guid?>? _recordingStopTcs;
+    private string? _recordingUploadScript;
 
     /// <summary>
     /// Seed preferred cam/mic before LiveKit connect (e.g. after minimize → return reconnects).
@@ -38,6 +42,18 @@ public sealed class InAppMediaHost : Panel
     public event Action? MediaReady;
     public event Action<IReadOnlyList<Guid>>? ActiveSpeakersChanged;
     public event Action<IReadOnlyList<Guid>>? MutedParticipantsChanged;
+    public event Action<Guid>? RecordingReady;
+    public event Action<string>? RecordingFailed;
+    /// <summary>Remote host started/stopped recording: (active, displayName, startedAtUnixMs).</summary>
+    public event Action<bool, string?, long?>? RoomRecordingChanged;
+    /// <summary>Local recorder elapsed-timer anchor (unix ms) or null when stopped.</summary>
+    public event Action<long?>? RecordingTimerChanged;
+    /// <summary>Shared session clock started (unix ms). 1 hour limit from this instant.</summary>
+    public event Action<long>? SessionStarted;
+    /// <summary>Five minutes remaining in the session.</summary>
+    public event Action? SessionWarning;
+    /// <summary>Session hit the 1 hour limit — host should leave/hang up.</summary>
+    public event Action? SessionExpired;
 
     /// <summary>Raised when the page reports OS-level mic/camera permission is blocked.</summary>
     public event Action<string>? PermissionNeeded;
@@ -147,6 +163,81 @@ public sealed class InAppMediaHost : Panel
     public Task ToggleMicAsync() => ToggleAndSyncAsync(mic: true);
 
     public Task ToggleScreenShareAsync() => ToggleScreenShareCoreAsync();
+
+    /// <summary>
+    /// Push upload credentials then start MediaRecorder in the LiveKit page.
+    /// </summary>
+    public async Task<bool> StartRecordingAsync(string uploadUrl, string accessToken, string fileName)
+    {
+        EnsureWebView();
+        if (_webView is null) return false;
+
+        var urlJson = System.Text.Json.JsonSerializer.Serialize(uploadUrl);
+        var tokenJson = System.Text.Json.JsonSerializer.Serialize(accessToken);
+        var nameJson = System.Text.Json.JsonSerializer.Serialize(fileName);
+        _recordingUploadScript =
+            $"(function(){{ window.meetjoeRecordingUpload={{url:{urlJson},token:{tokenJson},fileName:{nameJson}}}; }})()";
+        await RunPageScriptAsync(_recordingUploadScript).ConfigureAwait(true);
+
+        var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnState()
+        {
+            if (IsRecording) started.TrySetResult(true);
+        }
+
+        MediaStateChanged += OnState;
+        try
+        {
+            await RunPageScriptAsync(
+                    "(async function(){ try { if (window.meetjoeStartRecording) await window.meetjoeStartRecording(); } catch(e) { console.error(e); } })()")
+                .ConfigureAwait(true);
+            var done = await Task.WhenAny(started.Task, Task.Delay(8_000)).ConfigureAwait(true);
+            return done == started.Task && await started.Task.ConfigureAwait(true);
+        }
+        finally
+        {
+            MediaStateChanged -= OnState;
+        }
+    }
+
+    /// <summary>Stop MediaRecorder; page uploads and raises RecordingReady / RecordingFailed.</summary>
+    public async Task<Guid?> StopRecordingAsync()
+    {
+        EnsureWebView();
+        if (_webView is null || !_pageReady || !IsRecording)
+        {
+            IsRecording = false;
+            MediaStateChanged?.Invoke();
+            _recordingStopTcs?.TrySetResult(null);
+            return null;
+        }
+
+        _recordingStopTcs = new TaskCompletionSource<Guid?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            await _webView.ExecuteScriptAsync(
+                "(async function(){ try { if (window.meetjoeStopRecording) await window.meetjoeStopRecording(); } catch(e) { console.error(e); } })()");
+        }
+        catch
+        {
+            IsRecording = false;
+            MediaStateChanged?.Invoke();
+            _recordingStopTcs.TrySetResult(null);
+            return null;
+        }
+
+        // Upload can take a while for long sessions; leave/hang-up still shouldn't hang forever.
+        var completed = await Task.WhenAny(_recordingStopTcs.Task, Task.Delay(90_000)).ConfigureAwait(true);
+        if (completed != _recordingStopTcs.Task)
+        {
+            _recordingStopTcs.TrySetResult(null);
+            IsRecording = false;
+            MediaStateChanged?.Invoke();
+            return null;
+        }
+
+        return await _recordingStopTcs.Task.ConfigureAwait(true);
+    }
 
     /// <summary>
     /// Minimized call PiP: LiveKit page shows only the active speaker (video or initials).
@@ -518,6 +609,117 @@ public sealed class InAppMediaHost : Panel
         {
             var muted = ParseGuidList(message["mutes:".Length..]);
             Dispatcher.UIThread.Post(() => MutedParticipantsChanged?.Invoke(muted));
+            return;
+        }
+
+        if (message.StartsWith("session-start:", StringComparison.OrdinalIgnoreCase))
+        {
+            var payload = message["session-start:".Length..].Trim();
+            if (long.TryParse(payload, out var ms) && ms > 0)
+                Dispatcher.UIThread.Post(() => SessionStarted?.Invoke(ms));
+            return;
+        }
+
+        if (string.Equals(message, "session-warn", StringComparison.OrdinalIgnoreCase))
+        {
+            Dispatcher.UIThread.Post(() => SessionWarning?.Invoke());
+            return;
+        }
+
+        if (string.Equals(message, "session-expired", StringComparison.OrdinalIgnoreCase))
+        {
+            Dispatcher.UIThread.Post(() => SessionExpired?.Invoke());
+            return;
+        }
+
+        if (string.Equals(message, "recording-on", StringComparison.OrdinalIgnoreCase))
+        {
+            IsRecording = true;
+            Dispatcher.UIThread.Post(() => MediaStateChanged?.Invoke());
+            return;
+        }
+
+        if (string.Equals(message, "recording-off", StringComparison.OrdinalIgnoreCase))
+        {
+            // UI-only: chrome can drop the REC indicator while upload finishes.
+            // Do NOT complete _recordingStopTcs here — that must wait for
+            // recording-ready / recording-failed so FinalizeRecordingAsync gets the file id.
+            IsRecording = false;
+            Dispatcher.UIThread.Post(() =>
+            {
+                MediaStateChanged?.Invoke();
+                RecordingTimerChanged?.Invoke(null);
+            });
+            return;
+        }
+
+        if (string.Equals(message, "recording-timer-off", StringComparison.OrdinalIgnoreCase))
+        {
+            Dispatcher.UIThread.Post(() => RecordingTimerChanged?.Invoke(null));
+            return;
+        }
+
+        if (message.StartsWith("recording-timer:", StringComparison.OrdinalIgnoreCase))
+        {
+            var timerPayload = message["recording-timer:".Length..].Trim();
+            long? startedAt = long.TryParse(timerPayload, out var ms) ? ms : null;
+            Dispatcher.UIThread.Post(() => RecordingTimerChanged?.Invoke(startedAt));
+            return;
+        }
+
+        if (string.Equals(message, "room-recording-off", StringComparison.OrdinalIgnoreCase))
+        {
+            Dispatcher.UIThread.Post(() => RoomRecordingChanged?.Invoke(false, null, null));
+            return;
+        }
+
+        if (message.StartsWith("room-recording-on:", StringComparison.OrdinalIgnoreCase))
+        {
+            var payload = message["room-recording-on:".Length..];
+            long? startedAt = null;
+            string? by = null;
+            var pipe = payload.IndexOf('|');
+            if (pipe >= 0)
+            {
+                if (long.TryParse(payload[..pipe], out var ms))
+                    startedAt = ms;
+                by = Uri.UnescapeDataString(payload[(pipe + 1)..].Trim());
+            }
+            else
+            {
+                by = Uri.UnescapeDataString(payload.Trim());
+            }
+
+            Dispatcher.UIThread.Post(() => RoomRecordingChanged?.Invoke(true, by, startedAt));
+            return;
+        }
+
+        if (message.StartsWith("recording-ready:", StringComparison.OrdinalIgnoreCase))
+        {
+            IsRecording = false;
+            var idText = message["recording-ready:".Length..].Trim();
+            Guid? fileId = Guid.TryParse(idText, out var parsed) ? parsed : null;
+            Dispatcher.UIThread.Post(() =>
+            {
+                MediaStateChanged?.Invoke();
+                RecordingTimerChanged?.Invoke(null);
+                if (fileId is { } id) RecordingReady?.Invoke(id);
+                _recordingStopTcs?.TrySetResult(fileId);
+            });
+            return;
+        }
+
+        if (message.StartsWith("recording-failed:", StringComparison.OrdinalIgnoreCase))
+        {
+            IsRecording = false;
+            var detail = message["recording-failed:".Length..].Trim();
+            Dispatcher.UIThread.Post(() =>
+            {
+                MediaStateChanged?.Invoke();
+                RecordingTimerChanged?.Invoke(null);
+                RecordingFailed?.Invoke(string.IsNullOrWhiteSpace(detail) ? "Recording failed." : detail);
+                _recordingStopTcs?.TrySetResult(null);
+            });
         }
     }
 

@@ -112,13 +112,14 @@
 
       <!-- Meeting PiP while browsing other sections (active speaker only). -->
       <Border x:Name="MeetingPipRoot" ZIndex="40" Width="300" Height="248" Margin="16"
-              HorizontalAlignment="Right" VerticalAlignment="Bottom"
+              HorizontalAlignment="Left" VerticalAlignment="Top"
               Background="{StaticResource Brush.Rail}" BorderBrush="{StaticResource Brush.Border}"
               BorderThickness="1" CornerRadius="12"
               BoxShadow="0 12 36 0 #88000000" IsVisible="False">
         <Grid RowDefinitions="Auto,*,Auto">
-          <Border Background="{StaticResource Brush.Panel}" Padding="10,8"
-                  BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,0,1">
+          <Border x:Name="MeetingPipHeader" Background="{StaticResource Brush.Panel}" Padding="10,8"
+                  BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,0,1"
+                  ToolTip.Tip="Drag to move">
             <DockPanel>
               <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
                 <Button Classes="secondary" Width="36" Height="36" Padding="0" CornerRadius="18"
@@ -133,7 +134,7 @@
               <StackPanel Spacing="1" VerticalAlignment="Center" Margin="0,0,8,0">
                 <TextBlock FontWeight="SemiBold" FontSize="13" MaxLines="1" TextTrimming="CharacterEllipsis"
                            Text="{Binding Calendar.Stage.Meeting.Title}" />
-                <TextBlock Classes="muted small" Text="In meeting" />
+                <TextBlock Classes="muted small" Text="In meeting · drag to move" />
               </StackPanel>
             </DockPanel>
           </Border>
@@ -175,7 +176,8 @@
       <Grid x:Name="CallStageRoot" ZIndex="30" IsVisible="False" Background="{StaticResource Brush.Rail}"
             ColumnDefinitions="*,280" RowDefinitions="Auto,*,Auto">
         <Border x:Name="CallStageHeader" Grid.ColumnSpan="2" Background="{StaticResource Brush.Panel}" Padding="16,10"
-                BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,0,1">
+                BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,0,1"
+                ToolTip.Tip="Drag to move when minimized">
           <DockPanel>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
               <Button x:Name="CallHeaderPeopleButton" Classes="secondary" Width="40" Height="40" Padding="0" CornerRadius="20"
@@ -220,10 +222,44 @@
                         DisplayName="{Binding Calls.ActivePeerName}"
                         Photo="{Binding Calls.ActivePeerPerson.Photo}"
                         IsVisible="{Binding Calls.IsStageExpanded}" />
+              <Border Padding="8,4" CornerRadius="999"
+                      Background="{StaticResource Brush.PanelRaised}"
+                      BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
+                      IsVisible="{Binding Calls.ShowSessionTimer}"
+                      VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Text="{Binding Calls.SessionElapsed}" FontWeight="SemiBold" FontSize="11"
+                             VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding Calls.SessionRemaining}" FontWeight="SemiBold" FontSize="11"
+                             VerticalAlignment="Center"
+                             Foreground="{StaticResource Brush.Danger}"
+                             IsVisible="{Binding Calls.SessionRemaining, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                </StackPanel>
+              </Border>
+              <Border Padding="8,4" CornerRadius="999" Background="#C43B3B"
+                      IsVisible="{Binding Calls.ShowRecordingIndicator}"
+                      VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Ellipse Width="7" Height="7" Fill="White" VerticalAlignment="Center" />
+                  <TextBlock Text="REC" FontWeight="Bold" FontSize="11" Foreground="White"
+                             VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding Calls.RecordingElapsed}" FontWeight="SemiBold" FontSize="11"
+                             Foreground="White" VerticalAlignment="Center" />
+                </StackPanel>
+              </Border>
               <StackPanel Spacing="1" VerticalAlignment="Center">
                 <TextBlock Classes="h2" Text="{Binding Calls.ActivePeerName}"
                            FontSize="14" MaxLines="1" TextTrimming="CharacterEllipsis" />
-                <TextBlock Classes="muted small" Text="{Binding Calls.CallStatusLabel}" />
+                <TextBlock Classes="muted small"
+                           Text="{Binding Calls.SessionNotice}"
+                           IsVisible="{Binding Calls.SessionNotice, Converter={x:Static ObjectConverters.IsNotNull}}"
+                           Foreground="{StaticResource Brush.Danger}" />
+                <TextBlock Classes="muted small"
+                           Text="{Binding Calls.RecordingNotice}"
+                           IsVisible="{Binding Calls.RecordingNotice, Converter={x:Static ObjectConverters.IsNotNull}}"
+                           Foreground="{StaticResource Brush.Danger}" />
+                <TextBlock Classes="muted small" Text="{Binding Calls.CallStatusLabel}"
+                           IsVisible="{Binding Calls.ShowSessionTimer}" />
               </StackPanel>
             </StackPanel>
           </DockPanel>
@@ -308,45 +344,63 @@
         <!-- Camera / mic controls -->
         <Border x:Name="CallStageControls" Grid.Row="2" Grid.ColumnSpan="2"
                 Background="{StaticResource Brush.Panel}" BorderBrush="{StaticResource Brush.Border}"
-                BorderThickness="0,1,0,0" Padding="16,12">
-          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="14">
-            <Button Classes="secondary" Width="52" Height="52" Padding="0" CornerRadius="26"
-                    ToolTip.Tip="Turn camera on or off" Command="{Binding Calls.ToggleCameraCommand}">
-              <Panel>
-                <c:Icon Data="{StaticResource Icon.Video}" Size="22"
-                        IsVisible="{Binding Calls.IsCameraOn}" />
-                <c:Icon Data="{StaticResource Icon.VideoOff}" Size="22"
-                        IsVisible="{Binding !Calls.IsCameraOn}" />
-              </Panel>
-            </Button>
-            <Button Classes="secondary" Width="52" Height="52" Padding="0" CornerRadius="26"
-                    ToolTip.Tip="Mute or unmute" Command="{Binding Calls.ToggleMicCommand}">
-              <Panel>
-                <c:Icon Data="{StaticResource Icon.Mic}" Size="22"
-                        IsVisible="{Binding Calls.IsMicOn}" />
-                <c:Icon Data="{StaticResource Icon.MicOff}" Size="22"
-                        IsVisible="{Binding !Calls.IsMicOn}" />
-              </Panel>
-            </Button>
-            <Button Classes="secondary" Width="52" Height="52" Padding="0" CornerRadius="26"
-                    ToolTip.Tip="Share or stop sharing your screen"
-                    Command="{Binding Calls.ToggleScreenShareCommand}">
-              <Panel>
-                <c:Icon Data="{StaticResource Icon.ScreenShare}" Size="22"
-                        IsVisible="{Binding !Calls.IsScreenShareOn}" />
-                <Border IsVisible="{Binding Calls.IsScreenShareOn}"
-                        Background="{StaticResource Brush.Accent}" CornerRadius="18"
-                        Padding="8" HorizontalAlignment="Center" VerticalAlignment="Center">
+                BorderThickness="0,1,0,0" Padding="16,12" ClipToBounds="True">
+          <!-- DownOnly: shrinks the row to fit PiP width; full-size when the stage is wide. -->
+          <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Center">
+            <StackPanel Orientation="Horizontal" Spacing="14">
+              <Button Classes="secondary" Width="52" Height="52" Padding="0" CornerRadius="26"
+                      ToolTip.Tip="Turn camera on or off" Command="{Binding Calls.ToggleCameraCommand}">
+                <Panel>
+                  <c:Icon Data="{StaticResource Icon.Video}" Size="22"
+                          IsVisible="{Binding Calls.IsCameraOn}" />
+                  <c:Icon Data="{StaticResource Icon.VideoOff}" Size="22"
+                          IsVisible="{Binding !Calls.IsCameraOn}" />
+                </Panel>
+              </Button>
+              <Button Classes="secondary" Width="52" Height="52" Padding="0" CornerRadius="26"
+                      ToolTip.Tip="Mute or unmute" Command="{Binding Calls.ToggleMicCommand}">
+                <Panel>
+                  <c:Icon Data="{StaticResource Icon.Mic}" Size="22"
+                          IsVisible="{Binding Calls.IsMicOn}" />
+                  <c:Icon Data="{StaticResource Icon.MicOff}" Size="22"
+                          IsVisible="{Binding !Calls.IsMicOn}" />
+                </Panel>
+              </Button>
+              <Button Classes="secondary" Width="52" Height="52" Padding="0" CornerRadius="26"
+                      ToolTip.Tip="Share or stop sharing your screen"
+                      Command="{Binding Calls.ToggleScreenShareCommand}">
+                <Panel>
                   <c:Icon Data="{StaticResource Icon.ScreenShare}" Size="22"
-                          TextElement.Foreground="{StaticResource Brush.OnAccent}" />
-                </Border>
-              </Panel>
-            </Button>
-            <Button Classes="danger" Width="52" Height="52" Padding="0" CornerRadius="26"
-                    ToolTip.Tip="Leave call" Command="{Binding Calls.HangUpCommand}">
-              <c:Icon Data="{StaticResource Icon.Leave}" Size="22" />
-            </Button>
-          </StackPanel>
+                          IsVisible="{Binding !Calls.IsScreenShareOn}" />
+                  <Border IsVisible="{Binding Calls.IsScreenShareOn}"
+                          Background="{StaticResource Brush.Accent}" CornerRadius="18"
+                          Padding="8" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <c:Icon Data="{StaticResource Icon.ScreenShare}" Size="22"
+                            TextElement.Foreground="{StaticResource Brush.OnAccent}" />
+                  </Border>
+                </Panel>
+              </Button>
+              <Button Classes="secondary" Width="52" Height="52" Padding="0" CornerRadius="26"
+                      ToolTip.Tip="Record or stop recording"
+                      Command="{Binding Calls.ToggleRecordingCommand}"
+                      IsVisible="{Binding Calls.CanRecord}">
+                <Panel>
+                  <c:Icon Data="{StaticResource Icon.Record}" Size="22"
+                          IsVisible="{Binding !Calls.IsRecording}" />
+                  <Border IsVisible="{Binding Calls.IsRecording}"
+                          Background="{StaticResource Brush.Danger}" CornerRadius="18"
+                          Padding="8" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <c:Icon Data="{StaticResource Icon.StopRecording}" Size="18"
+                            TextElement.Foreground="{StaticResource Brush.OnAccent}" />
+                  </Border>
+                </Panel>
+              </Button>
+              <Button Classes="danger" Width="52" Height="52" Padding="0" CornerRadius="26"
+                      ToolTip.Tip="Leave call" Command="{Binding Calls.HangUpCommand}">
+                <c:Icon Data="{StaticResource Icon.Leave}" Size="22" />
+              </Button>
+            </StackPanel>
+          </Viewbox>
         </Border>
 
         <!-- People / chat rail -->
@@ -423,15 +477,18 @@
               </ScrollViewer>
             </DockPanel>
 
-            <Grid Grid.Row="1" RowDefinitions="Auto,*,Auto" Margin="0,8,0,0"
-                  IsVisible="{Binding Calls.ShowChatPanel}">
-              <TextBlock Classes="h2" Margin="14,4,14,8" Text="Chat" />
-              <ScrollViewer x:Name="CallChatScroller" Grid.Row="1" Margin="8,0,8,0">
+            <Border x:Name="CallChatDropZone" Grid.Row="1" Margin="4,8,4,4" Classes="chatdrop"
+                    IsVisible="{Binding Calls.ShowChatPanel}"
+                    ToolTip.Tip="Drop files anywhere in the conversation to attach">
+              <Grid RowDefinitions="Auto,*,Auto">
+              <TextBlock Classes="h2" Margin="10,4,10,8" Text="Chat" />
+              <ScrollViewer x:Name="CallChatScroller" Grid.Row="1" Margin="4,0,4,0">
                 <ItemsControl ItemsSource="{Binding Calls.ChatMessages}"
                               ItemTemplate="{StaticResource RoomChatMessageTemplate}"
                               VerticalAlignment="Bottom" />
               </ScrollViewer>
-              <StackPanel Grid.Row="2" Margin="8,6,8,8" Spacing="4">
+              <Border Grid.Row="2" Margin="4,6,4,4" Classes="roomcomposer-drop" CornerRadius="10">
+                <StackPanel Spacing="4">
                 <ItemsControl ItemsSource="{Binding Calls.PendingAttachments}"
                               IsVisible="{Binding Calls.HasPendingAttachments}">
                   <ItemsControl.ItemsPanel>
@@ -488,8 +545,10 @@
                   <Button Grid.Column="3" Classes="primary" Content="Send" VerticalAlignment="Center"
                           ToolTip.Tip="Send (Enter)" Command="{Binding Calls.SendChatCommand}" />
                 </Grid>
-              </StackPanel>
-            </Grid>
+                </StackPanel>
+              </Border>
+              </Grid>
+            </Border>
           </Grid>
         </Border>
       </Grid>

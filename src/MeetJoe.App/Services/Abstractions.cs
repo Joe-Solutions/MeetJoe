@@ -139,6 +139,9 @@ public interface IMeetJoeApi
     Task<MessageDto> SendMeetingChatAsync(
         Guid meetingId, string? body, CancellationToken ct = default, IReadOnlyList<Guid>? attachmentIds = null);
     Task<MeetingRecordingDto> StartRecordingAsync(Guid meetingId, CancellationToken ct = default);
+    Task<MeetingRecordingDto> CompleteRecordingAsync(Guid meetingId, Guid fileId, CancellationToken ct = default);
+    Task CancelRecordingAsync(Guid meetingId, CancellationToken ct = default);
+    Task<string?> GetAccessTokenAsync();
 
     Task<IReadOnlyList<CallDto>> GetCallsAsync(Guid organizationId, CancellationToken ct = default);
     Task<CallJoinDto> StartCallAsync(Guid organizationId, Guid conversationId, CancellationToken ct = default);

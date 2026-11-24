@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using MeetJoe.App.Services;
 using MeetJoe.Contracts;
 
 namespace MeetJoe.App.ViewModels;
@@ -196,6 +198,34 @@ public partial class CallsViewModel : ViewModelBase
     [ObservableProperty] private bool _isCameraOn = true;
     [ObservableProperty] private bool _isMicOn = true;
     [ObservableProperty] private bool _isScreenShareOn;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowRecordingIndicator))]
+    private bool _isRecording;
+
+    /// <summary>True when the call initiator is recording and we are a remote participant.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowRecordingIndicator))]
+    private bool _isRoomBeingRecorded;
+
+    [ObservableProperty] private string _recordingElapsed = "00:00";
+    [ObservableProperty] private string? _recordingNotice;
+
+    public bool ShowRecordingIndicator => IsRecording || IsRoomBeingRecorded;
+
+    private DispatcherTimer? _recordingUiTimer;
+    private DateTimeOffset _recordingStartedAt;
+
+    [ObservableProperty] private string _sessionElapsed = "00:00";
+    [ObservableProperty] private string? _sessionRemaining;
+    [ObservableProperty] private bool _sessionWarningActive;
+    [ObservableProperty] private string? _sessionNotice;
+    [ObservableProperty] private bool _showSessionTimer;
+
+    private DispatcherTimer? _sessionUiTimer;
+    private DateTimeOffset _sessionStartedAt;
+    private bool _sessionExpiryHandled;
+    public const int SessionLimitMinutes = 60;
+    public const int SessionWarnMinutes = 5;
 
     /// <summary>
     /// True once the LiveKit page reports it is connected and painting. Until then the
@@ -223,6 +253,14 @@ public partial class CallsViewModel : ViewModelBase
     public Func<Task>? ToggleCameraHandler { get; set; }
     public Func<Task>? ToggleMicHandler { get; set; }
     public Func<Task>? ToggleScreenShareHandler { get; set; }
+    public Func<string, string, string, Task<bool>>? StartRecordingHandler { get; set; }
+    public Func<Task<Guid?>>? StopRecordingHandler { get; set; }
+
+    /// <summary>Only the call initiator can record.</summary>
+    public bool CanRecord =>
+        HasMedia
+        && ActiveCall is { } call
+        && call.Initiator.Id == _context.People.MyId;
 
     /// <summary>Raised so the call stage can scroll chat to the latest bubble (own send / open chat).</summary>
     public event Action? ChatFollowRequested;
@@ -282,6 +320,8 @@ public partial class CallsViewModel : ViewModelBase
     {
         RefreshRoster();
         _ = LoadChatAsync();
+        OnPropertyChanged(nameof(CanRecord));
+        ToggleRecordingCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnIsStageExpandedChanged(bool value) => NotifyCallChrome();
@@ -318,7 +358,11 @@ public partial class CallsViewModel : ViewModelBase
     public string CallStatusLabel =>
         !IsInCall ? string.Empty
         : IsRinging ? "Calling…"
-        : "In progress";
+        : ShowSessionTimer
+            ? (SessionWarningActive && !string.IsNullOrEmpty(SessionRemaining)
+                ? $"{SessionElapsed} · {SessionRemaining}"
+                : SessionElapsed)
+            : "In progress";
 
     public event Action? IncomingChanged;
 
@@ -413,6 +457,9 @@ public partial class CallsViewModel : ViewModelBase
         IsCameraOn = true;
         IsMicOn = true;
         IsScreenShareOn = false;
+        IsRecording = false;
+        StopRecordingUiTimer();
+        StopSessionUiTimer();
         IsStageExpanded = false;
         ShowAddPeople = false;
         ShowPeoplePanel = true;
@@ -425,6 +472,8 @@ public partial class CallsViewModel : ViewModelBase
         ToggleCameraHandler = null;
         ToggleMicHandler = null;
         ToggleScreenShareHandler = null;
+        StartRecordingHandler = null;
+        StopRecordingHandler = null;
         if (!keepPeerName) PeerNameHint = "Call";
     }
 
@@ -537,6 +586,231 @@ public partial class CallsViewModel : ViewModelBase
         if (ToggleScreenShareHandler is not null) await ToggleScreenShareHandler.Invoke();
     }
 
+    [RelayCommand(CanExecute = nameof(CanRecord))]
+    private async Task ToggleRecordingAsync()
+    {
+        if (!CanRecord) return;
+        if (IsRecording)
+            await FinalizeRecordingAsync();
+        else
+            await BeginRecordingAsync();
+    }
+
+    /// <summary>Stop capture, upload to the call conversation, and post a chat attachment.</summary>
+    public async Task FinalizeRecordingAsync()
+    {
+        // Leave/hang-up must not wait on the recorder when nothing is capturing —
+        // StopRecordingAsync used to block up to 120s on a "recording-off" that never
+        // completed the wait handle.
+        if (!IsRecording) return;
+        var conversationId = ActiveCall?.ConversationId;
+        Guid? fileId = null;
+        try
+        {
+            if (StopRecordingHandler is not null)
+                fileId = await StopRecordingHandler.Invoke();
+        }
+        catch
+        {
+            fileId = null;
+        }
+
+        IsRecording = false;
+        StopRecordingUiTimer();
+        ToggleRecordingCommand.NotifyCanExecuteChanged();
+
+        if (fileId is not { } id || conversationId is not { } convId)
+        {
+            RecordingNotice = "Recording stopped — file was not saved.";
+            return;
+        }
+
+        try
+        {
+            await _context.Api.SendMessageAsync(
+                new SendMessageRequest(convId, null, "Recording saved", [id], null, null));
+            RecordingNotice = "Recording saved to this chat and Files.";
+            RequestChatFollow();
+        }
+        catch (Exception ex)
+        {
+            // File is uploaded; chat announce is best-effort.
+            RecordingNotice = Describe.Error(ex);
+        }
+    }
+
+    private async Task BeginRecordingAsync()
+    {
+        if (StartRecordingHandler is null || ActiveCall is null) return;
+        try
+        {
+            var token = await _context.Api.GetAccessTokenAsync();
+            if (string.IsNullOrWhiteSpace(token))
+                throw new ApiException("Sign in again to record.");
+
+            var uploadUrl = new Uri(
+                _context.Config.ApiBaseUri,
+                $"api/conversations/{ActiveCall.ConversationId:D}/recording/upload").ToString();
+            var stamp = DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss");
+            var fileName = $"call-{stamp}.webm";
+            var started = await StartRecordingHandler.Invoke(uploadUrl, token, fileName);
+            IsRecording = started;
+            if (started)
+            {
+                RecordingNotice = "Recording started — participants notified";
+                StartRecordingUiTimer(DateTimeOffset.Now);
+            }
+        }
+        catch
+        {
+            IsRecording = false;
+            StopRecordingUiTimer();
+        }
+
+        ToggleRecordingCommand.NotifyCanExecuteChanged();
+    }
+
+    public void ApplyLocalRecordingTimer(long? startedAtUnixMs)
+    {
+        if (startedAtUnixMs is { } ms && ms > 0)
+        {
+            IsRecording = true;
+            StartRecordingUiTimer(DateTimeOffset.FromUnixTimeMilliseconds(ms));
+        }
+        else if (!IsRoomBeingRecorded)
+        {
+            StopRecordingUiTimer();
+        }
+    }
+
+    public void ApplyRoomRecording(bool active, string? byName, long? startedAtUnixMs)
+    {
+        if (IsRecording) return;
+
+        IsRoomBeingRecorded = active;
+        if (active)
+        {
+            var who = string.IsNullOrWhiteSpace(byName) ? "The host" : byName.Trim();
+            RecordingNotice = $"{who} started recording this call";
+            var started = startedAtUnixMs is { } ms && ms > 0
+                ? DateTimeOffset.FromUnixTimeMilliseconds(ms)
+                : DateTimeOffset.Now;
+            StartRecordingUiTimer(started);
+        }
+        else
+        {
+            RecordingNotice = "Recording stopped";
+            StopRecordingUiTimer();
+        }
+    }
+
+    private void StartRecordingUiTimer(DateTimeOffset startedAt)
+    {
+        _recordingStartedAt = startedAt;
+        TickRecordingElapsed();
+        if (_recordingUiTimer is not null) return;
+        _recordingUiTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        _recordingUiTimer.Tick += (_, _) => TickRecordingElapsed();
+        _recordingUiTimer.Start();
+    }
+
+    private void StopRecordingUiTimer()
+    {
+        _recordingUiTimer?.Stop();
+        _recordingUiTimer = null;
+        RecordingElapsed = "00:00";
+        IsRoomBeingRecorded = false;
+        if (!IsRecording)
+            RecordingNotice = null;
+    }
+
+    private void TickRecordingElapsed()
+    {
+        var elapsed = DateTimeOffset.Now - _recordingStartedAt;
+        if (elapsed < TimeSpan.Zero) elapsed = TimeSpan.Zero;
+        RecordingElapsed = elapsed.TotalHours >= 1
+            ? elapsed.ToString(@"h\:mm\:ss")
+            : elapsed.ToString(@"mm\:ss");
+    }
+
+    partial void OnIsRecordingChanged(bool value)
+    {
+        if (!value && !IsRoomBeingRecorded)
+            StopRecordingUiTimer();
+        OnPropertyChanged(nameof(ShowRecordingIndicator));
+    }
+
+    public void ApplySessionStart(long startedAtUnixMs)
+    {
+        if (startedAtUnixMs <= 0) return;
+        _sessionStartedAt = DateTimeOffset.FromUnixTimeMilliseconds(startedAtUnixMs);
+        _sessionExpiryHandled = false;
+        ShowSessionTimer = true;
+        SessionWarningActive = false;
+        TickSessionUi();
+        OnPropertyChanged(nameof(CallStatusLabel));
+        if (_sessionUiTimer is not null) return;
+        _sessionUiTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        _sessionUiTimer.Tick += (_, _) => TickSessionUi();
+        _sessionUiTimer.Start();
+    }
+
+    public void ApplySessionWarning()
+    {
+        SessionWarningActive = true;
+        SessionNotice = "5 minutes remaining — call ends at 1 hour.";
+        OnPropertyChanged(nameof(CallStatusLabel));
+    }
+
+    public bool ConsumeSessionExpired()
+    {
+        if (_sessionExpiryHandled) return false;
+        _sessionExpiryHandled = true;
+        SessionWarningActive = true;
+        SessionNotice = "Time’s up — this call reached the 1 hour limit.";
+        SessionRemaining = "00:00 left";
+        OnPropertyChanged(nameof(CallStatusLabel));
+        return true;
+    }
+
+    public void StopSessionUiTimer()
+    {
+        _sessionUiTimer?.Stop();
+        _sessionUiTimer = null;
+        ShowSessionTimer = false;
+        SessionElapsed = "00:00";
+        SessionRemaining = null;
+        SessionWarningActive = false;
+        SessionNotice = null;
+        _sessionExpiryHandled = false;
+        OnPropertyChanged(nameof(CallStatusLabel));
+    }
+
+    private void TickSessionUi()
+    {
+        var elapsed = DateTimeOffset.Now - _sessionStartedAt;
+        if (elapsed < TimeSpan.Zero) elapsed = TimeSpan.Zero;
+        var limit = TimeSpan.FromMinutes(SessionLimitMinutes);
+        var remaining = limit - elapsed;
+        SessionElapsed = FormatClock(elapsed);
+        if (remaining <= TimeSpan.FromMinutes(SessionWarnMinutes))
+        {
+            SessionWarningActive = true;
+            SessionRemaining = FormatClock(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero) + " left";
+            if (remaining <= TimeSpan.Zero && string.IsNullOrEmpty(SessionNotice))
+                SessionNotice = "Time’s up — this call reached the 1 hour limit.";
+        }
+        else
+        {
+            SessionRemaining = null;
+        }
+
+        OnPropertyChanged(nameof(CallStatusLabel));
+    }
+
+    private static string FormatClock(TimeSpan value) =>
+        value.TotalHours >= 1 ? value.ToString(@"h\:mm\:ss") : value.ToString(@"mm\:ss");
+
     private async Task BroadcastMicMutedAsync()
     {
         if (ActiveCall is null) return;
@@ -629,10 +903,28 @@ public partial class CallsViewModel : ViewModelBase
         {
             var picked = await _context.Platform.PickFileAsync();
             if (picked is null) return;
-            await using var content = await picked.OpenReadAsync();
-            var file = await _context.Api.UploadFileAsync(
-                ActiveCall.ConversationId, null, picked.Name, content);
-            PendingAttachments.Add(new PendingAttachmentViewModel(file));
+            await AttachFilesAsync([picked]);
+        }
+        catch
+        {
+            // Keep composing; attach failures are transient.
+        }
+    }
+
+    /// <summary>Upload files from Attach or drag-drop onto the call chat composer.</summary>
+    public async Task AttachFilesAsync(IReadOnlyList<PickedFile> files)
+    {
+        if (ActiveCall is null || files.Count == 0) return;
+        var conversationId = ActiveCall.ConversationId;
+        try
+        {
+            foreach (var picked in files)
+            {
+                await using var content = await picked.OpenReadAsync();
+                var file = await _context.Api.UploadFileAsync(conversationId, null, picked.Name, content);
+                PendingAttachments.Add(new PendingAttachmentViewModel(file));
+            }
+
             HasPendingAttachments = PendingAttachments.Count > 0;
         }
         catch
@@ -902,6 +1194,8 @@ public partial class CallsViewModel : ViewModelBase
         var callId = ActiveJoin?.CallId ?? ActiveCall?.Id;
         if (callId is null) return;
         _suppressRecoverCallId = callId;
+        try { await FinalizeRecordingAsync(); }
+        catch { /* best-effort before tear-down */ }
         ClearCallSession(keepPeerName: false);
         NotifyCallChrome();
         try
@@ -984,6 +1278,8 @@ public partial class CallsViewModel : ViewModelBase
         OnPropertyChanged(nameof(ActivePeerName));
         OnPropertyChanged(nameof(CallStatusLabel));
         OnPropertyChanged(nameof(IsRinging));
+        OnPropertyChanged(nameof(CanRecord));
+        ToggleRecordingCommand.NotifyCanExecuteChanged();
         SyncCallTones();
         CallChromeChanged?.Invoke();
     }

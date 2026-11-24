@@ -11,10 +11,46 @@
     <Grid ColumnDefinitions="*,300" RowDefinitions="Auto,*,Auto"
           IsVisible="{Binding Stage.IsMediaOpen}">
       <Border Grid.ColumnSpan="2" Classes="stageheader">
-        <StackPanel VerticalAlignment="Center" Spacing="1">
-          <TextBlock Classes="h2" Text="{Binding Stage.Meeting.Title}" MaxLines="1" TextTrimming="CharacterEllipsis" />
-          <TextBlock Classes="muted small" Text="{Binding Stage.Meeting.Summary}" />
-        </StackPanel>
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+            <Border Padding="10,5" CornerRadius="999"
+                    Background="{StaticResource Brush.PanelRaised}"
+                    BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
+                    IsVisible="{Binding Stage.ShowSessionTimer}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="{Binding Stage.SessionElapsed}" FontWeight="SemiBold" FontSize="12"
+                           VerticalAlignment="Center" />
+                <TextBlock Text="{Binding Stage.SessionRemaining}" FontWeight="SemiBold" FontSize="12"
+                           VerticalAlignment="Center"
+                           Foreground="{StaticResource Brush.Danger}"
+                           IsVisible="{Binding Stage.SessionRemaining, Converter={x:Static ObjectConverters.IsNotNull}}" />
+              </StackPanel>
+            </Border>
+            <Border Padding="10,5" CornerRadius="999" Background="#C43B3B"
+                    IsVisible="{Binding Stage.ShowRecordingIndicator}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Ellipse Width="8" Height="8" Fill="White" VerticalAlignment="Center" />
+                <TextBlock Text="REC" FontWeight="Bold" FontSize="12" Foreground="White"
+                           VerticalAlignment="Center" />
+                <TextBlock Text="{Binding Stage.RecordingElapsed}" FontWeight="SemiBold" FontSize="12"
+                           Foreground="White" VerticalAlignment="Center" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+          <StackPanel VerticalAlignment="Center" Spacing="1">
+            <TextBlock Classes="h2" Text="{Binding Stage.Meeting.Title}" MaxLines="1" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="muted small"
+                       Text="{Binding Stage.SessionNotice}"
+                       IsVisible="{Binding Stage.SessionNotice, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Foreground="{StaticResource Brush.Danger}" />
+            <TextBlock Classes="muted small"
+                       Text="{Binding Stage.RecordingNotice}"
+                       IsVisible="{Binding Stage.RecordingNotice, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Foreground="{StaticResource Brush.Danger}" />
+            <TextBlock Classes="muted small" Text="{Binding Stage.Meeting.Summary}"
+                       IsVisible="{Binding !Stage.ShowSessionTimer}" />
+          </StackPanel>
+        </DockPanel>
       </Border>
 
       <!-- LiveKit WebView fills the stage grid; Avalonia tiles only while connecting. -->
@@ -152,14 +188,19 @@
             </ScrollViewer>
           </DockPanel>
 
-          <!-- Meeting chat (DM-style bubbles) -->
-          <Grid Grid.Row="1" RowDefinitions="*,Auto" IsVisible="{Binding Stage.ShowChatPanel}">
-            <ScrollViewer x:Name="LiveChatScroller" Margin="8,8,8,0">
+          <!-- Meeting chat (DM-style bubbles) — drop anywhere in the conversation. -->
+          <Border x:Name="LiveChatDropZone" Grid.Row="1" Margin="4,8,4,4" Classes="chatdrop"
+                  IsVisible="{Binding Stage.ShowChatPanel}"
+                  ToolTip.Tip="Drop files anywhere in the conversation to attach">
+            <Grid RowDefinitions="*,Auto">
+            <ScrollViewer x:Name="LiveChatScroller" Margin="4,0,4,0">
               <ItemsControl ItemsSource="{Binding Stage.ChatMessages}"
                             ItemTemplate="{StaticResource RoomChatMessageTemplate}"
                             VerticalAlignment="Bottom" />
             </ScrollViewer>
-            <StackPanel Grid.Row="1" Margin="8,6,8,8" Spacing="4">
+            <Border Grid.Row="1" Margin="4,6,4,4" Classes="roomcomposer-drop"
+                    CornerRadius="10" Padding="0">
+              <StackPanel Spacing="4">
               <ItemsControl ItemsSource="{Binding Stage.PendingAttachments}"
                             IsVisible="{Binding Stage.HasPendingAttachments}">
                 <ItemsControl.ItemsPanel>
@@ -215,8 +256,10 @@
                 <Button Grid.Column="3" Classes="primary" Content="Send" VerticalAlignment="Center"
                         ToolTip.Tip="Send (Enter)" Command="{Binding Stage.SendChatCommand}" />
               </Grid>
-            </StackPanel>
-          </Grid>
+              </StackPanel>
+            </Border>
+            </Grid>
+          </Border>
         </Grid>
       </Border>
 
@@ -251,6 +294,21 @@
                       Background="{StaticResource Brush.Accent}" CornerRadius="18"
                       Padding="8" HorizontalAlignment="Center" VerticalAlignment="Center">
                 <c:Icon Data="{StaticResource Icon.ScreenShare}" Size="22"
+                        TextElement.Foreground="{StaticResource Brush.OnAccent}" />
+              </Border>
+            </Panel>
+          </Button>
+          <Button Classes="secondary" Width="52" Height="52" Padding="0" CornerRadius="26"
+                  ToolTip.Tip="Record or stop recording"
+                  Command="{Binding Stage.ToggleRecordingCommand}"
+                  IsVisible="{Binding Stage.CanRecord}">
+            <Panel>
+              <c:Icon Data="{StaticResource Icon.Record}" Size="22"
+                      IsVisible="{Binding !Stage.IsRecording}" />
+              <Border IsVisible="{Binding Stage.IsRecording}"
+                      Background="{StaticResource Brush.Danger}" CornerRadius="18"
+                      Padding="8" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <c:Icon Data="{StaticResource Icon.StopRecording}" Size="18"
                         TextElement.Foreground="{StaticResource Brush.OnAccent}" />
               </Border>
             </Panel>
@@ -370,14 +428,19 @@
 
       <Border Grid.Row="2" Grid.Column="1" BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
               Background="{StaticResource Brush.Panel}">
-        <Grid RowDefinitions="Auto,*,Auto">
+        <Grid RowDefinitions="Auto,*">
           <TextBlock Classes="h2" Margin="14,12" Text="Meeting chat" />
-          <ScrollViewer x:Name="LobbyChatScroller" Grid.Row="1" Margin="8,0">
+          <Border x:Name="LobbyChatDropZone" Grid.Row="1" Margin="4,0,4,4" Classes="chatdrop"
+                  IsVisible="{Binding !Stage.InLobby}"
+                  ToolTip.Tip="Drop files anywhere in the conversation to attach">
+            <Grid RowDefinitions="*,Auto">
+          <ScrollViewer x:Name="LobbyChatScroller" Margin="4,0">
             <ItemsControl ItemsSource="{Binding Stage.ChatMessages}"
                           ItemTemplate="{StaticResource RoomChatMessageTemplate}"
                           VerticalAlignment="Bottom" />
           </ScrollViewer>
-          <StackPanel Grid.Row="2" Margin="8,6,8,8" Spacing="4" IsVisible="{Binding !Stage.InLobby}">
+          <Border Grid.Row="1" Margin="4,6,4,4" Classes="roomcomposer-drop" CornerRadius="10">
+            <StackPanel Spacing="4">
             <ItemsControl ItemsSource="{Binding Stage.PendingAttachments}"
                           IsVisible="{Binding Stage.HasPendingAttachments}">
               <ItemsControl.ItemsPanel>
@@ -433,7 +496,10 @@
               <Button Grid.Column="3" Classes="primary" Content="Send" VerticalAlignment="Center"
                       ToolTip.Tip="Send (Enter)" Command="{Binding Stage.SendChatCommand}" />
             </Grid>
-          </StackPanel>
+            </StackPanel>
+          </Border>
+            </Grid>
+          </Border>
         </Grid>
       </Border>
 

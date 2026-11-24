@@ -511,10 +511,31 @@ public partial class MessageThreadViewModel : ViewModelBase
         {
             var picked = await _context.Platform.PickFileAsync();
             if (picked is null) return;
+            await AttachFilesAsync([picked]);
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = Describe.Error(ex);
+        }
+        finally
+        {
+            SendCommand.NotifyCanExecuteChanged();
+        }
+    }
 
-            await using var content = await picked.OpenReadAsync();
-            var file = await _context.Api.UploadFileAsync(_conversationId, _channelId, picked.Name, content);
-            PendingAttachments.Add(new PendingAttachmentViewModel(file));
+    /// <summary>Upload one or more files from the Attach button or a drag-drop onto the composer.</summary>
+    public async Task AttachFilesAsync(IReadOnlyList<PickedFile> files)
+    {
+        if (files.Count == 0) return;
+        ErrorMessage = null;
+        try
+        {
+            foreach (var picked in files)
+            {
+                await using var content = await picked.OpenReadAsync();
+                var file = await _context.Api.UploadFileAsync(_conversationId, _channelId, picked.Name, content);
+                PendingAttachments.Add(new PendingAttachmentViewModel(file));
+            }
         }
         catch (Exception ex)
         {

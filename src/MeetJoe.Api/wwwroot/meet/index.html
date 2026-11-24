@@ -77,6 +77,67 @@
     }
     .ctrl-wrap { position: relative; }
 
+    /* Floating REC indicator — visible even when Avalonia hides #toolbar (embed / PiP). */
+    #rec-badge {
+      display: none;
+      position: absolute;
+      top: 12px; left: 12px;
+      z-index: 30;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(196, 59, 59, 0.92);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+      pointer-events: none;
+    }
+    #rec-badge.show { display: inline-flex; }
+    #rec-badge .rec-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #fff;
+      animation: rec-pulse 1.2s ease-in-out infinite;
+    }
+    #rec-badge .rec-label { opacity: 0.92; }
+    #rec-timer { font-variant-numeric: tabular-nums; min-width: 3.2em; }
+    html.pip #rec-badge { top: 8px; left: 8px; padding: 4px 8px; font-size: 11px; }
+
+    /* Elapsed session clock (1 hour limit). */
+    #session-badge {
+      display: none;
+      position: absolute;
+      top: 12px; right: 12px;
+      z-index: 30;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(20, 26, 34, 0.88);
+      border: 1px solid #2A3544;
+      color: #F3F6F8;
+      font-size: 12px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+      pointer-events: none;
+    }
+    #session-badge.show { display: inline-flex; }
+    #session-badge.warn {
+      background: rgba(196, 59, 59, 0.92);
+      border-color: transparent;
+      animation: rec-pulse 1.2s ease-in-out infinite;
+    }
+    #session-remaining { opacity: 0.9; font-weight: 600; }
+    #session-remaining:not([hidden])::before { content: "· "; opacity: 0.7; }
+    html.pip #session-badge { top: 8px; right: 8px; padding: 4px 8px; font-size: 11px; }
+    @keyframes rec-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+
     .leave {
       appearance: none; border: 0; cursor: pointer;
       display: inline-flex; align-items: center; gap: 8px;
@@ -391,6 +452,15 @@
   <div id="banner"></div>
 
   <div id="stage">
+    <div id="rec-badge" aria-live="polite">
+      <span class="rec-dot" aria-hidden="true"></span>
+      <span class="rec-label">REC</span>
+      <span id="rec-timer">00:00</span>
+    </div>
+    <div id="session-badge" aria-live="polite" title="Session timer (1 hour limit)">
+      <span id="session-elapsed">00:00</span>
+      <span id="session-remaining" hidden></span>
+    </div>
     <div id="status">Connecting…</div>
     <div id="present" aria-live="polite">
       <video id="present-video" autoplay playsinline class="hidden"></video>
@@ -428,6 +498,12 @@
     const banner = document.getElementById("banner");
     const grid = document.getElementById("grid");
     const timerEl = document.getElementById("timer");
+    const sessionBadgeEl = document.getElementById("session-badge");
+    const sessionElapsedEl = document.getElementById("session-elapsed");
+    const sessionRemainingEl = document.getElementById("session-remaining");
+    /** Hard cap for meetings/calls once LiveKit connects. */
+    const SESSION_LIMIT_MS = 60 * 60 * 1000;
+    const SESSION_WARN_MS = 5 * 60 * 1000;
     const peopleCount = document.getElementById("people-count");
     const roster = document.getElementById("roster");
     const rosterList = document.getElementById("roster-list");
@@ -444,6 +520,9 @@
     let localId = null;
     let startedAt = null;
     let timerHandle = null;
+    let sessionWarned = false;
+    let sessionEnded = false;
+    let sessionEnding = false;
 
     function setStatus(text, kind) {
       statusEl.textContent = text || "";
@@ -480,11 +559,95 @@
       return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
     }
 
-    function startTimer() {
-      startedAt = Date.now();
-      timerHandle = setInterval(() => {
-        timerEl.textContent = formatDuration(Date.now() - startedAt);
-      }, 1000);
+    function adoptSessionStart(at) {
+      const next = typeof at === "number" && at > 0 ? at : Date.now();
+      // Keep the earliest start so every client shares one 1-hour window.
+      if (!startedAt || next < startedAt) startedAt = next;
+    }
+
+    async function publishSessionClock() {
+      if (!activeRoom?.localParticipant || !startedAt) return;
+      try {
+        const bytes = new TextEncoder().encode(JSON.stringify({
+          t: "session",
+          start: startedAt,
+          limit: SESSION_LIMIT_MS,
+        }));
+        await activeRoom.localParticipant.publishData(bytes, { reliable: true });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function publishSessionEvent(type) {
+      if (!activeRoom?.localParticipant) return;
+      try {
+        const bytes = new TextEncoder().encode(JSON.stringify({ t: type, start: startedAt }));
+        await activeRoom.localParticipant.publishData(bytes, { reliable: true });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    function applySessionWarning(fromSelf) {
+      if (sessionWarned) return;
+      sessionWarned = true;
+      showBanner("5 minutes remaining — this meeting/call ends at the 1 hour limit.");
+      if (sessionBadgeEl) sessionBadgeEl.classList.add("warn");
+      notifyHost("session-warn");
+      if (fromSelf) publishSessionEvent("session-warn");
+    }
+
+    async function endSessionForLimit(fromSelf) {
+      if (sessionEnded || sessionEnding) return;
+      sessionEnded = true;
+      sessionEnding = true;
+      if (sessionBadgeEl) sessionBadgeEl.classList.add("warn");
+      showBanner("Time’s up — this meeting/call reached the 1 hour limit.");
+      notifyHost("session-expired");
+      if (fromSelf) {
+        try { await publishSessionEvent("session-end"); } catch (_) {}
+      }
+      // Give the banner a moment, then tear down so Avalonia can leave/hang up.
+      setTimeout(() => {
+        try { window.meetjoeShutdown?.(); } catch (_) {}
+        try { signalLeave(); } catch (_) {}
+      }, 1200);
+    }
+
+    function onSessionTick() {
+      if (!startedAt) return;
+      const elapsed = Math.max(0, Date.now() - startedAt);
+      const remaining = SESSION_LIMIT_MS - elapsed;
+      const elapsedText = formatDuration(elapsed);
+      if (timerEl) timerEl.textContent = elapsedText;
+      if (sessionElapsedEl) sessionElapsedEl.textContent = elapsedText;
+      if (sessionBadgeEl) sessionBadgeEl.classList.add("show");
+
+      if (remaining <= SESSION_WARN_MS) {
+        if (sessionRemainingEl) {
+          sessionRemainingEl.hidden = false;
+          sessionRemainingEl.textContent = formatDuration(Math.max(0, remaining)) + " left";
+        }
+        if (remaining > 0) applySessionWarning(true);
+      } else if (sessionRemainingEl) {
+        sessionRemainingEl.hidden = true;
+        sessionRemainingEl.textContent = "";
+      }
+
+      if (remaining <= 0) endSessionForLimit(true);
+    }
+
+    function startTimer(existingStart) {
+      adoptSessionStart(existingStart || Date.now());
+      sessionWarned = false;
+      sessionEnded = false;
+      sessionEnding = false;
+      if (timerHandle) clearInterval(timerHandle);
+      timerHandle = setInterval(onSessionTick, 250);
+      onSessionTick();
+      notifyHost("session-start:" + startedAt);
+      publishSessionClock();
     }
 
     function columnsFor(count) {
@@ -563,6 +726,68 @@
     let lastHeardSpeakerId = null;
     /** @type {string|null} */
     let screenSharePresenterId = null;
+
+    // Room-wide recording indicator (host capture + notify everyone else).
+    let iAmRecorder = false;
+    let roomRecActive = false;
+    let roomRecStartedAt = 0;
+    /** @type {number|null} */
+    let roomRecTimerHandle = null;
+    const recBadgeEl = document.getElementById("rec-badge");
+    const recTimerEl = document.getElementById("rec-timer");
+
+    function tickRoomRecTimer() {
+      if (!recTimerEl || !roomRecActive) return;
+      recTimerEl.textContent = formatDuration(Date.now() - roomRecStartedAt);
+    }
+
+    function setRoomRecordingUi(on, startedAt, byName, fromSelf) {
+      roomRecActive = !!on;
+      if (roomRecTimerHandle != null) {
+        clearInterval(roomRecTimerHandle);
+        roomRecTimerHandle = null;
+      }
+      if (on) {
+        roomRecStartedAt = typeof startedAt === "number" && startedAt > 0 ? startedAt : Date.now();
+        if (recBadgeEl) recBadgeEl.classList.add("show");
+        tickRoomRecTimer();
+        roomRecTimerHandle = setInterval(tickRoomRecTimer, 250);
+        const who = (byName && String(byName).trim()) || "The host";
+        if (!fromSelf) {
+          showBanner(who + " started recording. Everyone’s audio and video may be captured.");
+          notifyHost("room-recording-on:" + roomRecStartedAt + "|" + encodeURIComponent(who));
+        } else {
+          showBanner("Recording started. Participants have been notified.");
+          notifyHost("recording-timer:" + roomRecStartedAt);
+        }
+      } else {
+        if (recBadgeEl) recBadgeEl.classList.remove("show");
+        if (recTimerEl) recTimerEl.textContent = "00:00";
+        if (!fromSelf) {
+          showBanner("Recording stopped.");
+          notifyHost("room-recording-off");
+        } else {
+          notifyHost("recording-timer-off");
+        }
+      }
+    }
+
+    async function publishRecordingState(on) {
+      if (!activeRoom?.localParticipant) return;
+      try {
+        const by = activeRoom.localParticipant.name || "Host";
+        const at = on ? (roomRecStartedAt || Date.now()) : Date.now();
+        const bytes = new TextEncoder().encode(JSON.stringify({
+          t: "rec",
+          on: !!on,
+          by,
+          at,
+        }));
+        await activeRoom.localParticipant.publishData(bytes, { reliable: true });
+      } catch (err) {
+        console.error(err);
+      }
+    }
 
     function isScreenShareActive() {
       return !!document.getElementById("present")?.classList.contains("show");
@@ -1078,6 +1303,10 @@
           upsertPerson(participant.identity, participant.name || participant.identity, false);
           // Tell the newcomer our current mic state.
           publishMuteState(!room.localParticipant.isMicrophoneEnabled);
+          // Late joiners need the current recording state.
+          if (iAmRecorder && roomRecActive) publishRecordingState(true);
+          // Share the shared 1-hour session clock.
+          publishSessionClock();
           refreshMuteFromRoom();
         })
         .on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
@@ -1087,6 +1316,29 @@
         .on(LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
           try {
             const msg = JSON.parse(new TextDecoder().decode(payload));
+            if (msg?.t === "session") {
+              const prev = startedAt;
+              adoptSessionStart(msg.start);
+              if (!timerHandle) startTimer(startedAt);
+              else if (prev !== startedAt) {
+                notifyHost("session-start:" + startedAt);
+                onSessionTick();
+              }
+              return;
+            }
+            if (msg?.t === "session-warn") {
+              applySessionWarning(false);
+              return;
+            }
+            if (msg?.t === "session-end") {
+              endSessionForLimit(false);
+              return;
+            }
+            if (msg?.t === "rec") {
+              if (iAmRecorder) return; // local host already shows the REC UI
+              setRoomRecordingUi(!!msg.on, msg.at, msg.by || participant?.name, false);
+              return;
+            }
             if (msg?.t !== "mic" || !participant) return;
             const info = people.get(participant.identity);
             if (!info) {
@@ -1368,6 +1620,461 @@
         share: !!room.localParticipant.isScreenShareEnabled,
       });
 
+      // ---- Client-side meeting/call recording (whole room: all cams + all mics) ----
+      /** @type {MediaRecorder|null} */
+      let mediaRecorder = null;
+      /** @type {CanvasRenderingContext2D|null} */
+      let recordCtx = null;
+      /** @type {HTMLCanvasElement|null} */
+      let recordCanvas = null;
+      /** @type {number|null} */
+      let recordRaf = null;
+      /** @type {MediaStream|null} */
+      let recordStream = null;
+      /** @type {AudioContext|null} */
+      let recordAudioCtx = null;
+      /** @type {MediaStreamAudioDestinationNode|null} */
+      let recordAudioDest = null;
+      /** @type {Map<string, MediaStreamAudioSourceNode>} */
+      let recordAudioSources = new Map();
+      /** @type {Map<string, MediaStreamTrack>} */
+      let recordAudioClones = new Map();
+      /** @type {Blob[]} */
+      let recordChunks = [];
+      let isRecording = false;
+      let recordAudioRefreshAt = 0;
+
+      function stopRecordLoop() {
+        if (recordRaf != null) {
+          cancelAnimationFrame(recordRaf);
+          recordRaf = null;
+        }
+      }
+
+      function recordParticipantsOrdered() {
+        // Remotes first, then local — same order as the on-screen grid.
+        const remotes = [...people.entries()].filter(([, p]) => !p.isLocal);
+        const locals = [...people.entries()].filter(([, p]) => p.isLocal);
+        return [...remotes, ...locals];
+      }
+
+      function drawCover(ctx, video, dw, dh, ox = 0, oy = 0) {
+        const vw = video.videoWidth || dw;
+        const vh = video.videoHeight || dh;
+        if (!vw || !vh) return;
+        const scale = Math.max(dw / vw, dh / vh);
+        const sw = dw / scale;
+        const sh = dh / scale;
+        const sx = (vw - sw) / 2;
+        const sy = (vh - sh) / 2;
+        try {
+          ctx.drawImage(video, sx, sy, sw, sh, ox, oy, dw, dh);
+        } catch (_) { /* frame may be unavailable */ }
+      }
+
+      function drawAvatarPlaceholder(ctx, name, isLocal, ox, oy, dw, dh) {
+        ctx.fillStyle = "#1B2430";
+        ctx.fillRect(ox, oy, dw, dh);
+        const label = isLocal ? (name ? `${name} (You)` : "You") : (name || "Guest");
+        const init = initials(name || (isLocal ? "You" : "?"));
+        const r = Math.min(dw, dh) * 0.18;
+        const cx = ox + dw / 2;
+        const cy = oy + dh / 2 - Math.min(28, dh * 0.06);
+        const grad = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
+        grad.addColorStop(0, "#2A6BFF");
+        grad.addColorStop(1, "#1EC8C8");
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.font = `600 ${Math.max(18, Math.floor(r * 0.9))}px system-ui,sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(init, cx, cy + 1);
+        ctx.fillStyle = "#F3F6F8";
+        ctx.font = `600 ${Math.max(13, Math.floor(dh * 0.045))}px system-ui,sans-serif`;
+        ctx.textBaseline = "alphabetic";
+        ctx.fillText(label, cx, oy + dh - Math.max(14, dh * 0.06));
+      }
+
+      function drawNameChip(ctx, text, ox, oy, dw, dh) {
+        if (!text) return;
+        ctx.save();
+        ctx.font = "600 14px system-ui,sans-serif";
+        const padX = 10;
+        const padY = 6;
+        const tw = Math.min(ctx.measureText(text).width + padX * 2, dw - 16);
+        const th = 14 + padY * 2;
+        const x = ox + 10;
+        const y = oy + dh - th - 10;
+        ctx.fillStyle = "rgba(5,13,22,0.72)";
+        ctx.beginPath();
+        const rr = 8;
+        ctx.moveTo(x + rr, y);
+        ctx.arcTo(x + tw, y, x + tw, y + th, rr);
+        ctx.arcTo(x + tw, y + th, x, y + th, rr);
+        ctx.arcTo(x, y + th, x, y, rr);
+        ctx.arcTo(x, y, x + tw, y, rr);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = "#F3F6F8";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillText(text, x + padX, y + th / 2, tw - padX * 2);
+        ctx.restore();
+      }
+
+      function drawParticipantCell(ctx, info, ox, oy, dw, dh) {
+        const video = info?.el?.querySelector("video");
+        const hasFrame = !!(info?.hasVideo && video && !video.classList.contains("hidden") && video.videoWidth > 0);
+        if (hasFrame) {
+          drawCover(ctx, video, dw, dh, ox, oy);
+          const label = info.isLocal
+            ? (info.name ? `${info.name} (You)` : "You")
+            : (info.name || "Guest");
+          drawNameChip(ctx, label, ox, oy, dw, dh);
+        } else {
+          drawAvatarPlaceholder(ctx, info?.name, !!info?.isLocal, ox, oy, dw, dh);
+        }
+      }
+
+      function paintParticipantGrid(ctx, w, h, ox, oy, areaW, areaH) {
+        const entries = recordParticipantsOrdered();
+        const n = Math.max(1, entries.length);
+        const cols = columnsFor(n);
+        const rows = Math.ceil(n / cols);
+        const gap = 8;
+        const tw = (areaW - gap * (cols - 1)) / cols;
+        const th = (areaH - gap * (rows - 1)) / rows;
+        if (entries.length === 0) {
+          ctx.fillStyle = "#8B9BB4";
+          ctx.font = "600 28px system-ui,sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("MeetJoe", ox + areaW / 2, oy + areaH / 2);
+          return;
+        }
+        entries.forEach(([, info], i) => {
+          const c = i % cols;
+          const r = Math.floor(i / cols);
+          const x = ox + c * (tw + gap);
+          const y = oy + r * (th + gap);
+          drawParticipantCell(ctx, info, x, y, tw, th);
+        });
+      }
+
+      function paintRecordFrame() {
+        if (!recordCanvas || !recordCtx) return;
+        const w = recordCanvas.width;
+        const h = recordCanvas.height;
+        const ctx = recordCtx;
+        ctx.fillStyle = "#050D16";
+        ctx.fillRect(0, 0, w, h);
+
+        // Always compose the full meeting — ignore PiP focus so the file has everyone.
+        const presentVideo = document.getElementById("present-video");
+        const presentOn = document.getElementById("present")?.classList.contains("show")
+          && presentVideo
+          && !presentVideo.classList.contains("hidden")
+          && presentVideo.videoWidth > 0;
+
+        if (presentOn) {
+          const stripH = Math.min(160, Math.floor(h * 0.22));
+          const mainH = h - stripH - 10;
+          drawCover(ctx, presentVideo, w, mainH, 0, 0);
+          const label = document.getElementById("present-label")?.textContent;
+          if (label) drawNameChip(ctx, label, 0, 0, w, mainH);
+          paintParticipantGrid(ctx, w, h, 0, mainH + 10, w, stripH);
+        } else {
+          paintParticipantGrid(ctx, w, h, 0, 0, w, h);
+        }
+
+        // Keep the audio mix current as people join / unmute.
+        if (Date.now() - recordAudioRefreshAt > 1000) {
+          recordAudioRefreshAt = Date.now();
+          try { refreshRecordAudioGraph(); } catch (_) { /* ignore */ }
+        }
+
+        recordRaf = requestAnimationFrame(paintRecordFrame);
+      }
+
+      function mediaStreamTrackFromPub(pub) {
+        const track = pub?.track;
+        if (!track || track.kind !== "audio") return null;
+        // Prefer the LiveKit MediaStream when present (local mic), else the raw MST.
+        try {
+          const fromStream = track.mediaStream?.getAudioTracks?.()?.[0];
+          if (fromStream && fromStream.readyState !== "ended") return fromStream;
+        } catch (_) { /* ignore */ }
+        const mst = track.mediaStreamTrack;
+        if (!mst || mst.readyState === "ended") return null;
+        return mst;
+      }
+
+      function collectRoomAudioTracks() {
+        /** @type {{ key: string, track: MediaStreamTrack, isLocal: boolean }[]} */
+        const out = [];
+        const seen = new Set();
+        const push = (key, mst, isLocal) => {
+          if (!mst || mst.readyState === "ended" || seen.has(key)) return;
+          seen.add(key);
+          out.push({ key, track: mst, isLocal: !!isLocal });
+        };
+        const addFrom = (prefix, participant, isLocal) => {
+          if (!participant) return;
+          const pubs = participant.trackPublications?.values?.()
+            || participant.audioTrackPublications?.values?.()
+            || [];
+          for (const pub of pubs) {
+            const mst = mediaStreamTrackFromPub(pub);
+            if (!mst) continue;
+            // Skip explicitly muted pubs (mic off) — enabled=false tracks are silent anyway.
+            if (pub.isMuted || pub.track?.isMuted) continue;
+            const sid = pub.trackSid || pub.track?.sid || mst.id;
+            push(prefix + ":" + sid, mst, isLocal);
+          }
+        };
+
+        // Explicit local microphone — WKWebView often won't feed the publish track into
+        // MediaRecorder unless we pick it up by source and clone it into the mix.
+        try {
+          const me = room.localParticipant;
+          const micSource = LivekitClient?.Track?.Source?.Microphone || "microphone";
+          const micPub = typeof me?.getTrackPublication === "function"
+            ? me.getTrackPublication(micSource)
+            : null;
+          const micMst = mediaStreamTrackFromPub(micPub);
+          if (micMst && me?.isMicrophoneEnabled !== false) {
+            push("local:mic", micMst, true);
+          }
+          addFrom("local", me, true);
+        } catch (_) { /* ignore */ }
+
+        try {
+          for (const p of room.remoteParticipants.values()) addFrom(p.identity, p, false);
+        } catch (_) { /* ignore */ }
+        return out;
+      }
+
+      function releaseRecordAudioKey(key) {
+        const node = recordAudioSources.get(key);
+        if (node) {
+          try { node.disconnect(); } catch (_) {}
+          recordAudioSources.delete(key);
+        }
+        const clone = recordAudioClones.get(key);
+        if (clone) {
+          try { clone.stop(); } catch (_) {}
+          recordAudioClones.delete(key);
+        }
+      }
+
+      function clearRecordAudioGraph() {
+        for (const key of [...recordAudioSources.keys()]) releaseRecordAudioKey(key);
+        for (const key of [...recordAudioClones.keys()]) releaseRecordAudioKey(key);
+        recordAudioSources.clear();
+        recordAudioClones.clear();
+        recordAudioDest = null;
+      }
+
+      function refreshRecordAudioGraph() {
+        if (!recordAudioCtx || !recordAudioDest) return;
+        const live = collectRoomAudioTracks();
+        const liveKeys = new Set(live.map(x => x.key));
+        for (const key of [...recordAudioSources.keys()]) {
+          if (liveKeys.has(key)) continue;
+          releaseRecordAudioKey(key);
+        }
+        for (const { key, track, isLocal } of live) {
+          if (recordAudioSources.has(key)) continue;
+          try {
+            // Clone so the WebRTC sender / LiveKit capture keeps working; required on WKWebView
+            // for the local mic to actually appear in the recorded mix.
+            const clone = track.clone();
+            if (clone.enabled === false) clone.enabled = true;
+            recordAudioClones.set(key, clone);
+            const src = recordAudioCtx.createMediaStreamSource(new MediaStream([clone]));
+            // Slight local boost — host voice is often quieter after AEC in the mix.
+            const gain = recordAudioCtx.createGain();
+            gain.gain.value = isLocal ? 1.15 : 1.0;
+            src.connect(gain);
+            gain.connect(recordAudioDest);
+            recordAudioSources.set(key, src);
+          } catch (_) { /* track may not be usable yet */ }
+        }
+      }
+
+      async function buildRecordAudioStream() {
+        // Mix LiveKit MediaStreamTracks (cloned) — never createMediaElementSource on the
+        // playback <audio> nodes (that permanently steals them from the meeting).
+        recordAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        recordAudioDest = recordAudioCtx.createMediaStreamDestination();
+        recordAudioSources = new Map();
+        recordAudioClones = new Map();
+        refreshRecordAudioGraph();
+        if (recordAudioCtx.state === "suspended") {
+          try { await recordAudioCtx.resume(); } catch (_) {}
+        }
+        // Second pass after resume — local mic sometimes attaches only once the context runs.
+        try { refreshRecordAudioGraph(); } catch (_) {}
+        return recordAudioDest.stream;
+      }
+
+      window.meetjoeStartRecording = async () => {
+        if (isRecording) return true;
+        try {
+          recordCanvas = document.createElement("canvas");
+          recordCanvas.width = 1280;
+          recordCanvas.height = 720;
+          recordCtx = recordCanvas.getContext("2d", { alpha: false });
+          paintRecordFrame();
+          const canvasStream = recordCanvas.captureStream(20);
+          const audioStream = await buildRecordAudioStream();
+          const tracks = [
+            ...canvasStream.getVideoTracks(),
+            ...audioStream.getAudioTracks(),
+          ];
+          recordStream = new MediaStream(tracks);
+          recordChunks = [];
+          const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+            ? "video/webm;codecs=vp9,opus"
+            : MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")
+              ? "video/webm;codecs=vp8,opus"
+              : "video/webm";
+          mediaRecorder = new MediaRecorder(recordStream, {
+            mimeType: mime,
+            videoBitsPerSecond: 2_500_000,
+            audioBitsPerSecond: 128_000,
+          });
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) recordChunks.push(e.data);
+          };
+          mediaRecorder.start(1000);
+          isRecording = true;
+          iAmRecorder = true;
+          setRoomRecordingUi(true, Date.now(), room.localParticipant?.name || "Host", true);
+          try { await publishRecordingState(true); } catch (_) { /* best-effort notify */ }
+          notifyHost("recording-on");
+          return true;
+        } catch (err) {
+          console.error(err);
+          await teardownRecorder();
+          notifyHost("recording-failed:Could not start recording");
+          return false;
+        }
+      };
+
+      async function teardownRecorder() {
+        stopRecordLoop();
+        try { mediaRecorder?.stop(); } catch (_) {}
+        mediaRecorder = null;
+        try {
+          recordStream?.getTracks().forEach(t => { try { t.stop(); } catch (_) {} });
+        } catch (_) {}
+        recordStream = null;
+        clearRecordAudioGraph();
+        try { await recordAudioCtx?.close(); } catch (_) {}
+        recordAudioCtx = null;
+        recordCanvas = null;
+        recordCtx = null;
+        if (iAmRecorder || isRecording) {
+          try { await publishRecordingState(false); } catch (_) {}
+          setRoomRecordingUi(false, 0, null, true);
+        }
+        iAmRecorder = false;
+        isRecording = false;
+      }
+
+      window.meetjoeStopRecording = async () => {
+        if (!isRecording || !mediaRecorder) {
+          // Nothing to upload — tell the host so a pending stop wait can finish.
+          notifyHost("recording-failed:Not recording");
+          notifyHost("recording-off");
+          return null;
+        }
+        const upload = window.meetjoeRecordingUpload;
+        const stopped = new Promise((resolve) => {
+          mediaRecorder.onstop = () => resolve();
+        });
+        try { mediaRecorder.stop(); } catch (_) {}
+        await stopped;
+        stopRecordLoop();
+        const blob = new Blob(recordChunks, { type: mediaRecorder.mimeType || "video/webm" });
+        recordChunks = [];
+        try {
+          recordStream?.getTracks().forEach(t => { try { t.stop(); } catch (_) {} });
+        } catch (_) {}
+        recordStream = null;
+        clearRecordAudioGraph();
+        try { await recordAudioCtx?.close(); } catch (_) {}
+        recordAudioCtx = null;
+        recordCanvas = null;
+        recordCtx = null;
+        mediaRecorder = null;
+        isRecording = false;
+        try { await publishRecordingState(false); } catch (_) {}
+        setRoomRecordingUi(false, 0, null, true);
+        iAmRecorder = false;
+        // Keep chrome in "saving" until ready/failed — do not emit recording-off yet
+        // (that used to complete the host wait with a null file id before upload finished).
+        showBanner("Saving recording…");
+
+        if (!upload?.url || !upload?.token) {
+          notifyHost("recording-failed:Missing upload credentials");
+          notifyHost("recording-off");
+          showBanner("Recording stopped.");
+          return null;
+        }
+        if (!blob.size) {
+          notifyHost("recording-failed:Empty recording");
+          notifyHost("recording-off");
+          showBanner("Recording stopped.");
+          return null;
+        }
+
+        try {
+          const form = new FormData();
+          const name = upload.fileName || ("recording-" + new Date().toISOString().replace(/[:.]/g, "-") + ".webm");
+          // Strip codec parameters from the Blob type — "video/webm;codecs=vp9,opus" (comma)
+          // breaks MinIO/S3 multipart signature verification on upload.
+          const cleanBlob = blob.type === "video/webm" ? blob : blob.slice(0, blob.size, "video/webm");
+          form.append("file", cleanBlob, name);
+          const res = await fetch(upload.url, {
+            method: "POST",
+            headers: { Authorization: "Bearer " + upload.token },
+            body: form,
+          });
+          if (!res.ok) {
+            const text = await res.text().catch(() => "");
+            notifyHost("recording-failed:Upload failed (" + res.status + ")");
+            notifyHost("recording-off");
+            showBanner("Recording upload failed.");
+            console.error("recording upload", res.status, text);
+            return null;
+          }
+          const dto = await res.json();
+          const fileId = dto?.id || dto?.Id;
+          if (!fileId) {
+            notifyHost("recording-failed:Upload response missing file id");
+            notifyHost("recording-off");
+            showBanner("Recording stopped.");
+            return null;
+          }
+          notifyHost("recording-ready:" + fileId);
+          notifyHost("recording-off");
+          showBanner("Recording saved.");
+          setTimeout(() => showBanner(""), 4000);
+          return fileId;
+        } catch (err) {
+          console.error(err);
+          notifyHost("recording-failed:Upload error");
+          notifyHost("recording-off");
+          showBanner("Recording upload failed.");
+          return null;
+        }
+      };
+
       micBtn.onclick = async () => { await window.meetjoeToggleMic(); };
       camBtn.onclick = async () => { await window.meetjoeToggleCamera(); };
       shareBtn.onclick = async () => { await window.meetjoeToggleScreenShare(); };
@@ -1384,6 +2091,9 @@
 
       /** Stop tracks + disconnect so the host can tear down WKWebView without a native crash. */
       window.meetjoeShutdown = async () => {
+        try {
+          if (isRecording) await window.meetjoeStopRecording();
+        } catch (_) { /* ignore */ }
         try {
           await room.localParticipant.setCameraEnabled(false);
         } catch (_) { /* ignore */ }

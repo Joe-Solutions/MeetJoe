@@ -558,4 +558,27 @@ public class MeetingTests
         Assert.Equal(guest, Assert.Single(added).UserId);
         Assert.Equal(2, meeting.Invites.Count);
     }
+
+    [Fact]
+    public void A_recording_starts_active_and_can_finish_or_fail()
+    {
+        var meetingId = Guid.NewGuid();
+        var host = Guid.NewGuid();
+        var recording = MeetingRecording.Start(meetingId, host, Now);
+
+        Assert.Equal(RecordingStatus.Recording, recording.Status);
+        Assert.True(recording.IsInProgress);
+        Assert.Null(recording.EndedAt);
+
+        recording.MarkReady("org/file", "standup.webm", Now.AddMinutes(5));
+        Assert.Equal(RecordingStatus.Ready, recording.Status);
+        Assert.False(recording.IsInProgress);
+        Assert.Equal("standup.webm", recording.FileName);
+        Assert.Equal(Now.AddMinutes(5), recording.EndedAt);
+
+        var failed = MeetingRecording.Start(meetingId, host, Now);
+        failed.MarkFailed(Now.AddMinutes(1));
+        Assert.Equal(RecordingStatus.Failed, failed.Status);
+        Assert.False(failed.IsInProgress);
+    }
 }

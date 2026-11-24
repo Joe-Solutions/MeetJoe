@@ -40,5 +40,9 @@
   <StreamGeometry x:Key="Icon.ScreenShare">M8 21h8 M12 17v4 M2 3h20v14H2z</StreamGeometry>
   <!-- Feather maximize-2: expand minimized call -->
   <StreamGeometry x:Key="Icon.Expand">M15 3h6v6 M9 21H3v-6 M21 3l-7 7 M3 21l7-7</StreamGeometry>
+  <!-- Feather circle: start recording -->
+  <StreamGeometry x:Key="Icon.Record">M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z</StreamGeometry>
+  <!-- Feather square: stop recording -->
+  <StreamGeometry x:Key="Icon.StopRecording">M5 5h14v14H5z</StreamGeometry>
   <StreamGeometry x:Key="Icon.Refresh">M23 4v6h-6 M1 20v-6h6 M3.51 9a9 9 0 0 1 14.85-3.36L23 10 M1 14l4.64 4.36A9 9 0 0 0 20.49 15</StreamGeometry>
 </ResourceDictionary>

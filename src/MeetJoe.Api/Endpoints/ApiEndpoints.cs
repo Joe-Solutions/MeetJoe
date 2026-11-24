@@ -12,6 +12,7 @@ using MeetJoe.Application.Profiles;
 using MeetJoe.Application.Search;
 using MeetJoe.Application.Workspaces;
 using MeetJoe.Contracts;
+using Microsoft.AspNetCore.Mvc;
 
 namespace MeetJoe.Api.Endpoints;
 
@@ -235,6 +236,19 @@ internal static class ApiEndpoints
                     UploadAsync(null, null, file, user, files, ct, id))
             .DisableAntiforgery();
 
+        // Larger limit for client-side WebM recordings (meeting or call conversation).
+        api.MapPost("/meetings/{id:guid}/recording/upload",
+                (Guid id, IFormFile file, ClaimsPrincipal user, FileService files, CancellationToken ct) =>
+                    UploadRecordingAsync(null, id, file, user, files, ct))
+            .DisableAntiforgery()
+            .WithMetadata(new RequestSizeLimitAttribute(MeetJoe.Domain.FileObject.MaxRecordingSizeBytes + 1_048_576));
+
+        api.MapPost("/conversations/{id:guid}/recording/upload",
+                (Guid id, IFormFile file, ClaimsPrincipal user, FileService files, CancellationToken ct) =>
+                    UploadRecordingAsync(id, null, file, user, files, ct))
+            .DisableAntiforgery()
+            .WithMetadata(new RequestSizeLimitAttribute(MeetJoe.Domain.FileObject.MaxRecordingSizeBytes + 1_048_576));
+
         api.MapGet("/files/{id:guid}/content",
             async (Guid id, ClaimsPrincipal user, FileService files, HttpContext http, CancellationToken ct) =>
             {
@@ -263,6 +277,19 @@ internal static class ApiEndpoints
         return await files.UploadAsync(
             user.GetUserId(), conversationId, channelId, file.FileName, file.ContentType, file.Length, content, ct,
             meetingId);
+    }
+
+    private static async Task<FileDto> UploadRecordingAsync(
+        Guid? conversationId,
+        Guid? meetingId,
+        IFormFile file,
+        ClaimsPrincipal user,
+        FileService files,
+        CancellationToken ct)
+    {
+        await using var content = file.OpenReadStream();
+        return await files.UploadRecordingAsync(
+            user.GetUserId(), conversationId, meetingId, file.FileName, file.ContentType, file.Length, content, ct);
     }
 
     private static void MapMeetings(RouteGroupBuilder api)
@@ -316,6 +343,14 @@ internal static class ApiEndpoints
         api.MapPost("/meetings/{id:guid}/recording",
             (Guid id, ClaimsPrincipal user, MeetingService meetings, CancellationToken ct) =>
                 meetings.StartRecordingAsync(user.GetUserId(), id, ct));
+
+        api.MapPost("/meetings/{id:guid}/recording/complete",
+            (Guid id, CompleteRecordingRequest request, ClaimsPrincipal user, MeetingService meetings, CancellationToken ct) =>
+                meetings.CompleteRecordingAsync(user.GetUserId(), id, request, ct));
+
+        api.MapPost("/meetings/{id:guid}/recording/cancel",
+            (Guid id, ClaimsPrincipal user, MeetingService meetings, CancellationToken ct) =>
+                meetings.CancelRecordingAsync(user.GetUserId(), id, ct));
     }
 
     private static void MapCalls(RouteGroupBuilder api)

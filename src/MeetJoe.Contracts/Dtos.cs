@@ -266,6 +266,8 @@ public record MeetingJoinDto(
 public record MeetingRecordingDto(
     Guid Id, Guid MeetingId, RecordingStatus Status, string? FileName, DateTimeOffset StartedAt, DateTimeOffset? EndedAt);
 
+public record CompleteRecordingRequest(Guid FileId);
+
 public record MeetingChatMessageDto(MessageDto Message);
 
 // ---- Errors ---------------------------------------------------------------

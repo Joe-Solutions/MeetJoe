@@ -82,9 +82,10 @@ public partial class App : Application
             })
             {
                 BaseAddress = config.ApiBaseUri,
-                // Long enough for a 50 MB upload on a slow connection.
-                Timeout = TimeSpan.FromMinutes(5),
-            }));
+                // Long enough for a recording upload (up to ~200 MB) on a slow connection.
+                Timeout = TimeSpan.FromMinutes(15),
+            },
+            provider.GetRequiredService<IAuthService>()));
 
         services.AddSingleton<IRealtimeClient, RealtimeClient>();
         services.AddSingleton<AvatarCache>();
