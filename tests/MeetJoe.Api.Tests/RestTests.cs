@@ -312,6 +312,7 @@ public class ChatTests(ApiFactory api)
         var conversation = await ana.PostAsync<ConversationDto>($"/api/orgs/{org.Id}/conversations", With(ben));
 
         var first = await ana.SendAsync(conversation.Id, null, "  Hello Ben  ");
+        api.Clock.Advance(TimeSpan.FromSeconds(1));
         await ana.SendAsync(conversation.Id, null, "Are you free at 3?");
 
         Assert.Equal("Hello Ben", first.Body);
@@ -336,7 +337,12 @@ public class ChatTests(ApiFactory api)
         var (org, people) = await api.NewOrganizationAsync("Ana", "Ben");
         var (ana, ben) = (people[0], people[1]);
         var conversation = await ana.PostAsync<ConversationDto>($"/api/orgs/{org.Id}/conversations", With(ben));
-        for (var i = 1; i <= 5; i++) await ana.SendAsync(conversation.Id, null, $"message {i}");
+        // Distinct CreatedAt values — paging cursors are timestamps (see ChatService.GetMessagesAsync).
+        for (var i = 1; i <= 5; i++)
+        {
+            await ana.SendAsync(conversation.Id, null, $"message {i}");
+            api.Clock.Advance(TimeSpan.FromSeconds(1));
+        }
 
         var latest = await ben.GetAsync<List<MessageDto>>($"/api/conversations/{conversation.Id}/messages?limit=2");
         var before = Uri.EscapeDataString(latest[0].CreatedAt.ToString("O"));
