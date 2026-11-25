@@ -126,7 +126,7 @@ internal sealed class FakeApi : IMeetJoeApi
         return Task.FromResult(updated);
     }
 
-    public Task<ConversationDto> RemoveConversationMemberAsync(
+    public Task<ConversationDto?> RemoveConversationMemberAsync(
         Guid conversationId, Guid userId, CancellationToken ct = default)
     {
         var index = Conversations.FindIndex(c => c.Id == conversationId);
@@ -134,14 +134,31 @@ internal sealed class FakeApi : IMeetJoeApi
         var current = Conversations[index];
         if (current.Kind != ConversationKind.Group)
             throw new ApiException("Only group conversations can change membership.", 400);
-        if (userId == Me.Id)
-            throw new ApiException("You cannot remove yourself from the group.", 400);
         var next = current.Members.Where(m => m.Id != userId).ToList();
         if (next.Count == current.Members.Count)
             throw new ApiException("That person is not in this conversation.", 400);
-        if (next.Count < 2)
-            throw new ApiException("A group needs at least two people.", 400);
+        if (next.Count == 0)
+        {
+            Conversations.RemoveAt(index);
+            return Task.FromResult<ConversationDto?>(null);
+        }
+
         var updated = current with { Members = next };
+        Conversations[index] = updated;
+        return Task.FromResult<ConversationDto?>(updated);
+    }
+
+    public Task<ConversationDto> RenameConversationAsync(
+        Guid conversationId, string title, CancellationToken ct = default)
+    {
+        var index = Conversations.FindIndex(c => c.Id == conversationId);
+        if (index < 0) throw new ApiException("Conversation was not found.", 404);
+        var current = Conversations[index];
+        if (current.Kind != ConversationKind.Group)
+            throw new ApiException("Only group conversations can be renamed.", 400);
+        if (current.CreatedById is not { } creator || creator != Me.Id)
+            throw new ApiException("Only the person who created this group can rename it.", 400);
+        var updated = current with { Title = title.Trim() };
         Conversations[index] = updated;
         return Task.FromResult(updated);
     }
@@ -168,6 +185,11 @@ internal sealed class FakeApi : IMeetJoeApi
     }
 
     public Task MarkChannelReadAsync(Guid channelId, CancellationToken ct = default) => Task.CompletedTask;
+
+    public Task<IReadOnlyList<ReadCursorDto>> GetChannelReadCursorsAsync(Guid channelId, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<ReadCursorDto>>([]);
+
+    public Task MarkMeetingChatReadAsync(Guid meetingId, CancellationToken ct = default) => Task.CompletedTask;
 
     public Task<ConversationDto> UpdateConversationPrefsAsync(
         Guid conversationId, UpdateConversationPrefsRequest request, CancellationToken ct = default)
@@ -760,7 +782,8 @@ internal sealed class World
             "Sounds good — I'll send the build over after lunch.", now.AddMinutes(-4), 0);
         LaunchGroup = new ConversationDto(
             Guid.NewGuid(), ConversationKind.Group, "Launch planning", [Ana, Ben, Chloe],
-            "Chloe: Draft of the announcement is in the channel.", now.AddMinutes(-38), 2);
+            "Chloe: Draft of the announcement is in the channel.", now.AddMinutes(-38), 2,
+            CreatedById: Ana.Id);
         WithPriya = new ConversationDto(
             Guid.NewGuid(), ConversationKind.Direct, null, [Ana, Priya],
             "Thanks for the invoice details.", now.AddDays(-1), 0);

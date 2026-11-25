@@ -82,9 +82,33 @@
               <c:Icon Data="{StaticResource Icon.Workspaces}" Size="19" />
             </Button>
           </StackPanel>
-          <StackPanel VerticalAlignment="Center" Spacing="1">
-            <TextBlock Classes="h2" Text="{Binding Selected.Title}" MaxLines="1" TextTrimming="CharacterEllipsis" />
-            <TextBlock Classes="muted small" Text="{Binding Selected.Subtitle}" />
+          <StackPanel VerticalAlignment="Center" Spacing="4">
+            <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding !IsRenamingGroup}">
+              <TextBlock Classes="h2" Text="{Binding Selected.Title}" MaxLines="1" TextTrimming="CharacterEllipsis"
+                         VerticalAlignment="Center" />
+              <Button Classes="ghost square" Width="28" Height="28" Padding="0"
+                      VerticalAlignment="Center"
+                      IsVisible="{Binding CanRenameGroup}"
+                      Command="{Binding BeginRenameCommand}"
+                      ToolTip.Tip="Rename group">
+                <c:Icon Data="{StaticResource Icon.Edit}" Size="14" />
+              </Button>
+            </StackPanel>
+            <StackPanel Spacing="6" IsVisible="{Binding IsRenamingGroup}">
+              <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                <TextBox Text="{Binding RenameDraft}" Watermark="Group name" MaxLength="80"
+                         MinHeight="32" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Classes="primary" Content="Save" Padding="12,6" MinHeight="32"
+                        Command="{Binding SaveRenameCommand}" />
+                <Button Grid.Column="2" Classes="ghost" Content="Cancel" Padding="10,6" MinHeight="32"
+                        Command="{Binding CancelRenameCommand}" />
+              </Grid>
+              <TextBlock Classes="error" FontSize="12" Text="{Binding RenameStatus}"
+                         IsVisible="{Binding RenameStatus, Converter={x:Static ObjectConverters.IsNotNull}}"
+                         TextWrapping="Wrap" />
+            </StackPanel>
+            <TextBlock Classes="muted small" Text="{Binding Selected.Subtitle}"
+                       IsVisible="{Binding !IsRenamingGroup}" />
           </StackPanel>
         </DockPanel>
       </Border>
@@ -151,6 +175,13 @@
             <c:Icon Data="{StaticResource Icon.Close}" Size="17" />
           </Button>
         </Grid>
+
+        <StackPanel DockPanel.Dock="Bottom" Margin="20,8,16,16" Spacing="8"
+                    IsVisible="{Binding CanManageMembers}">
+          <Button Classes="secondary" Content="Leave group" HorizontalAlignment="Stretch"
+                  Command="{Binding LeaveGroupCommand}"
+                  ToolTip.Tip="Leave this group. If you are the last person, the group is removed." />
+        </StackPanel>
 
         <StackPanel DockPanel.Dock="Top" Margin="20,0,16,12" Spacing="8"
                     IsVisible="{Binding CanManageMembers}">

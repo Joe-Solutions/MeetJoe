@@ -128,6 +128,7 @@ public partial class MeetingViewModel : ObservableObject
     public IReadOnlyList<PersonViewModel> Lobby { get; private set; } = [];
     public IReadOnlyList<MeetingInviteDto> Invites { get; private set; } = [];
     public IReadOnlyList<Guid> RaisedHands { get; private set; } = [];
+    public IReadOnlyList<ReadCursorDto> ChatReadCursors { get; private set; } = [];
     public string Summary { get; private set; } = string.Empty;
     public string WhenText { get; private set; } = string.Empty;
     public string RecurrenceText { get; private set; } = string.Empty;
@@ -153,6 +154,7 @@ public partial class MeetingViewModel : ObservableObject
         Lobby = meeting.Lobby.Select(people.Get).ToList();
         Invites = meeting.Invites;
         RaisedHands = meeting.RaisedHands;
+        ChatReadCursors = meeting.ChatReadCursors ?? [];
         MyInviteStatus = HasEnded
             ? null
             : meeting.Invites.FirstOrDefault(i => i.UserId == people.MyId)?.Status;
@@ -183,6 +185,7 @@ public partial class MeetingViewModel : ObservableObject
 public partial class MeetingStageViewModel : ViewModelBase
 {
     private readonly SessionContext _context;
+    private readonly Dictionary<Guid, DateTimeOffset> _chatReadAt = [];
 
     public MeetingStageViewModel(
         MeetingViewModel meeting, MeetingJoinDto join, SessionContext context)
@@ -196,6 +199,7 @@ public partial class MeetingStageViewModel : ViewModelBase
         context.Realtime.MeetingUpdated += OnMeetingUpdated;
         context.Realtime.MeetingChat += OnMeetingChat;
         context.Realtime.ParticipantRemoved += OnRemoved;
+        context.Realtime.ReadReceipt += OnReadReceipt;
         _ = LoadChatAsync();
     }
 
@@ -371,6 +375,8 @@ public partial class MeetingStageViewModel : ViewModelBase
         _context.Realtime.MeetingUpdated -= OnMeetingUpdated;
         _context.Realtime.MeetingChat -= OnMeetingChat;
         _context.Realtime.ParticipantRemoved -= OnRemoved;
+        _context.Realtime.ReadReceipt -= OnReadReceipt;
+        _chatReadAt.Clear();
     }
 
     [RelayCommand]
@@ -403,6 +409,7 @@ public partial class MeetingStageViewModel : ViewModelBase
         ShowPeoplePanel = false;
         UnreadChatCount = 0;
         RequestChatFollow();
+        _ = MarkMeetingChatReadAsync();
     }
 
     partial void OnShowPeoplePanelChanged(bool value)
@@ -411,6 +418,7 @@ public partial class MeetingStageViewModel : ViewModelBase
         {
             UnreadChatCount = 0;
             RequestChatFollow();
+            _ = MarkMeetingChatReadAsync();
         }
     }
 
@@ -917,6 +925,7 @@ public partial class MeetingStageViewModel : ViewModelBase
                 ? await _context.Realtime.SendMeetingChatAsync(Id, body, ids)
                 : await _context.Api.SendMeetingChatAsync(Id, body, attachmentIds: ids);
             RoomChatMessageViewModel.TryAdd(ChatMessages, sent, _context);
+            RefreshChatSeenBy();
             RequestChatFollow();
         }
         catch
@@ -936,7 +945,10 @@ public partial class MeetingStageViewModel : ViewModelBase
             foreach (var message in messages)
                 ChatMessages.Add(new RoomChatMessageViewModel(message, _context));
             RoomChatMessageViewModel.ApplyGrouping(ChatMessages);
+            ApplyMeetingReadCursors(Meeting);
+            RefreshChatSeenBy();
             RequestChatFollow();
+            if (ShowChatPanel && !InLobby) await MarkMeetingChatReadAsync();
         }
         catch
         {
@@ -955,16 +967,70 @@ public partial class MeetingStageViewModel : ViewModelBase
         if (wasInLobby && !InLobby) IsMediaOpen = true;
         if (InLobby) IsMediaOpen = false;
         if (ShowAddPeople) RefreshInviteSuggestions();
+        if (meeting.ChatReadCursors is { } cursors)
+        {
+            foreach (var cursor in cursors)
+                _chatReadAt[cursor.UserId] = cursor.ReadAt;
+            RefreshChatSeenBy();
+        }
     }
 
     private void OnMeetingChat(MessageDto message)
     {
         if (message.MeetingId != Id) return;
         if (!RoomChatMessageViewModel.TryAdd(ChatMessages, message, _context)) return;
+        RefreshChatSeenBy();
         if (message.Sender.Id == _context.People.MyId)
             RequestChatFollow();
         else if (!ShowChatPanel)
             UnreadChatCount++;
+        else
+            _ = MarkMeetingChatReadAsync();
+    }
+
+    private void OnReadReceipt(ReadReceiptDto receipt)
+    {
+        if (receipt.MeetingId != Id) return;
+        ApplyChatReadReceipt(receipt.UserId, receipt.ReadAt);
+    }
+
+    private async Task MarkMeetingChatReadAsync()
+    {
+        if (InLobby) return;
+        try
+        {
+            await _context.Api.MarkMeetingChatReadAsync(Id);
+            ApplyChatReadReceipt(_context.People.MyId, DateTimeOffset.UtcNow);
+        }
+        catch
+        {
+            // Best-effort.
+        }
+    }
+
+    private void ApplyMeetingReadCursors(MeetingViewModel meeting)
+    {
+        foreach (var cursor in meeting.ChatReadCursors)
+            _chatReadAt[cursor.UserId] = cursor.ReadAt;
+
+        foreach (var person in meeting.Participants)
+        {
+            if (!_chatReadAt.ContainsKey(person.Id))
+                _chatReadAt[person.Id] = DateTimeOffset.MinValue;
+        }
+    }
+
+    private void ApplyChatReadReceipt(Guid userId, DateTimeOffset readAt)
+    {
+        if (_chatReadAt.TryGetValue(userId, out var existing) && existing >= readAt) return;
+        _chatReadAt[userId] = readAt;
+        RefreshChatSeenBy();
+    }
+
+    private void RefreshChatSeenBy()
+    {
+        var peers = Meeting.Participants.Select(p => (p.Id, p.DisplayName));
+        RoomChatMessageViewModel.RefreshSeenBy(ChatMessages, _context.People.MyId, peers, _chatReadAt);
     }
 
     private void OnRemoved(Guid meetingId, Guid userId)

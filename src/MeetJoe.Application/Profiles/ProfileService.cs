@@ -10,7 +10,8 @@ public sealed class ProfileService(
     IAppDbContext db,
     PresenceService presence,
     IRealtimePublisher realtime,
-    IFileStorage storage)
+    IFileStorage storage,
+    TimeProvider time)
 {
     private static readonly HashSet<string> AllowedAvatarTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -51,7 +52,7 @@ public sealed class ProfileService(
         var previousKey = user.AvatarStorageKey;
 
         await storage.PutAsync(key, content, size, type, ct);
-        user.SetAvatar(key, type);
+        user.SetAvatar(key, type, time.Now());
         try
         {
             await db.SaveChangesAsync(ct);
@@ -76,7 +77,7 @@ public sealed class ProfileService(
     {
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct) ?? throw AppException.NotFound("User");
         var key = user.AvatarStorageKey;
-        user.ClearAvatar();
+        user.ClearAvatar(time.Now());
         await db.SaveChangesAsync(ct);
         if (key is not null)
         {
@@ -111,7 +112,7 @@ public sealed class ProfileService(
 
     private static MeDto ToDto(User user) =>
         new(user.Id, user.Email ?? string.Empty, user.DisplayName, user.Availability.ToStatus(), user.StatusMessage,
-            Mapping.AvatarUrl(user.Id, user.AvatarStorageKey));
+            Mapping.AvatarUrl(user.Id, user.AvatarStorageKey, user.AvatarUpdatedAt));
 
     private static string? NormalizeImageType(string? fileName, string? contentType)
     {

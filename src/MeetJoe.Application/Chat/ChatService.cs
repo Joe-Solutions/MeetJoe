@@ -99,13 +99,18 @@ public sealed class ChatService(IAppDbContext db, IRealtimePublisher realtime, T
         return await GetConversationAsync(userId, conversationId, ct);
     }
 
-    public async Task<ConversationDto> RemoveMemberAsync(
+    /// <summary>
+    /// Removes a member (or leaves when <paramref name="memberUserId"/> is the caller).
+    /// When the last person leaves, the group is deleted and this returns null.
+    /// </summary>
+    public async Task<ConversationDto?> RemoveMemberAsync(
         Guid userId, Guid conversationId, Guid memberUserId, CancellationToken ct = default)
     {
-        if (memberUserId == userId)
-            throw AppException.Validation("You cannot remove yourself from the group.");
-
         var conversation = await RequireGroupMembershipAsync(userId, conversationId, ct);
+        // Anyone in the group can remove others; leaving yourself is always allowed.
+        if (memberUserId != userId && conversation.Members.All(m => m.UserId != memberUserId))
+            throw AppException.Validation("That person is not in this conversation.");
+
         var notify = conversation.Members.Select(m => m.UserId).ToList();
         try
         {
@@ -116,9 +121,65 @@ public sealed class ChatService(IAppDbContext db, IRealtimePublisher realtime, T
             throw AppException.Validation(ex.Message);
         }
 
+        if (conversation.IsEmpty)
+        {
+            await PurgeEmptyGroupAsync(conversation, ct);
+            await realtime.ConversationsChangedAsync(notify, ct);
+            return null;
+        }
+
         await db.SaveChangesAsync(ct);
         await realtime.ConversationsChangedAsync(notify, ct);
+
+        // If the caller left, they can no longer load the conversation.
+        if (memberUserId == userId)
+            return null;
+
         return await GetConversationAsync(userId, conversationId, ct);
+    }
+
+    public async Task<ConversationDto> RenameAsync(
+        Guid userId, Guid conversationId, RenameConversationRequest request, CancellationToken ct = default)
+    {
+        var conversation = await RequireGroupMembershipAsync(userId, conversationId, ct);
+        try
+        {
+            conversation.Rename(userId, request.Title);
+        }
+        catch (Domain.DomainException ex)
+        {
+            throw AppException.Validation(ex.Message);
+        }
+
+        await db.SaveChangesAsync(ct);
+        await realtime.ConversationsChangedAsync(conversation.Members.Select(m => m.UserId).ToList(), ct);
+        return await GetConversationAsync(userId, conversationId, ct);
+    }
+
+    private async Task PurgeEmptyGroupAsync(Domain.Conversation conversation, CancellationToken ct)
+    {
+        var conversationId = conversation.Id;
+
+        var activities = await db.ActivityItems.Where(a => a.ConversationId == conversationId).ToListAsync(ct);
+        db.ActivityItems.RemoveRange(activities);
+
+        var calls = await db.Calls.Where(c => c.ConversationId == conversationId).ToListAsync(ct);
+        db.Calls.RemoveRange(calls);
+
+        // Replies first — parent FK is Restrict.
+        var replies = await db.Messages
+            .Where(m => m.ConversationId == conversationId && m.ParentMessageId != null)
+            .ToListAsync(ct);
+        db.Messages.RemoveRange(replies);
+        var roots = await db.Messages.Where(m => m.ConversationId == conversationId).ToListAsync(ct);
+        db.Messages.RemoveRange(roots);
+
+        var files = await db.Files.Where(f => f.ConversationId == conversationId).ToListAsync(ct);
+        foreach (var file in files)
+            file.DetachFromConversation();
+
+        db.Conversations.Remove(conversation);
+        await db.SaveChangesAsync(ct);
     }
 
     private async Task<Domain.Conversation> RequireGroupMembershipAsync(
@@ -392,14 +453,43 @@ public sealed class ChatService(IAppDbContext db, IRealtimePublisher realtime, T
         var now = time.Now();
         var member = await db.ChannelMembers.FirstOrDefaultAsync(
             m => m.ChannelId == channelId && m.UserId == userId, ct);
-        if (member is not null)
+        if (member is null)
         {
-            member.MarkRead(now);
-            await db.SaveChangesAsync(ct);
+            // Standard channels have no membership row until prefs/read — create one to track LastReadAt.
+            member = new Domain.ChannelMember(channelId, userId, Domain.ChannelRole.Member, now);
+            db.ChannelMembers.Add(member);
         }
+
+        member.MarkRead(now);
+        await db.SaveChangesAsync(ct);
 
         var receipt = new ReadReceiptDto(null, channelId, userId, now);
         await realtime.ReadReceiptAsync(target.MemberIds, receipt, ct);
+    }
+
+    /// <summary>Read cursors for everyone who can see the channel (workspace or private members).</summary>
+    public async Task<IReadOnlyList<ReadCursorDto>> GetChannelReadCursorsAsync(
+        Guid userId, Guid channelId, CancellationToken ct = default)
+    {
+        var target = await db.ResolveTargetAsync(userId, null, channelId, ct);
+        var memberIds = target.MemberIds;
+        var cursors = await db.ChannelMembers
+            .Where(m => m.ChannelId == channelId && memberIds.Contains(m.UserId))
+            .Select(m => new { m.UserId, m.User.DisplayName, m.LastReadAt })
+            .ToListAsync(ct);
+        var byId = cursors.ToDictionary(c => c.UserId);
+
+        var names = await db.Users
+            .Where(u => memberIds.Contains(u.Id))
+            .Select(u => new { u.Id, u.DisplayName })
+            .ToListAsync(ct);
+
+        return names
+            .OrderBy(n => n.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .Select(n => byId.TryGetValue(n.Id, out var c)
+                ? new ReadCursorDto(n.Id, n.DisplayName, c.LastReadAt)
+                : new ReadCursorDto(n.Id, n.DisplayName, DateTimeOffset.MinValue))
+            .ToList();
     }
 
     public async Task SetTypingAsync(
@@ -525,37 +615,59 @@ public sealed class ChatService(IAppDbContext db, IRealtimePublisher realtime, T
     private static async Task<List<MessageDto>> ProjectMessagesAsync(
         IQueryable<Domain.Message> query, Guid viewerId, CancellationToken ct)
     {
-        return await query
-            .Select(m => new MessageDto(
+        var rows = await query
+            .Select(m => new
+            {
                 m.Id,
                 m.ConversationId,
                 m.ChannelId,
-                new UserSummaryDto(
-                    m.SenderId,
-                    m.Sender.DisplayName,
-                    m.Sender.AvatarStorageKey != null
-                        ? "api/users/" + m.SenderId.ToString() + "/avatar"
-                        : null),
-                m.DeletedAt == null ? m.Body : string.Empty,
+                m.SenderId,
+                SenderName = m.Sender.DisplayName,
+                SenderAvatarKey = m.Sender.AvatarStorageKey,
+                SenderAvatarUpdatedAt = m.Sender.AvatarUpdatedAt,
+                Body = m.DeletedAt == null ? m.Body : string.Empty,
                 m.CreatedAt,
-                m.Attachments
+                Attachments = m.Attachments
                     .Select(a => new AttachmentDto(
                         a.FileObjectId, a.FileObject.FileName, a.FileObject.ContentType, a.FileObject.Size))
                     .ToList(),
                 m.ParentMessageId,
                 m.EditedAt,
-                m.DeletedAt != null,
+                IsDeleted = m.DeletedAt != null,
                 m.ReplyCount,
-                m.Reactions
+                Reactions = m.Reactions
                     .GroupBy(r => r.Emoji)
                     .OrderBy(g => g.Key)
                     .Select(g => new ReactionSummaryDto(g.Key, g.Count(), g.Any(r => r.UserId == viewerId)))
                     .ToList(),
                 m.MeetingId,
+                m.LinkPreviewUrl,
+                m.LinkPreviewTitle,
+                m.LinkPreviewDescription,
+            })
+            .ToListAsync(ct);
+
+        return rows.Select(m => new MessageDto(
+                m.Id,
+                m.ConversationId,
+                m.ChannelId,
+                new UserSummaryDto(
+                    m.SenderId,
+                    m.SenderName,
+                    Mapping.AvatarUrl(m.SenderId, m.SenderAvatarKey, m.SenderAvatarUpdatedAt)),
+                m.Body,
+                m.CreatedAt,
+                m.Attachments,
+                m.ParentMessageId,
+                m.EditedAt,
+                m.IsDeleted,
+                m.ReplyCount,
+                m.Reactions,
+                m.MeetingId,
                 m.LinkPreviewUrl == null
                     ? null
                     : new LinkPreviewDto(m.LinkPreviewUrl, m.LinkPreviewTitle, m.LinkPreviewDescription)))
-            .ToListAsync(ct);
+            .ToList();
     }
 
     private async Task<Guid?> FindDirectAsync(Guid organizationId, Guid userA, Guid userB, CancellationToken ct)
@@ -584,6 +696,7 @@ public sealed class ChatService(IAppDbContext db, IRealtimePublisher realtime, T
                 m.Conversation.Id,
                 m.Conversation.Kind,
                 m.Conversation.Title,
+                m.Conversation.CreatedById,
                 m.Conversation.LastMessagePreview,
                 m.Conversation.LastMessageAt,
                 m.Conversation.CreatedAt,
@@ -608,7 +721,15 @@ public sealed class ChatService(IAppDbContext db, IRealtimePublisher realtime, T
         var ids = rows.Select(r => r.Id).ToList();
         var members = await db.ConversationMembers
             .Where(m => ids.Contains(m.ConversationId))
-            .Select(m => new { m.ConversationId, m.UserId, m.User.DisplayName, m.User.AvatarStorageKey })
+            .Select(m => new
+            {
+                m.ConversationId,
+                m.UserId,
+                m.User.DisplayName,
+                m.User.AvatarStorageKey,
+                m.User.AvatarUpdatedAt,
+                m.LastReadAt,
+            })
             .ToListAsync(ct);
         var membersByConversation = members.ToLookup(m => m.ConversationId);
 
@@ -616,21 +737,29 @@ public sealed class ChatService(IAppDbContext db, IRealtimePublisher realtime, T
             .OrderByDescending(r => r.IsPinned)
             .ThenByDescending(r => r.PinnedAt)
             .ThenByDescending(r => r.LastMessageAt ?? r.CreatedAt)
-            .Select(r => new ConversationDto(
-                r.Id,
-                r.Kind.ToContract(),
-                r.Title,
-                membersByConversation[r.Id]
+            .Select(r =>
+            {
+                var roster = membersByConversation[r.Id]
                     .OrderBy(m => m.DisplayName, StringComparer.OrdinalIgnoreCase)
-                    .Select(m => new UserSummaryDto(m.UserId, m.DisplayName, Mapping.AvatarUrl(m.UserId, m.AvatarStorageKey)))
-                    .ToList(),
-                r.LastMessagePreview,
-                r.LastMessageAt,
-                r.Unread,
-                r.IsMuted,
-                r.IsPinned,
-                r.NotifyMode.ToContract(),
-                r.HasUnreadMention))
+                    .ToList();
+                return new ConversationDto(
+                    r.Id,
+                    r.Kind.ToContract(),
+                    r.Title,
+                    roster
+                        .Select(m => new UserSummaryDto(
+                            m.UserId, m.DisplayName, Mapping.AvatarUrl(m.UserId, m.AvatarStorageKey, m.AvatarUpdatedAt)))
+                        .ToList(),
+                    r.LastMessagePreview,
+                    r.LastMessageAt,
+                    r.Unread,
+                    r.IsMuted,
+                    r.IsPinned,
+                    r.NotifyMode.ToContract(),
+                    r.HasUnreadMention,
+                    roster.Select(m => new ReadCursorDto(m.UserId, m.DisplayName, m.LastReadAt)).ToList(),
+                    r.CreatedById);
+            })
             .ToList();
     }
 }

@@ -282,6 +282,24 @@ public sealed class MeetingService(
             userId, new SendMessageRequest(null, null, body, attachmentIds, null, meetingId), ct);
     }
 
+    public async Task MarkMeetingChatReadAsync(Guid userId, Guid meetingId, CancellationToken ct = default)
+    {
+        var meeting = await RequireAccessibleAsync(userId, meetingId, ct);
+        var participant = meeting.Participants.FirstOrDefault(p => p.UserId == userId && p.IsPresent && !p.InLobby)
+                          ?? throw AppException.Validation("Join the meeting before reading chat.");
+        var now = time.Now();
+        participant.MarkRead(now);
+        await db.SaveChangesAsync(ct);
+
+        var recipients = meeting.Participants
+            .Where(p => p.IsPresent && !p.InLobby)
+            .Select(p => p.UserId)
+            .Distinct()
+            .ToList();
+        var receipt = new ReadReceiptDto(null, null, userId, now, meetingId);
+        await realtime.ReadReceiptAsync(recipients, receipt, ct);
+    }
+
     public async Task<MeetingRecordingDto> StartRecordingAsync(Guid userId, Guid meetingId, CancellationToken ct = default)
     {
         var meeting = await RequireHostAsync(userId, meetingId, ct);
@@ -468,5 +486,12 @@ public sealed class MeetingService(
             meeting.Participants
                 .Where(p => p.IsPresent && p.HandRaised)
                 .Select(p => p.UserId)
+                .ToList(),
+            meeting.Participants
+                .Where(p => p.IsPresent && !p.InLobby)
+                .GroupBy(p => p.UserId)
+                .Select(g => g.OrderByDescending(p => p.JoinedAt).First())
+                .OrderBy(p => p.User.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .Select(p => new ReadCursorDto(p.UserId, p.User.DisplayName, p.LastReadAt))
                 .ToList());
 }

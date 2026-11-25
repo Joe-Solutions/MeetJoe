@@ -58,6 +58,7 @@ public partial class WorkspacesViewModel : ViewModelBase
         context.Realtime.MessageUpdated += OnMessageUpdated;
         context.Realtime.Typing += OnTyping;
         context.Realtime.WorkspacesChanged += OnWorkspacesChanged;
+        context.Realtime.ReadReceipt += OnReadReceipt;
     }
 
     public ObservableCollection<WorkspaceViewModel> Workspaces { get; } = [];
@@ -98,6 +99,7 @@ public partial class WorkspacesViewModel : ViewModelBase
     {
         _context.Realtime.MessageReceived -= OnMessageReceived;
         _context.Realtime.MessageUpdated -= OnMessageUpdated;
+        _context.Realtime.ReadReceipt -= OnReadReceipt;
         _context.Realtime.Typing -= OnTyping;
         _context.Realtime.WorkspacesChanged -= OnWorkspacesChanged;
     }
@@ -162,7 +164,31 @@ public partial class WorkspacesViewModel : ViewModelBase
         var thread = new MessageThreadViewModel(
             _context, null, newValue.Id, newValue.Name, $"{newValue.Workspace.Name} · {newValue.Workspace.MemberCount} members");
         Thread = thread;
-        _ = thread.LoadAsync();
+        _ = OpenChannelAsync(newValue, thread);
+    }
+
+    private async Task OpenChannelAsync(ChannelViewModel channel, MessageThreadViewModel thread)
+    {
+        try
+        {
+            var workspaceMembers = await _context.Api.GetWorkspaceMembersAsync(channel.Workspace.Id);
+            var peers = workspaceMembers.Select(m => _context.People.Get(m.UserId, m.DisplayName)).ToList();
+            if (channel.IsPrivate)
+            {
+                var channelMembers = await _context.Api.GetChannelMembersAsync(channel.Id);
+                peers = channelMembers.Select(m => _context.People.Get(m.UserId, m.DisplayName)).ToList();
+            }
+
+            var cursors = await _context.Api.GetChannelReadCursorsAsync(channel.Id);
+            thread.ConfigureSeenBy(peers, cursors);
+            await thread.LoadAsync();
+            await _context.Api.MarkChannelReadAsync(channel.Id);
+            thread.ApplyReadReceipt(_context.People.MyId, DateTimeOffset.UtcNow, _context.People.Me.DisplayName);
+        }
+        catch (Exception)
+        {
+            await thread.LoadAsync();
+        }
     }
 
     [RelayCommand]
@@ -324,12 +350,39 @@ public partial class WorkspacesViewModel : ViewModelBase
     private void OnMessageReceived(MessageDto message)
     {
         if (message.ChannelId is null) return;
-        if (Thread is { } thread && thread.Matches(message)) thread.Append(message);
+        if (Thread is not { } thread || !thread.Matches(message)) return;
+        thread.Append(message);
+        if (message.Sender.Id != _context.People.MyId && message.ParentMessageId is null
+            && SelectedChannel?.Id == message.ChannelId)
+        {
+            _ = MarkChannelReadQuietAsync(message.ChannelId.Value);
+        }
     }
 
     private void OnMessageUpdated(MessageDto message)
     {
         if (message.ChannelId is null) return;
         if (Thread is { } thread && thread.Matches(message)) thread.ApplyUpdate(message);
+    }
+
+    private void OnReadReceipt(ReadReceiptDto receipt)
+    {
+        if (receipt.ChannelId is not { } channelId) return;
+        if (SelectedChannel?.Id != channelId || Thread is null) return;
+        var name = _context.People.People.FirstOrDefault(p => p.Id == receipt.UserId)?.DisplayName;
+        Thread.ApplyReadReceipt(receipt.UserId, receipt.ReadAt, name);
+    }
+
+    private async Task MarkChannelReadQuietAsync(Guid channelId)
+    {
+        try
+        {
+            await _context.Api.MarkChannelReadAsync(channelId);
+            Thread?.ApplyReadReceipt(_context.People.MyId, DateTimeOffset.UtcNow, _context.People.Me.DisplayName);
+        }
+        catch (Exception)
+        {
+            // Best-effort.
+        }
     }
 }

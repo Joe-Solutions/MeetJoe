@@ -190,7 +190,24 @@ public class ConversationTests
 
         group.RemoveMember(b);
         Assert.Equal(2, group.Members.Count);
-        Assert.Throws<DomainException>(() => group.RemoveMember(a));
+        group.RemoveMember(a);
+        Assert.Equal(1, group.Members.Count);
+        group.RemoveMember(creator);
+        Assert.True(group.IsEmpty);
+    }
+
+    [Fact]
+    public void Only_the_group_creator_can_rename()
+    {
+        var creator = Guid.NewGuid();
+        var a = Guid.NewGuid();
+        var b = Guid.NewGuid();
+        var group = Conversation.CreateGroup(Org, creator, [a, b], "JS Team", Now);
+
+        Assert.Equal(creator, group.CreatedById);
+        group.Rename(creator, "  Product  ");
+        Assert.Equal("Product", group.Title);
+        Assert.Throws<DomainException>(() => group.Rename(a, "Hacked"));
     }
 
     [Fact]

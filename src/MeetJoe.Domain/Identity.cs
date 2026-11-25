@@ -15,6 +15,8 @@ public class User : IdentityUser<Guid>
     /// <summary>MinIO object key for the profile photo, or null when using initials.</summary>
     public string? AvatarStorageKey { get; private set; }
     public string? AvatarContentType { get; private set; }
+    /// <summary>Bumped on each photo change so clients can bust avatar caches.</summary>
+    public DateTimeOffset? AvatarUpdatedAt { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
 
     public static User Create(string email, string displayName, DateTimeOffset now)
@@ -36,16 +38,18 @@ public class User : IdentityUser<Guid>
         StatusMessage = Guard.Optional(statusMessage, "Status message", MaxStatusMessageLength);
     }
 
-    public void SetAvatar(string storageKey, string contentType)
+    public void SetAvatar(string storageKey, string contentType, DateTimeOffset now)
     {
         AvatarStorageKey = Guard.Required(storageKey, "Avatar storage key", 200);
         AvatarContentType = Guard.Required(contentType, "Avatar content type", MaxAvatarContentTypeLength);
+        AvatarUpdatedAt = now;
     }
 
-    public void ClearAvatar()
+    public void ClearAvatar(DateTimeOffset now)
     {
         AvatarStorageKey = null;
         AvatarContentType = null;
+        AvatarUpdatedAt = now;
     }
 
     public void SetAvailability(Availability availability) => Availability = availability;

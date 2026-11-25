@@ -63,12 +63,14 @@ internal static class ApiEndpoints
             profiles.ClearAvatarAsync(user.GetUserId(), ct));
 
         api.MapGet("/users/{id:guid}/avatar",
-            async (Guid id, ClaimsPrincipal user, ProfileService profiles, IFileStorage storage, CancellationToken ct) =>
+            async (Guid id, ClaimsPrincipal user, ProfileService profiles, IFileStorage storage, HttpContext http, CancellationToken ct) =>
             {
                 var (contentType, key) = await profiles.GetAvatarAsync(user.GetUserId(), id, ct);
                 var stream = new MemoryStream();
                 await storage.CopyToAsync(key, stream, ct);
                 stream.Position = 0;
+                // Avatars are versioned via ?v= on the client URL; avoid intermediary caches of old bytes.
+                http.Response.Headers.CacheControl = "private, no-cache";
                 return Results.File(stream, contentType);
             });
     }
@@ -122,8 +124,15 @@ internal static class ApiEndpoints
                 chat.AddMemberAsync(user.GetUserId(), id, request, ct));
 
         api.MapDelete("/conversations/{id:guid}/members/{userId:guid}",
-            (Guid id, Guid userId, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
-                chat.RemoveMemberAsync(user.GetUserId(), id, userId, ct));
+            async (Guid id, Guid userId, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
+            {
+                var updated = await chat.RemoveMemberAsync(user.GetUserId(), id, userId, ct);
+                return updated is null ? Results.NoContent() : Results.Ok(updated);
+            });
+
+        api.MapPut("/conversations/{id:guid}/title",
+            (Guid id, RenameConversationRequest request, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
+                chat.RenameAsync(user.GetUserId(), id, request, ct));
 
         api.MapGet("/channels/{id:guid}/messages",
             (Guid id, DateTimeOffset? before, int? limit, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
@@ -134,6 +143,9 @@ internal static class ApiEndpoints
             await chat.MarkChannelReadAsync(user.GetUserId(), id, ct);
             return Results.NoContent();
         });
+
+        api.MapGet("/channels/{id:guid}/read-cursors", (Guid id, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
+            chat.GetChannelReadCursorsAsync(user.GetUserId(), id, ct));
 
         // Same operation as ChatHub.SendMessage, for clients without a realtime connection.
         api.MapPost("/messages", (SendMessageRequest request, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
@@ -343,6 +355,12 @@ internal static class ApiEndpoints
         api.MapGet("/meetings/{id:guid}/messages",
             (Guid id, DateTimeOffset? before, int? limit, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
                 chat.GetMeetingMessagesAsync(user.GetUserId(), id, before, limit, ct));
+
+        api.MapPost("/meetings/{id:guid}/messages/read", async (Guid id, ClaimsPrincipal user, MeetingService meetings, CancellationToken ct) =>
+        {
+            await meetings.MarkMeetingChatReadAsync(user.GetUserId(), id, ct);
+            return Results.NoContent();
+        });
 
         api.MapPost("/meetings/{id:guid}/messages",
             (Guid id, SendMessageRequest request, ClaimsPrincipal user, MeetingService meetings, CancellationToken ct) =>

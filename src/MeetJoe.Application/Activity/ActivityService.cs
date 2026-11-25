@@ -15,28 +15,45 @@ public sealed class ActivityService(IAppDbContext db, TimeProvider time)
     {
         await db.RequireMembershipAsync(userId, organizationId, ct);
 
-        return await db.ActivityItems.AsNoTracking()
+        var rows = await db.ActivityItems.AsNoTracking()
             .Where(a => a.RecipientId == userId && a.OrganizationId == organizationId)
             .OrderByDescending(a => a.CreatedAt).ThenByDescending(a => a.Id)
             .Take(Math.Clamp(limit ?? DefaultPageSize, 1, MaxPageSize))
-            .Select(a => new ActivityDto(
+            .Select(a => new
+            {
                 a.Id,
-                a.Kind.ToContract(),
-                new UserSummaryDto(
-                    a.ActorId,
-                    a.Actor.DisplayName,
-                    a.Actor.AvatarStorageKey != null
-                        ? "api/users/" + a.ActorId.ToString() + "/avatar"
-                        : null),
+                a.Kind,
+                a.ActorId,
+                ActorName = a.Actor.DisplayName,
+                ActorAvatarKey = a.Actor.AvatarStorageKey,
+                ActorAvatarUpdatedAt = a.Actor.AvatarUpdatedAt,
                 a.Summary,
                 a.MessageId,
                 a.ConversationId,
                 a.ChannelId,
                 a.CreatedAt,
-                a.ReadAt == null,
+                IsUnread = a.ReadAt == null,
+                a.MeetingId,
+                a.CallId,
+            })
+            .ToListAsync(ct);
+
+        return rows.Select(a => new ActivityDto(
+                a.Id,
+                a.Kind.ToContract(),
+                new UserSummaryDto(
+                    a.ActorId,
+                    a.ActorName,
+                    Mapping.AvatarUrl(a.ActorId, a.ActorAvatarKey, a.ActorAvatarUpdatedAt)),
+                a.Summary,
+                a.MessageId,
+                a.ConversationId,
+                a.ChannelId,
+                a.CreatedAt,
+                a.IsUnread,
                 a.MeetingId,
                 a.CallId))
-            .ToListAsync(ct);
+            .ToList();
     }
 
     public async Task MarkAllReadAsync(Guid userId, Guid organizationId, CancellationToken ct = default)

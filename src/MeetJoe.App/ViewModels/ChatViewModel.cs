@@ -26,6 +26,7 @@ public partial class ConversationViewModel : ObservableObject
     public Guid Id { get; }
     public bool IsDirect { get; }
     public bool IsGroup => !IsDirect;
+    public Guid? CreatedById { get; private set; }
 
     [ObservableProperty] private string _title = string.Empty;
     [ObservableProperty] private string _subtitle = string.Empty;
@@ -55,6 +56,9 @@ public partial class ConversationViewModel : ObservableObject
 
     [ObservableProperty] private bool _isSelected;
 
+    /// <summary>Latest known read cursors for members (from list load + live receipts).</summary>
+    public Dictionary<Guid, ReadCursorDto> ReadCursors { get; } = [];
+
     public void Update(ConversationDto conversation)
     {
         _storedTitle = conversation.Title;
@@ -65,7 +69,26 @@ public partial class ConversationViewModel : ObservableObject
         IsMuted = conversation.IsMuted;
         IsPinned = conversation.IsPinned;
         HasUnreadMention = conversation.HasUnreadMention;
+        CreatedById = conversation.CreatedById;
         ApplyMembers(conversation);
+        ApplyReadCursors(conversation.ReadCursors);
+    }
+
+    public void ApplyReadCursors(IEnumerable<ReadCursorDto>? cursors)
+    {
+        if (cursors is null) return;
+        foreach (var cursor in cursors)
+            ReadCursors[cursor.UserId] = cursor;
+    }
+
+    public void ApplyReadReceipt(ReadReceiptDto receipt)
+    {
+        var name = Members.FirstOrDefault(m => m.Id == receipt.UserId)?.DisplayName
+                   ?? ReadCursors.GetValueOrDefault(receipt.UserId)?.DisplayName
+                   ?? "Member";
+        if (ReadCursors.TryGetValue(receipt.UserId, out var existing) && existing.ReadAt >= receipt.ReadAt)
+            return;
+        ReadCursors[receipt.UserId] = new ReadCursorDto(receipt.UserId, name, receipt.ReadAt);
     }
 
     public void MarkMentioned() => HasUnreadMention = true;
@@ -125,6 +148,7 @@ public partial class ChatViewModel : ViewModelBase
         context.Realtime.MessageUpdated += OnMessageUpdated;
         context.Realtime.Typing += OnTyping;
         context.Realtime.ConversationsChanged += OnConversationsChanged;
+        context.Realtime.ReadReceipt += OnReadReceipt;
     }
 
     public ObservableCollection<ConversationViewModel> Conversations { get; } = [];
@@ -141,7 +165,7 @@ public partial class ChatViewModel : ViewModelBase
     [ObservableProperty] private bool _isMembersPanelOpen;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasSelection), nameof(ShowEmptyState), nameof(CanManageMembers))]
+    [NotifyPropertyChangedFor(nameof(HasSelection), nameof(ShowEmptyState), nameof(CanManageMembers), nameof(CanRenameGroup))]
     private ConversationViewModel? _selected;
 
     [ObservableProperty]
@@ -156,12 +180,21 @@ public partial class ChatViewModel : ViewModelBase
 
     [ObservableProperty] private string? _memberManageStatus;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsRenamingGroup))]
+    private string? _renameDraft;
+
+    [ObservableProperty] private string? _renameStatus;
+
     public ObservableCollection<PersonViewModel> MemberSuggestions { get; } = [];
 
     public bool HasSelection => Selected is not null;
     public bool ShowEmptyState => Selected is null && !IsStartingChat;
     public bool HasNoConversations => !IsLoading && Conversations.Count == 0;
     public bool CanManageMembers => Selected?.IsGroup == true;
+    public bool CanRenameGroup =>
+        Selected is { IsGroup: true, CreatedById: { } creator } && creator == _context.People.MyId;
+    public bool IsRenamingGroup => RenameDraft is not null;
     public bool HasMemberSuggestions => MemberSuggestions.Count > 0;
 
     /// <summary>Total unread across conversations, shown on the rail.</summary>
@@ -178,6 +211,7 @@ public partial class ChatViewModel : ViewModelBase
         _context.Realtime.MessageUpdated -= OnMessageUpdated;
         _context.Realtime.Typing -= OnTyping;
         _context.Realtime.ConversationsChanged -= OnConversationsChanged;
+        _context.Realtime.ReadReceipt -= OnReadReceipt;
     }
 
     public async Task LoadAsync()
@@ -235,6 +269,7 @@ public partial class ChatViewModel : ViewModelBase
         if (oldValue is not null) oldValue.IsSelected = false;
         if (newValue is not null) newValue.IsSelected = true;
         IsMembersPanelOpen = false;
+        CancelRename();
         if (newValue is null)
         {
             Thread = null;
@@ -251,10 +286,52 @@ public partial class ChatViewModel : ViewModelBase
         _ = OpenAsync(newValue, thread);
     }
 
+    [RelayCommand]
+    private void BeginRename()
+    {
+        if (!CanRenameGroup || Selected is null) return;
+        RenameStatus = null;
+        RenameDraft = Selected.Title;
+    }
+
+    [RelayCommand]
+    private void CancelRename()
+    {
+        RenameDraft = null;
+        RenameStatus = null;
+    }
+
+    [RelayCommand]
+    private async Task SaveRenameAsync()
+    {
+        if (!CanRenameGroup || Selected is not { } conversation || RenameDraft is null) return;
+        var title = RenameDraft.Trim();
+        if (title.Length == 0)
+        {
+            RenameStatus = "Enter a group name.";
+            return;
+        }
+
+        RenameStatus = null;
+        try
+        {
+            var updated = await _context.Api.RenameConversationAsync(conversation.Id, title);
+            conversation.Update(updated);
+            Thread?.SetHeader(conversation.Title, conversation.Subtitle);
+            CancelRename();
+        }
+        catch (Exception ex)
+        {
+            RenameStatus = Describe.Error(ex);
+        }
+    }
+
     private async Task OpenAsync(ConversationViewModel conversation, MessageThreadViewModel thread)
     {
+        thread.ConfigureSeenBy(conversation.Members, conversation.ReadCursors.Values);
         await thread.LoadAsync();
         await MarkReadAsync(conversation);
+        thread.ApplyReadReceipt(_context.People.MyId, DateTimeOffset.UtcNow, _context.People.Me.DisplayName);
     }
 
     private async Task MarkReadAsync(ConversationViewModel conversation)
@@ -347,6 +424,12 @@ public partial class ChatViewModel : ViewModelBase
         try
         {
             var updated = await _context.Api.RemoveConversationMemberAsync(conversation.Id, person.Id);
+            if (updated is null)
+            {
+                await AfterGroupRemovedAsync(conversation.Id);
+                return;
+            }
+
             conversation.Update(updated);
             RefreshMemberSuggestions();
         }
@@ -354,6 +437,33 @@ public partial class ChatViewModel : ViewModelBase
         {
             MemberManageStatus = Describe.Error(ex);
         }
+    }
+
+    [RelayCommand]
+    private async Task LeaveGroupAsync()
+    {
+        if (Selected is not { IsGroup: true } conversation) return;
+        MemberManageStatus = null;
+        try
+        {
+            await _context.Api.RemoveConversationMemberAsync(conversation.Id, _context.People.MyId);
+            await AfterGroupRemovedAsync(conversation.Id);
+        }
+        catch (Exception ex)
+        {
+            MemberManageStatus = Describe.Error(ex);
+        }
+    }
+
+    private async Task AfterGroupRemovedAsync(Guid conversationId)
+    {
+        IsMembersPanelOpen = false;
+        if (Selected?.Id == conversationId)
+            Selected = null;
+        var item = Conversations.FirstOrDefault(c => c.Id == conversationId);
+        if (item is not null) Conversations.Remove(item);
+        RaiseUnreadChanged();
+        await LoadAsync();
     }
 
     private PersonViewModel? ResolveMemberInvitee()
@@ -467,6 +577,20 @@ public partial class ChatViewModel : ViewModelBase
     private void OnConversationsChanged() => _ = LoadAsync();
 
     private void OnTyping(TypingDto typing) => Thread?.ApplyTyping(typing);
+
+    private void OnReadReceipt(ReadReceiptDto receipt)
+    {
+        if (receipt.ConversationId is not { } conversationId) return;
+
+        var conversation = Conversations.FirstOrDefault(c => c.Id == conversationId);
+        conversation?.ApplyReadReceipt(receipt);
+
+        if (ReferenceEquals(conversation, Selected))
+        {
+            var name = conversation?.Members.FirstOrDefault(m => m.Id == receipt.UserId)?.DisplayName;
+            Thread?.ApplyReadReceipt(receipt.UserId, receipt.ReadAt, name);
+        }
+    }
 
     private void OnMessageReceived(MessageDto message)
     {
