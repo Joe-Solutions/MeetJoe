@@ -452,11 +452,11 @@
   <Style Selector="StackPanel.messagemeta.mine">
     <Setter Property="HorizontalAlignment" Value="Right" />
   </Style>
-  <Style Selector="Panel.messagechrome">
+  <Style Selector="DockPanel.messagechrome">
     <Setter Property="HorizontalAlignment" Value="Left" />
     <Setter Property="ClipToBounds" Value="False" />
   </Style>
-  <Style Selector="Panel.messagechrome.mine">
+  <Style Selector="DockPanel.messagechrome.mine">
     <Setter Property="HorizontalAlignment" Value="Right" />
   </Style>
   <Style Selector="DockPanel.message">
@@ -464,19 +464,19 @@
   </Style>
 
   <!--
-    Emoji + reply icons sit just outside the bubble (right of others, left of mine).
-    Hidden until the message row is hovered, or a reaction picker is open.
+    Emoji + reply dock beside the bubble (in layout). That keeps them inside the message
+    hit-box so moving the pointer onto the icons does not clear :pointerover.
   -->
   <Style Selector="StackPanel.message-sideactions">
-    <Setter Property="HorizontalAlignment" Value="Right" />
-    <Setter Property="VerticalAlignment" Value="Center" />
-    <Setter Property="Margin" Value="0,0,-120,0" />
+    <Setter Property="DockPanel.Dock" Value="Right" />
+    <Setter Property="Margin" Value="8,0,0,0" />
+    <Setter Property="MinWidth" Value="64" />
     <Setter Property="Opacity" Value="0" />
     <Setter Property="IsHitTestVisible" Value="False" />
   </Style>
-  <Style Selector="StackPanel.message-sideactions.mine">
-    <Setter Property="HorizontalAlignment" Value="Left" />
-    <Setter Property="Margin" Value="-120,0,0,0" />
+  <Style Selector="DockPanel.messagechrome.mine > StackPanel.message-sideactions">
+    <Setter Property="DockPanel.Dock" Value="Left" />
+    <Setter Property="Margin" Value="0,0,8,0" />
   </Style>
   <Style Selector="DockPanel.message:pointerover StackPanel.message-sideactions">
     <Setter Property="Opacity" Value="1" />
@@ -494,11 +494,9 @@
     <Setter Property="CornerRadius" Value="999" />
     <Setter Property="Padding" Value="4,3" />
     <Setter Property="HorizontalAlignment" Value="Left" />
-    <Setter Property="VerticalAlignment" Value="Bottom" />
-    <Setter Property="Margin" Value="0,0,0,32" />
     <Setter Property="BoxShadow" Value="0 10 28 0 #66000000" />
   </Style>
-  <Style Selector="Border.message-reactionpicker.mine">
+  <Style Selector="DockPanel.messagechrome.mine Border.message-reactionpicker">
     <Setter Property="HorizontalAlignment" Value="Right" />
   </Style>
 
