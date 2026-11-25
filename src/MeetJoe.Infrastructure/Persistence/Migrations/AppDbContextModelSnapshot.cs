@@ -249,6 +249,9 @@ namespace MeetJoe.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("DirectKey")
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)");
@@ -271,6 +274,8 @@ namespace MeetJoe.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(80)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CreatedById");
 
                     b.HasIndex("OrganizationId", "DirectKey")
                         .IsUnique();
@@ -468,6 +473,9 @@ namespace MeetJoe.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<DateTimeOffset>("JoinedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("LastReadAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTimeOffset?>("LeftAt")
@@ -679,6 +687,9 @@ namespace MeetJoe.Infrastructure.Persistence.Migrations
                     b.Property<string>("AvatarStorageKey")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset?>("AvatarUpdatedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
@@ -1204,6 +1215,11 @@ namespace MeetJoe.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("MeetJoe.Domain.Conversation", b =>
                 {
+                    b.HasOne("MeetJoe.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedById")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("MeetJoe.Domain.Organization", null)
                         .WithMany()
                         .HasForeignKey("OrganizationId")

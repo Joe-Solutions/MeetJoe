@@ -103,16 +103,34 @@ public sealed class MeetJoeApi(HttpClient http, IAuthService auth) : IMeetJoeApi
     public Task MarkChannelReadAsync(Guid channelId, CancellationToken ct = default) =>
         SendAsync(HttpMethod.Post, $"api/channels/{channelId}/read", null, ct);
 
+    public Task<IReadOnlyList<ReadCursorDto>> GetChannelReadCursorsAsync(Guid channelId, CancellationToken ct = default) =>
+        GetAsync<IReadOnlyList<ReadCursorDto>>($"api/channels/{channelId}/read-cursors", ct);
+
+    public Task MarkMeetingChatReadAsync(Guid meetingId, CancellationToken ct = default) =>
+        SendAsync(HttpMethod.Post, $"api/meetings/{meetingId}/messages/read", null, ct);
+
     public Task<ConversationDto> AddConversationMemberAsync(
         Guid conversationId, Guid userId, CancellationToken ct = default) =>
         SendAsync<ConversationDto>(
             HttpMethod.Post, $"api/conversations/{conversationId}/members",
             new AddConversationMemberRequest(userId), ct);
 
-    public Task<ConversationDto> RemoveConversationMemberAsync(
-        Guid conversationId, Guid userId, CancellationToken ct = default) =>
-        SendAsync<ConversationDto>(
+    public async Task<ConversationDto?> RemoveConversationMemberAsync(
+        Guid conversationId, Guid userId, CancellationToken ct = default)
+    {
+        using var response = await SendCoreAsync(
             HttpMethod.Delete, $"api/conversations/{conversationId}/members/{userId:D}", null, ct);
+        await EnsureSuccessAsync(response, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            return null;
+        return await ReadAsync<ConversationDto>(response, ct);
+    }
+
+    public Task<ConversationDto> RenameConversationAsync(
+        Guid conversationId, string title, CancellationToken ct = default) =>
+        SendAsync<ConversationDto>(
+            HttpMethod.Put, $"api/conversations/{conversationId}/title",
+            new RenameConversationRequest(title), ct);
 
     public Task<ConversationDto> UpdateConversationPrefsAsync(
         Guid conversationId, UpdateConversationPrefsRequest request, CancellationToken ct = default) =>

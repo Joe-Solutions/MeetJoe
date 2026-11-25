@@ -1,14 +1,16 @@
 using System.Collections.ObjectModel;
+using CommunityToolkit.Mvvm.ComponentModel;
 using MeetJoe.Contracts;
 
 namespace MeetJoe.App.ViewModels;
 
 /// <summary>Bubble row for in-meeting / in-call chat (DM-style left/right layout).</summary>
-public sealed class RoomChatMessageViewModel
+public partial class RoomChatMessageViewModel : ObservableObject
 {
     public RoomChatMessageViewModel(MessageDto message, SessionContext context)
     {
         Id = message.Id;
+        CreatedAt = message.CreatedAt;
         Body = message.Body ?? string.Empty;
         Sender = context.People.Get(message.Sender);
         IsMine = message.Sender.Id == context.People.MyId;
@@ -20,6 +22,7 @@ public sealed class RoomChatMessageViewModel
     }
 
     public Guid Id { get; }
+    public DateTimeOffset CreatedAt { get; }
     public string Body { get; }
     public bool HasBody => !string.IsNullOrWhiteSpace(Body);
     public PersonViewModel Sender { get; }
@@ -30,6 +33,12 @@ public sealed class RoomChatMessageViewModel
     public bool ShowAvatar => StartsGroup && !IsMine;
     public IReadOnlyList<AttachmentViewModel> Attachments { get; }
     public bool HasAttachments => Attachments.Count > 0;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSeenBy))]
+    private string? _seenByText;
+
+    public bool ShowSeenBy => !string.IsNullOrEmpty(SeenByText);
 
     public static readonly IReadOnlyList<string> EmojiPalette =
         ["😀", "😂", "🙂", "😍", "🤔", "👍", "👎", "👏", "🙏", "🎉", "🔥", "✅", "❌", "💡", "📌"];
@@ -66,5 +75,21 @@ public sealed class RoomChatMessageViewModel
 
         messages.Add(item);
         return true;
+    }
+
+    /// <summary>Updates the Seen line on the latest outgoing message in a room chat list.</summary>
+    public static void RefreshSeenBy(
+        IList<RoomChatMessageViewModel> messages,
+        Guid myId,
+        IEnumerable<(Guid UserId, string DisplayName)> peers,
+        IReadOnlyDictionary<Guid, DateTimeOffset> readAt)
+    {
+        foreach (var message in messages)
+            message.SeenByText = null;
+
+        var latest = messages.LastOrDefault();
+        if (latest is null || !latest.IsMine) return;
+
+        latest.SeenByText = Services.SeenBy.Format(latest.CreatedAt, myId, peers, readAt);
     }
 }

@@ -82,6 +82,7 @@ public partial class PersonViewModel(Guid id, string displayName, bool isMe) : O
 
     public void ApplyAvatar(string? avatarUrl)
     {
+        // Versioned avatar URLs (?v=…) change on each upload so colleagues reload the new photo.
         if (AvatarUrl == avatarUrl)
         {
             if (Photo is null && !string.IsNullOrWhiteSpace(avatarUrl))
@@ -89,6 +90,8 @@ public partial class PersonViewModel(Guid id, string displayName, bool isMe) : O
             return;
         }
 
+        AvatarImages.Current?.Invalidate(Id);
+        Photo = null;
         AvatarUrl = avatarUrl;
     }
 }

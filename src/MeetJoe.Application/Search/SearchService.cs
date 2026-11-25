@@ -22,19 +22,26 @@ public sealed class SearchService(IAppDbContext db)
         var take = Math.Clamp(limit ?? DefaultLimit, 1, MaxLimit);
         var needle = term.ToLowerInvariant();
 
-        var people = await db.Memberships.AsNoTracking()
+        var peopleRows = await db.Memberships.AsNoTracking()
             .Where(m => m.OrganizationId == organizationId)
             .Where(m => m.User.DisplayName.ToLower().Contains(needle)
                         || (m.User.Email != null && m.User.Email.ToLower().Contains(needle)))
             .OrderBy(m => m.User.DisplayName)
             .Take(take)
-            .Select(m => new UserSummaryDto(
+            .Select(m => new
+            {
                 m.UserId,
                 m.User.DisplayName,
-                m.User.AvatarStorageKey != null
-                    ? "api/users/" + m.UserId.ToString() + "/avatar"
-                    : null))
+                m.User.AvatarStorageKey,
+                m.User.AvatarUpdatedAt,
+            })
             .ToListAsync(ct);
+        var people = peopleRows
+            .Select(m => new UserSummaryDto(
+                m.UserId,
+                m.DisplayName,
+                Mapping.AvatarUrl(m.UserId, m.AvatarStorageKey, m.AvatarUpdatedAt)))
+            .ToList();
 
         var conversationIds = await db.ConversationMembers.AsNoTracking()
             .Where(m => m.UserId == userId && m.Conversation.OrganizationId == organizationId)
@@ -67,12 +74,10 @@ public sealed class SearchService(IAppDbContext db)
                 m.ChannelId,
                 m.Body,
                 m.CreatedAt,
-                Sender = new UserSummaryDto(
-                    m.SenderId,
-                    m.Sender.DisplayName,
-                    m.Sender.AvatarStorageKey != null
-                        ? "api/users/" + m.SenderId.ToString() + "/avatar"
-                        : null),
+                m.SenderId,
+                SenderName = m.Sender.DisplayName,
+                SenderAvatarKey = m.Sender.AvatarStorageKey,
+                SenderAvatarUpdatedAt = m.Sender.AvatarUpdatedAt,
             })
             .ToListAsync(ct);
 
@@ -95,8 +100,12 @@ public sealed class SearchService(IAppDbContext db)
                 location = "Chat";
 
             var preview = h.Body.Length <= 140 ? h.Body : h.Body[..139] + "…";
+            var sender = new UserSummaryDto(
+                h.SenderId,
+                h.SenderName,
+                Mapping.AvatarUrl(h.SenderId, h.SenderAvatarKey, h.SenderAvatarUpdatedAt));
             return new MessageSearchHitDto(
-                h.Id, h.ConversationId, h.ChannelId, preview, h.Sender, h.CreatedAt, location);
+                h.Id, h.ConversationId, h.ChannelId, preview, sender, h.CreatedAt, location);
         }).ToList();
 
         return new SearchResultDto(people, messages);

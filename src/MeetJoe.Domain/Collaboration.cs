@@ -311,6 +311,8 @@ public class MeetingParticipant
         UserId = userId;
         JoinedAt = joinedAt;
         InLobby = inLobby;
+        // One tick before join so same-instant posts still count as unread.
+        LastReadAt = joinedAt.AddTicks(-1);
     }
 
     public Guid Id { get; private set; }
@@ -320,10 +322,16 @@ public class MeetingParticipant
     public DateTimeOffset? LeftAt { get; private set; }
     public bool InLobby { get; private set; }
     public bool HandRaised { get; private set; }
+    public DateTimeOffset LastReadAt { get; private set; }
 
     public User User { get; private set; } = null!;
 
     public bool IsPresent => LeftAt is null;
+
+    public void MarkRead(DateTimeOffset at)
+    {
+        if (at > LastReadAt) LastReadAt = at;
+    }
 
     public void Leave(DateTimeOffset now)
     {

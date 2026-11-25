@@ -69,6 +69,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             e.Property(x => x.DirectKey).HasMaxLength(80);
             e.Property(x => x.LastMessagePreview).HasMaxLength(Message.MaxPreviewLength);
             e.HasOne<Organization>().WithMany().HasForeignKey(x => x.OrganizationId);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.CreatedById).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(x => new { x.OrganizationId, x.DirectKey }).IsUnique();
         });
 

@@ -197,6 +197,12 @@ public partial class MessageViewModel : ObservableObject
 
     public bool HasLinkPreview => !IsDeleted && LinkPreview is not null;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSeenBy))]
+    private string? _seenByText;
+
+    public bool ShowSeenBy => !string.IsNullOrEmpty(SeenByText);
+
     public void Apply(MessageDto message)
     {
         Body = message.Body;
@@ -263,6 +269,8 @@ public partial class MessageThreadViewModel : ViewModelBase
     private readonly Guid? _channelId;
     private readonly IReadOnlyList<PersonViewModel> _mentionables;
     private readonly HashSet<Guid> _knownIds = [];
+    private readonly Dictionary<Guid, DateTimeOffset> _readAt = [];
+    private List<(Guid UserId, string DisplayName)> _seenPeers = [];
     private CancellationTokenSource? _typingIdle;
 
     public MessageThreadViewModel(
@@ -277,17 +285,68 @@ public partial class MessageThreadViewModel : ViewModelBase
         _conversationId = conversationId;
         _channelId = channelId;
         _mentionables = mentionables ?? [];
-        Title = title;
-        Subtitle = subtitle;
+        _title = title;
+        _subtitle = subtitle;
     }
 
-    public string Title { get; }
-    public string Subtitle { get; }
+    /// <summary>Members whose read cursors drive the Seen / Seen by everyone line.</summary>
+    public void ConfigureSeenBy(
+        IEnumerable<PersonViewModel> peers,
+        IEnumerable<ReadCursorDto>? cursors = null)
+    {
+        _seenPeers = peers
+            .Select(p => (p.Id, p.DisplayName))
+            .GroupBy(p => p.Id)
+            .Select(g => g.First())
+            .ToList();
+        _readAt.Clear();
+        if (cursors is not null)
+        {
+            foreach (var cursor in cursors)
+                _readAt[cursor.UserId] = cursor.ReadAt;
+        }
+
+        RefreshSeenBy();
+    }
+
+    public void ApplyReadReceipt(Guid userId, DateTimeOffset readAt, string? displayName = null)
+    {
+        if (_readAt.TryGetValue(userId, out var existing) && existing >= readAt) return;
+        _readAt[userId] = readAt;
+        if (displayName is not null && _seenPeers.All(p => p.UserId != userId))
+            _seenPeers.Add((userId, displayName));
+        RefreshSeenBy();
+    }
+
+    private void RefreshSeenBy()
+    {
+        foreach (var message in Messages)
+            message.SeenByText = null;
+
+        var latest = Messages.LastOrDefault(m => !m.IsDeleted);
+        if (latest is null || !latest.IsMine) return;
+
+        latest.SeenByText = SeenBy.Format(
+            latest.CreatedAt, _context.People.MyId, _seenPeers, _readAt);
+    }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Placeholder))]
+    private string _title;
+
+    [ObservableProperty] private string _subtitle;
+
     public bool IsChannel => _channelId is not null;
     public bool SupportsMentions => _mentionables.Count > 0;
     public string Placeholder => ReplyTarget is { } target
         ? $"Reply to {target.Sender.DisplayName}"
         : IsChannel ? $"Post in {Title}" : $"Message {Title}";
+
+    public void SetHeader(string title, string? subtitle = null)
+    {
+        Title = title;
+        if (subtitle is not null) Subtitle = subtitle;
+    }
 
     public ObservableCollection<MessageViewModel> Messages { get; } = [];
     public ObservableCollection<MessageViewModel> ThreadReplies { get; } = [];
@@ -458,6 +517,7 @@ public partial class MessageThreadViewModel : ViewModelBase
         {
             IsLoading = false;
             OnPropertyChanged(nameof(IsEmpty));
+            RefreshSeenBy();
             MessageAppended?.Invoke();
         }
     }
@@ -491,6 +551,7 @@ public partial class MessageThreadViewModel : ViewModelBase
 
         if (!Add(message, atEnd: true)) return;
         OnPropertyChanged(nameof(IsEmpty));
+        RefreshSeenBy();
         MessageAppended?.Invoke();
     }
 
@@ -517,6 +578,8 @@ public partial class MessageThreadViewModel : ViewModelBase
             OpenThread.Apply(message);
             if (message.IsDeleted) CloseThread();
         }
+
+        if (message.IsDeleted) RefreshSeenBy();
     }
 
     public IReadOnlyList<string> EmojiPalette { get; } =

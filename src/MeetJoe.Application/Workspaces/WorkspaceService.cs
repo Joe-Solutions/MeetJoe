@@ -119,13 +119,14 @@ public sealed class WorkspaceService(
         var channel = await RequirePrivateChannelAccessAsync(userId, channelId, ct);
         var members = await db.ChannelMembers
             .Where(m => m.ChannelId == channel.Id)
-            .Select(m => new { m.UserId, m.User.DisplayName, m.Role, m.User.Availability })
+            .Select(m => new { m.UserId, m.User.DisplayName, m.Role, m.User.Availability, m.LastReadAt })
             .ToListAsync(ct);
         var statuses = await presence.ResolveAsync(members.Select(m => (m.UserId, m.Availability)).ToList());
 
         return members
             .OrderBy(m => m.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .Select(m => new ChannelMemberDto(m.UserId, m.DisplayName, m.Role.ToContract(), statuses[m.UserId]))
+            .Select(m => new ChannelMemberDto(
+                m.UserId, m.DisplayName, m.Role.ToContract(), statuses[m.UserId], m.LastReadAt))
             .ToList();
     }
 

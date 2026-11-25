@@ -91,12 +91,15 @@ public interface IMeetJoeApi
     Task<IReadOnlyList<ConversationDto>> GetConversationsAsync(Guid organizationId, CancellationToken ct = default);
     Task<ConversationDto> CreateConversationAsync(Guid organizationId, CreateConversationRequest request, CancellationToken ct = default);
     Task<ConversationDto> AddConversationMemberAsync(Guid conversationId, Guid userId, CancellationToken ct = default);
-    Task<ConversationDto> RemoveConversationMemberAsync(Guid conversationId, Guid userId, CancellationToken ct = default);
+    Task<ConversationDto?> RemoveConversationMemberAsync(Guid conversationId, Guid userId, CancellationToken ct = default);
+    Task<ConversationDto> RenameConversationAsync(Guid conversationId, string title, CancellationToken ct = default);
     Task<ConversationDto> UpdateConversationPrefsAsync(Guid conversationId, UpdateConversationPrefsRequest request, CancellationToken ct = default);
     Task<IReadOnlyList<MessageDto>> GetMessagesAsync(Guid? conversationId, Guid? channelId, DateTimeOffset? before, CancellationToken ct = default);
     Task<IReadOnlyList<MessageDto>> GetRepliesAsync(Guid parentMessageId, CancellationToken ct = default);
     Task MarkConversationReadAsync(Guid conversationId, CancellationToken ct = default);
     Task MarkChannelReadAsync(Guid channelId, CancellationToken ct = default);
+    Task<IReadOnlyList<ReadCursorDto>> GetChannelReadCursorsAsync(Guid channelId, CancellationToken ct = default);
+    Task MarkMeetingChatReadAsync(Guid meetingId, CancellationToken ct = default);
     Task<MessageDto> SendMessageAsync(SendMessageRequest request, CancellationToken ct = default);
     Task<MessageDto> EditMessageAsync(Guid messageId, string body, CancellationToken ct = default);
     Task<MessageDto> DeleteMessageAsync(Guid messageId, CancellationToken ct = default);

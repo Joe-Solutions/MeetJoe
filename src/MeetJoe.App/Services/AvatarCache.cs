@@ -58,7 +58,8 @@ public sealed class AvatarCache(IMeetJoeApi api)
         }
         catch
         {
-            _cache[cacheKey] = null;
+            // Do not cache failures — a race during upload or a brief storage blip
+            // would otherwise leave initials forever until restart.
             return null;
         }
     }

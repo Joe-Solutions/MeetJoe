@@ -78,6 +78,9 @@ public record OrgMemberDto(
 
 // ---- Chat -----------------------------------------------------------------
 
+/// <summary>How far a member has read in a conversation, channel, or meeting chat.</summary>
+public record ReadCursorDto(Guid UserId, string DisplayName, DateTimeOffset ReadAt);
+
 public record ConversationDto(
     Guid Id,
     ConversationKind Kind,
@@ -89,11 +92,15 @@ public record ConversationDto(
     bool IsMuted = false,
     bool IsPinned = false,
     NotifyMode NotifyMode = NotifyMode.All,
-    bool HasUnreadMention = false);
+    bool HasUnreadMention = false,
+    IReadOnlyList<ReadCursorDto>? ReadCursors = null,
+    Guid? CreatedById = null);
 
 public record CreateConversationRequest(IReadOnlyList<Guid> MemberIds, string? Title);
 
 public record AddConversationMemberRequest(Guid UserId);
+
+public record RenameConversationRequest(string Title);
 
 public record UpdateConversationPrefsRequest(bool IsMuted, bool IsPinned, NotifyMode NotifyMode);
 
@@ -134,7 +141,12 @@ public record ToggleReactionRequest(string Emoji);
 
 public record TypingDto(Guid? ConversationId, Guid? ChannelId, Guid UserId, string DisplayName, bool IsTyping);
 
-public record ReadReceiptDto(Guid? ConversationId, Guid? ChannelId, Guid UserId, DateTimeOffset ReadAt);
+public record ReadReceiptDto(
+    Guid? ConversationId,
+    Guid? ChannelId,
+    Guid UserId,
+    DateTimeOffset ReadAt,
+    Guid? MeetingId = null);
 
 public record ActivityDto(
     Guid Id,
@@ -207,7 +219,12 @@ public record UpdateChannelPrefsRequest(bool IsMuted, NotifyMode NotifyMode);
 
 public record WorkspaceMemberDto(Guid UserId, string DisplayName, WorkspaceRole Role, PresenceStatus Status);
 
-public record ChannelMemberDto(Guid UserId, string DisplayName, ChannelRole Role, PresenceStatus Status);
+public record ChannelMemberDto(
+    Guid UserId,
+    string DisplayName,
+    ChannelRole Role,
+    PresenceStatus Status,
+    DateTimeOffset? LastReadAt = null);
 
 // ---- Files ----------------------------------------------------------------
 
@@ -242,7 +259,8 @@ public record MeetingDto(
     IReadOnlyList<UserSummaryDto> Participants,
     IReadOnlyList<MeetingInviteDto> Invites,
     IReadOnlyList<UserSummaryDto> Lobby,
-    IReadOnlyList<Guid> RaisedHands);
+    IReadOnlyList<Guid> RaisedHands,
+    IReadOnlyList<ReadCursorDto>? ChatReadCursors = null);
 
 public record MeetingInviteDto(Guid UserId, string DisplayName, InviteStatus Status);
 

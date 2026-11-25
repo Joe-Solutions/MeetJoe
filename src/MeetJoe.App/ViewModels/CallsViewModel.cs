@@ -124,6 +124,7 @@ public partial class CallsViewModel : ViewModelBase
     /// <summary>Prevents LoadAsync recovery from resurrecting a call we just left/ended.</summary>
     private Guid? _suppressRecoverCallId;
     private readonly HashSet<(Guid CallId, Guid UserId)> _notifiedDeclines = [];
+    private readonly Dictionary<Guid, DateTimeOffset> _chatReadAt = [];
 
     public CallsViewModel(SessionContext context)
     {
@@ -133,6 +134,7 @@ public partial class CallsViewModel : ViewModelBase
         context.Realtime.CallsChanged += OnCallsChanged;
         context.Realtime.CallMicMuted += OnCallMicMuted;
         context.Realtime.MessageReceived += OnConversationMessage;
+        context.Realtime.ReadReceipt += OnReadReceipt;
     }
 
     public ObservableCollection<CallHistoryItemViewModel> History { get; } = [];
@@ -384,6 +386,7 @@ public partial class CallsViewModel : ViewModelBase
         _context.Realtime.CallsChanged -= OnCallsChanged;
         _context.Realtime.CallMicMuted -= OnCallMicMuted;
         _context.Realtime.MessageReceived -= OnConversationMessage;
+        _context.Realtime.ReadReceipt -= OnReadReceipt;
     }
 
     public async Task LoadAsync()
@@ -467,6 +470,7 @@ public partial class CallsViewModel : ViewModelBase
         ShowEmojiPicker = false;
         ChatDraft = string.Empty;
         ChatMessages.Clear();
+        _chatReadAt.Clear();
         PendingAttachments.Clear();
         HasPendingAttachments = false;
         ToggleCameraHandler = null;
@@ -548,6 +552,7 @@ public partial class CallsViewModel : ViewModelBase
         ShowPeoplePanel = false;
         UnreadChatCount = 0;
         RequestChatFollow();
+        _ = MarkCallChatReadAsync();
     }
 
     partial void OnShowPeoplePanelChanged(bool value)
@@ -556,6 +561,7 @@ public partial class CallsViewModel : ViewModelBase
         {
             UnreadChatCount = 0;
             RequestChatFollow();
+            _ = MarkCallChatReadAsync();
         }
     }
 
@@ -960,6 +966,7 @@ public partial class CallsViewModel : ViewModelBase
                 ? await _context.Realtime.SendMessageAsync(request)
                 : await _context.Api.SendMessageAsync(request);
             RoomChatMessageViewModel.TryAdd(ChatMessages, sent, _context);
+            RefreshChatSeenBy();
             RequestChatFollow();
         }
         catch
@@ -1074,6 +1081,7 @@ public partial class CallsViewModel : ViewModelBase
     private async Task LoadChatAsync()
     {
         ChatMessages.Clear();
+        _chatReadAt.Clear();
         if (ActiveCall is null) return;
         try
         {
@@ -1081,7 +1089,18 @@ public partial class CallsViewModel : ViewModelBase
             foreach (var message in messages.OrderBy(m => m.CreatedAt))
                 ChatMessages.Add(new RoomChatMessageViewModel(message, _context));
             RoomChatMessageViewModel.ApplyGrouping(ChatMessages);
+
+            var conversations = await _context.Api.GetConversationsAsync(_context.Organization.Id);
+            var conversation = conversations.FirstOrDefault(c => c.Id == ActiveCall.ConversationId);
+            if (conversation?.ReadCursors is { } cursors)
+            {
+                foreach (var cursor in cursors)
+                    _chatReadAt[cursor.UserId] = cursor.ReadAt;
+            }
+
+            RefreshChatSeenBy();
             RequestChatFollow();
+            if (ShowChatPanel) await MarkCallChatReadAsync();
         }
         catch
         {
@@ -1093,10 +1112,47 @@ public partial class CallsViewModel : ViewModelBase
     {
         if (ActiveCall is null || message.ConversationId != ActiveCall.ConversationId) return;
         if (!RoomChatMessageViewModel.TryAdd(ChatMessages, message, _context)) return;
+        RefreshChatSeenBy();
         if (message.Sender.Id == _context.People.MyId)
             RequestChatFollow();
         else if (!ShowChatPanel)
             UnreadChatCount++;
+        else
+            _ = MarkCallChatReadAsync();
+    }
+
+    private void OnReadReceipt(ReadReceiptDto receipt)
+    {
+        if (ActiveCall is null || receipt.ConversationId != ActiveCall.ConversationId) return;
+        ApplyChatReadReceipt(receipt.UserId, receipt.ReadAt);
+    }
+
+    private async Task MarkCallChatReadAsync()
+    {
+        if (ActiveCall is null) return;
+        try
+        {
+            await _context.Api.MarkConversationReadAsync(ActiveCall.ConversationId);
+            ApplyChatReadReceipt(_context.People.MyId, DateTimeOffset.UtcNow);
+        }
+        catch
+        {
+            // Best-effort.
+        }
+    }
+
+    private void ApplyChatReadReceipt(Guid userId, DateTimeOffset readAt)
+    {
+        if (_chatReadAt.TryGetValue(userId, out var existing) && existing >= readAt) return;
+        _chatReadAt[userId] = readAt;
+        RefreshChatSeenBy();
+    }
+
+    private void RefreshChatSeenBy()
+    {
+        var peers = ActiveCall?.Participants.Select(p => (p.UserId, p.DisplayName))
+                    ?? Enumerable.Empty<(Guid, string)>();
+        RoomChatMessageViewModel.RefreshSeenBy(ChatMessages, _context.People.MyId, peers, _chatReadAt);
     }
 
     private void RefreshRoster()

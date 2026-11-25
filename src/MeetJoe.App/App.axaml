@@ -70,6 +70,10 @@
                 </ItemsControl>
               </StackPanel>
             </Border>
+            <TextBlock Classes="muted" FontSize="10" Margin="0,1,2,0"
+                       HorizontalAlignment="Right"
+                       Text="{Binding SeenByText}"
+                       IsVisible="{Binding ShowSeenBy}" />
           </StackPanel>
         </DockPanel>
       </DataTemplate>

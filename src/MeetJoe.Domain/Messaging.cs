@@ -12,6 +12,9 @@ public class Conversation
     public ConversationKind Kind { get; private set; }
     public string? Title { get; private set; }
 
+    /// <summary>Group creator — only they can rename. Null for direct chats.</summary>
+    public Guid? CreatedById { get; private set; }
+
     /// <summary>Set for direct conversations only; unique per organization so a pair has one thread.</summary>
     public string? DirectKey { get; private set; }
 
@@ -23,6 +26,8 @@ public class Conversation
 
     public List<ConversationMember> Members { get; private set; } = [];
     public List<Message> Messages { get; private set; } = [];
+
+    public bool IsEmpty => Members.Count == 0;
 
     public static Conversation CreateDirect(Guid organizationId, Guid userA, Guid userB, DateTimeOffset now)
     {
@@ -54,6 +59,7 @@ public class Conversation
             Id = Guid.CreateVersion7(),
             OrganizationId = organizationId,
             Kind = ConversationKind.Group,
+            CreatedById = creatorId,
             Title = Guard.Optional(title, "Title", MaxTitleLength),
             CreatedAt = now,
         };
@@ -86,9 +92,16 @@ public class Conversation
             throw new DomainException("Only group conversations can remove people.");
         var member = Members.FirstOrDefault(m => m.UserId == userId)
                      ?? throw new DomainException("That person is not in this conversation.");
-        if (Members.Count <= 2)
-            throw new DomainException("A group needs at least two people.");
         Members.Remove(member);
+    }
+
+    public void Rename(Guid actorId, string title)
+    {
+        if (Kind != ConversationKind.Group)
+            throw new DomainException("Only group conversations can be renamed.");
+        if (CreatedById is not { } creatorId || creatorId != actorId)
+            throw new DomainException("Only the person who created this group can rename it.");
+        Title = Guard.Required(title, "Group name", MaxTitleLength);
     }
 
     public void RecordMessage(Message message)
@@ -394,6 +407,9 @@ public class FileObject
     public DateTimeOffset CreatedAt { get; private set; }
 
     public User Uploader { get; private set; } = null!;
+
+    /// <summary>Clears the conversation link when an empty group is purged.</summary>
+    public void DetachFromConversation() => ConversationId = null;
 
     public static FileObject Create(
         Guid organizationId,
