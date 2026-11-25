@@ -117,6 +117,14 @@ internal static class ApiEndpoints
             (Guid id, UpdateConversationPrefsRequest request, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
                 chat.UpdateConversationPrefsAsync(user.GetUserId(), id, request, ct));
 
+        api.MapPost("/conversations/{id:guid}/members",
+            (Guid id, AddConversationMemberRequest request, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
+                chat.AddMemberAsync(user.GetUserId(), id, request, ct));
+
+        api.MapDelete("/conversations/{id:guid}/members/{userId:guid}",
+            (Guid id, Guid userId, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
+                chat.RemoveMemberAsync(user.GetUserId(), id, userId, ct));
+
         api.MapGet("/channels/{id:guid}/messages",
             (Guid id, DateTimeOffset? before, int? limit, ClaimsPrincipal user, ChatService chat, CancellationToken ct) =>
                 chat.GetMessagesAsync(user.GetUserId(), null, id, before, limit, ct));

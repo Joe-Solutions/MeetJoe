@@ -142,18 +142,70 @@
             <c:Icon Data="{StaticResource Icon.Close}" Size="17" />
           </Button>
         </Grid>
+
+        <StackPanel DockPanel.Dock="Top" Margin="20,0,16,12" Spacing="8"
+                    IsVisible="{Binding CanManageMembers}">
+          <TextBlock Classes="muted small" TextWrapping="Wrap"
+                     Text="Invite someone in your organization by email." />
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBox Text="{Binding MemberEmailQuery, UpdateSourceTrigger=PropertyChanged}"
+                     Watermark="Email" MaxLength="200" />
+            <Button Grid.Column="1" Classes="primary" Content="Add" VerticalAlignment="Center"
+                    Command="{Binding AddMemberCommand}" />
+          </Grid>
+          <Border IsVisible="{Binding HasMemberSuggestions}"
+                  Background="{StaticResource Brush.Panel}" CornerRadius="8"
+                  BorderBrush="{StaticResource Brush.Border}" BorderThickness="1" MaxHeight="180">
+            <ScrollViewer>
+              <ItemsControl ItemsSource="{Binding MemberSuggestions}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:PersonViewModel">
+                    <Button Classes="ghost" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                            Padding="12,10" CornerRadius="0"
+                            Command="{Binding $parent[UserControl].((vm:ChatViewModel)DataContext).PickMemberSuggestionCommand}"
+                            CommandParameter="{Binding}">
+                      <StackPanel Orientation="Horizontal" Spacing="10">
+                        <c:Avatar Width="28" Height="28" DisplayName="{Binding DisplayName}" Photo="{Binding Photo}" />
+                        <StackPanel Spacing="1" VerticalAlignment="Center">
+                          <TextBlock FontWeight="SemiBold" Text="{Binding DisplayName}" />
+                          <TextBlock Classes="muted small" Text="{Binding Email}" />
+                        </StackPanel>
+                      </StackPanel>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </Border>
+          <TextBlock Classes="error" Text="{Binding MemberManageStatus}"
+                     IsVisible="{Binding MemberManageStatus, Converter={x:Static ObjectConverters.IsNotNull}}"
+                     TextWrapping="Wrap" />
+        </StackPanel>
+
         <ScrollViewer>
           <ItemsControl ItemsSource="{Binding Selected.Members}" Margin="20,0,16,16">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:PersonViewModel">
-                <StackPanel Orientation="Horizontal" Spacing="11" Margin="0,7">
+                <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,7" ColumnSpacing="11">
                   <c:Avatar Width="32" Height="32" DisplayName="{Binding DisplayName}" Photo="{Binding Photo}" Status="{Binding Status}"
-                            ShowStatus="True" />
-                  <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                            ShowStatus="True" VerticalAlignment="Center" />
+                  <StackPanel Grid.Column="1" VerticalAlignment="Center" MinWidth="0">
+                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
+                               MaxLines="1" TextTrimming="CharacterEllipsis" />
                     <TextBlock Classes="muted small" Text="{Binding StatusText}" />
                   </StackPanel>
-                </StackPanel>
+                  <Button Grid.Column="2" Classes="ghost" Padding="8,2" MinHeight="28" Content="Remove"
+                          VerticalAlignment="Center"
+                          Command="{Binding $parent[UserControl].((vm:ChatViewModel)DataContext).RemoveMemberCommand}"
+                          CommandParameter="{Binding}">
+                    <Button.IsVisible>
+                      <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="IsMe" Converter="{x:Static BoolConverters.Not}" />
+                        <Binding Path="$parent[UserControl].((vm:ChatViewModel)DataContext).CanManageMembers" />
+                      </MultiBinding>
+                    </Button.IsVisible>
+                  </Button>
+                </Grid>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>

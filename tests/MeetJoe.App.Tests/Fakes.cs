@@ -107,6 +107,45 @@ internal sealed class FakeApi : IMeetJoeApi
         return Task.FromResult(conversation);
     }
 
+    public Task<ConversationDto> AddConversationMemberAsync(
+        Guid conversationId, Guid userId, CancellationToken ct = default)
+    {
+        var index = Conversations.FindIndex(c => c.Id == conversationId);
+        if (index < 0) throw new ApiException("Conversation was not found.", 404);
+        var current = Conversations[index];
+        if (current.Kind != ConversationKind.Group)
+            throw new ApiException("Only group conversations can change membership.", 400);
+        if (current.Members.Any(m => m.Id == userId))
+            throw new ApiException("That person is already in this conversation.", 400);
+        var person = Members.First(m => m.UserId == userId);
+        var updated = current with
+        {
+            Members = current.Members.Append(new UserSummaryDto(userId, person.DisplayName)).ToList(),
+        };
+        Conversations[index] = updated;
+        return Task.FromResult(updated);
+    }
+
+    public Task<ConversationDto> RemoveConversationMemberAsync(
+        Guid conversationId, Guid userId, CancellationToken ct = default)
+    {
+        var index = Conversations.FindIndex(c => c.Id == conversationId);
+        if (index < 0) throw new ApiException("Conversation was not found.", 404);
+        var current = Conversations[index];
+        if (current.Kind != ConversationKind.Group)
+            throw new ApiException("Only group conversations can change membership.", 400);
+        if (userId == Me.Id)
+            throw new ApiException("You cannot remove yourself from the group.", 400);
+        var next = current.Members.Where(m => m.Id != userId).ToList();
+        if (next.Count == current.Members.Count)
+            throw new ApiException("That person is not in this conversation.", 400);
+        if (next.Count < 2)
+            throw new ApiException("A group needs at least two people.", 400);
+        var updated = current with { Members = next };
+        Conversations[index] = updated;
+        return Task.FromResult(updated);
+    }
+
     public Task<IReadOnlyList<MessageDto>> GetMessagesAsync(
         Guid? conversationId, Guid? channelId, DateTimeOffset? before, CancellationToken ct = default)
     {

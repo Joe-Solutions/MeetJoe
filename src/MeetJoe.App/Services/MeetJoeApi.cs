@@ -103,6 +103,17 @@ public sealed class MeetJoeApi(HttpClient http, IAuthService auth) : IMeetJoeApi
     public Task MarkChannelReadAsync(Guid channelId, CancellationToken ct = default) =>
         SendAsync(HttpMethod.Post, $"api/channels/{channelId}/read", null, ct);
 
+    public Task<ConversationDto> AddConversationMemberAsync(
+        Guid conversationId, Guid userId, CancellationToken ct = default) =>
+        SendAsync<ConversationDto>(
+            HttpMethod.Post, $"api/conversations/{conversationId}/members",
+            new AddConversationMemberRequest(userId), ct);
+
+    public Task<ConversationDto> RemoveConversationMemberAsync(
+        Guid conversationId, Guid userId, CancellationToken ct = default) =>
+        SendAsync<ConversationDto>(
+            HttpMethod.Delete, $"api/conversations/{conversationId}/members/{userId:D}", null, ct);
+
     public Task<ConversationDto> UpdateConversationPrefsAsync(
         Guid conversationId, UpdateConversationPrefsRequest request, CancellationToken ct = default) =>
         SendAsync<ConversationDto>(HttpMethod.Put, $"api/conversations/{conversationId}/prefs", request, ct);

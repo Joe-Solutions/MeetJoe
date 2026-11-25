@@ -92,6 +92,8 @@ public record ConversationDto(
 
 public record CreateConversationRequest(IReadOnlyList<Guid> MemberIds, string? Title);
 
+public record AddConversationMemberRequest(Guid UserId);
+
 public record UpdateConversationPrefsRequest(bool IsMuted, bool IsPinned, NotifyMode NotifyMode);
 
 public record AttachmentDto(Guid FileId, string FileName, string ContentType, long Size);
