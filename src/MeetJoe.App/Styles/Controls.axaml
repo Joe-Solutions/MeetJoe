@@ -455,36 +455,41 @@
   <Style Selector="DockPanel.messagechrome">
     <Setter Property="HorizontalAlignment" Value="Left" />
     <Setter Property="ClipToBounds" Value="False" />
+    <Setter Property="Background" Value="Transparent" />
   </Style>
   <Style Selector="DockPanel.messagechrome.mine">
     <Setter Property="HorizontalAlignment" Value="Right" />
   </Style>
   <Style Selector="DockPanel.message">
     <Setter Property="ClipToBounds" Value="False" />
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="StackPanel.messagebody">
+    <Setter Property="Background" Value="Transparent" />
   </Style>
 
   <!--
-    Emoji + reply dock beside the bubble (in layout). That keeps them inside the message
-    hit-box so moving the pointer onto the icons does not clear :pointerover.
+    Side actions stay in-layout beside the bubble and ALWAYS hit-test (even when Opacity=0).
+    That closes the dead zone: moving from bubble → icons no longer falls through to the
+    scroll surface and clears :pointerover.
   -->
   <Style Selector="StackPanel.message-sideactions">
     <Setter Property="DockPanel.Dock" Value="Right" />
-    <Setter Property="Margin" Value="8,0,0,0" />
-    <Setter Property="MinWidth" Value="64" />
+    <Setter Property="Margin" Value="4,0,0,0" />
+    <Setter Property="MinWidth" Value="68" />
+    <Setter Property="Background" Value="Transparent" />
     <Setter Property="Opacity" Value="0" />
-    <Setter Property="IsHitTestVisible" Value="False" />
+    <Setter Property="IsHitTestVisible" Value="True" />
   </Style>
   <Style Selector="DockPanel.messagechrome.mine > StackPanel.message-sideactions">
     <Setter Property="DockPanel.Dock" Value="Left" />
-    <Setter Property="Margin" Value="0,0,8,0" />
+    <Setter Property="Margin" Value="0,0,4,0" />
   </Style>
   <Style Selector="DockPanel.message:pointerover StackPanel.message-sideactions">
     <Setter Property="Opacity" Value="1" />
-    <Setter Property="IsHitTestVisible" Value="True" />
   </Style>
   <Style Selector="DockPanel.message.picking StackPanel.message-sideactions">
     <Setter Property="Opacity" Value="1" />
-    <Setter Property="IsHitTestVisible" Value="True" />
   </Style>
 
   <Style Selector="Border.message-reactionpicker">
