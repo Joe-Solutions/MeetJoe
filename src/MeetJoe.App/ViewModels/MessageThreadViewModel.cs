@@ -242,6 +242,17 @@ public partial class PendingAttachmentViewModel(FileDto file) : ObservableObject
     public bool IsImage { get; } = FileTypes.IsImage(file.ContentType, file.FileName);
 }
 
+/// <summary>An @mention picker row — either @everyone or a group member.</summary>
+public sealed class MentionSuggestion(string token, string label, string detail, PersonViewModel? person = null)
+{
+    /// <summary>Text inserted after @ (e.g. everyone or Display Name).</summary>
+    public string Token { get; } = token;
+    public string Label { get; } = label;
+    public string Detail { get; } = detail;
+    public PersonViewModel? Person { get; } = person;
+    public bool IsEveryone => Person is null;
+}
+
 /// <summary>The message list and composer for one conversation or channel.</summary>
 public partial class MessageThreadViewModel : ViewModelBase
 {
@@ -250,14 +261,22 @@ public partial class MessageThreadViewModel : ViewModelBase
     private readonly SessionContext _context;
     private readonly Guid? _conversationId;
     private readonly Guid? _channelId;
+    private readonly IReadOnlyList<PersonViewModel> _mentionables;
     private readonly HashSet<Guid> _knownIds = [];
     private CancellationTokenSource? _typingIdle;
 
-    public MessageThreadViewModel(SessionContext context, Guid? conversationId, Guid? channelId, string title, string subtitle)
+    public MessageThreadViewModel(
+        SessionContext context,
+        Guid? conversationId,
+        Guid? channelId,
+        string title,
+        string subtitle,
+        IReadOnlyList<PersonViewModel>? mentionables = null)
     {
         _context = context;
         _conversationId = conversationId;
         _channelId = channelId;
+        _mentionables = mentionables ?? [];
         Title = title;
         Subtitle = subtitle;
     }
@@ -265,6 +284,7 @@ public partial class MessageThreadViewModel : ViewModelBase
     public string Title { get; }
     public string Subtitle { get; }
     public bool IsChannel => _channelId is not null;
+    public bool SupportsMentions => _mentionables.Count > 0;
     public string Placeholder => ReplyTarget is { } target
         ? $"Reply to {target.Sender.DisplayName}"
         : IsChannel ? $"Post in {Title}" : $"Message {Title}";
@@ -272,6 +292,7 @@ public partial class MessageThreadViewModel : ViewModelBase
     public ObservableCollection<MessageViewModel> Messages { get; } = [];
     public ObservableCollection<MessageViewModel> ThreadReplies { get; } = [];
     public ObservableCollection<PendingAttachmentViewModel> PendingAttachments { get; } = [];
+    public ObservableCollection<MentionSuggestion> MentionSuggestions { get; } = [];
 
     /// <summary>Raised after a message is appended so the view can keep the newest in sight.</summary>
     public event Action? MessageAppended;
@@ -292,7 +313,14 @@ public partial class MessageThreadViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SendCommand))]
+    [NotifyPropertyChangedFor(nameof(ShowMentionSuggestions))]
     private string _draft = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowMentionSuggestions))]
+    private bool _hasMentionSuggestions;
+
+    public bool ShowMentionSuggestions => SupportsMentions && HasMentionSuggestions;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Placeholder), nameof(IsReplying), nameof(ShowThreadPanel))]
@@ -320,7 +348,67 @@ public partial class MessageThreadViewModel : ViewModelBase
         TypingText = typing.IsTyping ? $"{typing.DisplayName} is typing…" : null;
     }
 
-    partial void OnDraftChanged(string value) => _ = NotifyTypingAsync(value);
+    partial void OnDraftChanged(string value)
+    {
+        RefreshMentionSuggestions(value);
+        _ = NotifyTypingAsync(value);
+    }
+
+    private void RefreshMentionSuggestions(string value)
+    {
+        MentionSuggestions.Clear();
+        if (!SupportsMentions)
+        {
+            HasMentionSuggestions = false;
+            return;
+        }
+
+        // Incomplete @query at the end of the draft (Slack-style).
+        var at = value.LastIndexOf('@');
+        if (at < 0 || (at > 0 && !char.IsWhiteSpace(value[at - 1])))
+        {
+            HasMentionSuggestions = false;
+            return;
+        }
+
+        var query = value[(at + 1)..];
+        if (query.Contains('\n'))
+        {
+            HasMentionSuggestions = false;
+            return;
+        }
+
+        if ("everyone".StartsWith(query, StringComparison.OrdinalIgnoreCase))
+        {
+            MentionSuggestions.Add(new MentionSuggestion(
+                "everyone", "@everyone", "Notify everyone in this group"));
+        }
+
+        foreach (var person in _mentionables
+                     .Where(p => query.Length == 0
+                                 || p.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase))
+                     .OrderBy(p => p.DisplayName, StringComparer.OrdinalIgnoreCase)
+                     .Take(8))
+        {
+            MentionSuggestions.Add(new MentionSuggestion(
+                person.DisplayName, person.DisplayName, person.Email, person));
+        }
+
+        HasMentionSuggestions = MentionSuggestions.Count > 0;
+    }
+
+    [RelayCommand]
+    private void PickMention(MentionSuggestion suggestion)
+    {
+        if (suggestion is null) return;
+        var value = Draft;
+        var at = value.LastIndexOf('@');
+        if (at < 0) return;
+        Draft = value[..(at + 1)] + suggestion.Token + " ";
+        MentionSuggestions.Clear();
+        HasMentionSuggestions = false;
+        SendCommand.NotifyCanExecuteChanged();
+    }
 
     private async Task NotifyTypingAsync(string value)
     {

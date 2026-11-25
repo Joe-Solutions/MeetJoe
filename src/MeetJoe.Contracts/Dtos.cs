@@ -88,7 +88,8 @@ public record ConversationDto(
     int UnreadCount,
     bool IsMuted = false,
     bool IsPinned = false,
-    NotifyMode NotifyMode = NotifyMode.All);
+    NotifyMode NotifyMode = NotifyMode.All,
+    bool HasUnreadMention = false);
 
 public record CreateConversationRequest(IReadOnlyList<Guid> MemberIds, string? Title);
 

@@ -45,6 +45,7 @@ public partial class ConversationViewModel : ObservableObject
     [ObservableProperty] private DateTimeOffset? _lastMessageAt;
     [ObservableProperty] private bool _isMuted;
     [ObservableProperty] private bool _isPinned;
+    [ObservableProperty] private bool _hasUnreadMention;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUnread))]
@@ -63,8 +64,13 @@ public partial class ConversationViewModel : ObservableObject
         UnreadCount = conversation.UnreadCount;
         IsMuted = conversation.IsMuted;
         IsPinned = conversation.IsPinned;
+        HasUnreadMention = conversation.HasUnreadMention;
         ApplyMembers(conversation);
     }
+
+    public void MarkMentioned() => HasUnreadMention = true;
+
+    public void ClearMention() => HasUnreadMention = false;
 
     private void ApplyMembers(ConversationDto conversation)
     {
@@ -236,7 +242,11 @@ public partial class ChatViewModel : ViewModelBase
         }
 
         IsStartingChat = false;
-        var thread = new MessageThreadViewModel(_context, newValue.Id, null, newValue.Title, newValue.Subtitle);
+        IReadOnlyList<PersonViewModel> mentionables = newValue.IsGroup
+            ? newValue.Members.Where(m => !m.IsMe).ToList()
+            : [];
+        var thread = new MessageThreadViewModel(
+            _context, newValue.Id, null, newValue.Title, newValue.Subtitle, mentionables);
         Thread = thread;
         _ = OpenAsync(newValue, thread);
     }
@@ -250,6 +260,7 @@ public partial class ChatViewModel : ViewModelBase
     private async Task MarkReadAsync(ConversationViewModel conversation)
     {
         conversation.UnreadCount = 0;
+        conversation.ClearMention();
         RaiseUnreadChanged();
         try
         {
@@ -259,6 +270,20 @@ public partial class ChatViewModel : ViewModelBase
         {
             // Not worth interrupting the user: the next successful open marks it read.
         }
+    }
+
+    /// <summary>Shows the @ badge when this user was mentioned in a group chat.</summary>
+    public void ApplyIncomingMention(Guid conversationId)
+    {
+        var conversation = Conversations.FirstOrDefault(c => c.Id == conversationId);
+        if (conversation is null)
+        {
+            _ = LoadAsync();
+            return;
+        }
+
+        if (!ReferenceEquals(conversation, Selected))
+            conversation.MarkMentioned();
     }
 
     [RelayCommand]

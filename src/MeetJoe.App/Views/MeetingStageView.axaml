@@ -190,8 +190,7 @@
 
           <!-- Meeting chat (DM-style bubbles) — drop anywhere in the conversation. -->
           <Border x:Name="LiveChatDropZone" Grid.Row="1" Margin="4,8,4,4" Classes="chatdrop"
-                  IsVisible="{Binding Stage.ShowChatPanel}"
-                  ToolTip.Tip="Drop files anywhere in the conversation to attach">
+                  IsVisible="{Binding Stage.ShowChatPanel}">
             <Grid RowDefinitions="*,Auto">
             <ScrollViewer x:Name="LiveChatScroller" Margin="4,0,4,0">
               <ItemsControl ItemsSource="{Binding Stage.ChatMessages}"
@@ -431,8 +430,7 @@
         <Grid RowDefinitions="Auto,*">
           <TextBlock Classes="h2" Margin="14,12" Text="Meeting chat" />
           <Border x:Name="LobbyChatDropZone" Grid.Row="1" Margin="4,0,4,4" Classes="chatdrop"
-                  IsVisible="{Binding !Stage.InLobby}"
-                  ToolTip.Tip="Drop files anywhere in the conversation to attach">
+                  IsVisible="{Binding !Stage.InLobby}">
             <Grid RowDefinitions="*,Auto">
           <ScrollViewer x:Name="LobbyChatScroller" Margin="4,0">
             <ItemsControl ItemsSource="{Binding Stage.ChatMessages}"

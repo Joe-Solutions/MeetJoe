@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using MeetJoe.Application.Common;
 using MeetJoe.Contracts;
 using Microsoft.EntityFrameworkCore;
@@ -7,7 +6,7 @@ using Domain = MeetJoe.Domain;
 namespace MeetJoe.Application.Chat;
 
 /// <summary>1:1 and group conversations, plus messages in both conversations and channels.</summary>
-public sealed partial class ChatService(IAppDbContext db, IRealtimePublisher realtime, TimeProvider time)
+public sealed class ChatService(IAppDbContext db, IRealtimePublisher realtime, TimeProvider time)
 {
     public const int DefaultPageSize = 50;
     public const int MaxPageSize = 100;
@@ -369,10 +368,22 @@ public sealed partial class ChatService(IAppDbContext db, IRealtimePublisher rea
                      ?? throw AppException.NotFound("Conversation");
         var now = time.Now();
         member.MarkRead(now);
+
+        // Opening the chat clears @ mention badges for this conversation.
+        var mentions = await db.ActivityItems
+            .Where(a => a.RecipientId == userId
+                        && a.ConversationId == conversationId
+                        && a.Kind == Domain.ActivityKind.Mention
+                        && a.ReadAt == null)
+            .ToListAsync(ct);
+        foreach (var item in mentions) item.MarkRead(now);
+
         await db.SaveChangesAsync(ct);
 
         var receipt = new ReadReceiptDto(conversationId, null, userId, now);
         await realtime.ReadReceiptAsync(member.Conversation.Members.Select(m => m.UserId).ToList(), receipt, ct);
+        if (mentions.Count > 0)
+            await realtime.ActivityChangedAsync([userId], ct);
     }
 
     public async Task MarkChannelReadAsync(Guid userId, Guid channelId, CancellationToken ct = default)
@@ -421,32 +432,87 @@ public sealed partial class ChatService(IAppDbContext db, IRealtimePublisher rea
             recipients.Add(parent.SenderId);
         }
 
-        if (message.Body.Length > 0)
+        if (message.Body.Length > 0 && message.ConversationId is not null)
         {
-            var mentionNames = MentionPattern().Matches(message.Body)
-                .Select(m => m.Groups[1].Value.Trim())
-                .Where(n => n.Length > 0)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-            if (mentionNames.Count > 0)
+            var people = await db.Users
+                .Where(u => target.MemberIds.Contains(u.Id) && u.Id != userId)
+                .Select(u => new { u.Id, u.DisplayName })
+                .ToListAsync(ct);
+            var (mentionEveryone, mentionedIds) = ResolveMentions(message.Body, people.Select(p => (p.Id, p.DisplayName)));
+            if (mentionEveryone || mentionedIds.Count > 0)
             {
-                var people = await db.Users
-                    .Where(u => target.MemberIds.Contains(u.Id) && u.Id != userId)
-                    .Select(u => new { u.Id, u.DisplayName })
-                    .ToListAsync(ct);
-                foreach (var person in people.Where(p =>
-                             mentionNames.Any(n => string.Equals(n, p.DisplayName, StringComparison.OrdinalIgnoreCase))))
+                var place = await ConversationLabelAsync(message.ConversationId.Value, ct);
+                IEnumerable<Guid> targets = mentionEveryone
+                    ? people.Select(p => p.Id)
+                    : mentionedIds;
+                foreach (var recipientId in targets)
                 {
-                    if (!recipients.Add(person.Id)) continue;
+                    if (!recipients.Add(recipientId)) continue;
+                    var summary = mentionEveryone
+                        ? $"{actorName} mentioned everyone in {place}: {message.Preview()}"
+                        : $"{actorName} mentioned you in {place}: {message.Preview()}";
                     db.ActivityItems.Add(Domain.ActivityItem.Create(
-                        target.OrganizationId, person.Id, userId, Domain.ActivityKind.Mention,
+                        target.OrganizationId, recipientId, userId, Domain.ActivityKind.Mention,
                         message.Id, message.ConversationId, message.ChannelId,
-                        $"{actorName} mentioned you: {message.Preview()}", now, message.MeetingId));
+                        summary, now, message.MeetingId));
                 }
             }
         }
 
         return recipients.ToList();
+    }
+
+    /// <summary>
+    /// Resolves @everyone and @Display Name mentions (longest name wins for multi-word names).
+    /// </summary>
+    internal static (bool Everyone, HashSet<Guid> UserIds) ResolveMentions(
+        string body, IEnumerable<(Guid Id, string DisplayName)> members)
+    {
+        var everyone = false;
+        var ids = new HashSet<Guid>();
+        var names = members
+            .Where(m => !string.IsNullOrWhiteSpace(m.DisplayName))
+            .OrderByDescending(m => m.DisplayName.Length)
+            .ToList();
+
+        for (var i = 0; i < body.Length; i++)
+        {
+            if (body[i] != '@') continue;
+            if (i > 0 && !char.IsWhiteSpace(body[i - 1])) continue;
+            var slice = body[(i + 1)..];
+            if (slice.StartsWith("everyone", StringComparison.OrdinalIgnoreCase)
+                && (slice.Length == 8 || !char.IsLetterOrDigit(slice[8])))
+            {
+                everyone = true;
+                continue;
+            }
+
+            foreach (var (id, name) in names)
+            {
+                if (!slice.StartsWith(name, StringComparison.OrdinalIgnoreCase)) continue;
+                var end = name.Length;
+                if (end < slice.Length && char.IsLetterOrDigit(slice[end])) continue;
+                ids.Add(id);
+                break;
+            }
+        }
+
+        return (everyone, ids);
+    }
+
+    private async Task<string> ConversationLabelAsync(Guid conversationId, CancellationToken ct)
+    {
+        var row = await db.Conversations.AsNoTracking()
+            .Where(c => c.Id == conversationId)
+            .Select(c => new
+            {
+                c.Title,
+                Names = c.Members.Select(m => m.User.DisplayName).OrderBy(n => n).ToList(),
+            })
+            .FirstOrDefaultAsync(ct);
+        if (row is null) return "a group";
+        if (!string.IsNullOrWhiteSpace(row.Title)) return row.Title!;
+        return row.Names.Count == 0 ? "a group" : string.Join(", ", row.Names.Take(3));
     }
 
     private async Task<MessageDto> GetMessageDtoAsync(Guid messageId, Guid viewerId, CancellationToken ct)
@@ -531,6 +597,11 @@ public sealed partial class ChatService(IAppDbContext db, IRealtimePublisher rea
                     && x.DeletedAt == null
                     && x.SenderId != userId
                     && x.CreatedAt > m.LastReadAt),
+                HasUnreadMention = db.ActivityItems.Any(a =>
+                    a.ConversationId == m.ConversationId
+                    && a.RecipientId == userId
+                    && a.Kind == Domain.ActivityKind.Mention
+                    && a.ReadAt == null),
             })
             .ToListAsync(ct);
 
@@ -558,10 +629,8 @@ public sealed partial class ChatService(IAppDbContext db, IRealtimePublisher rea
                 r.Unread,
                 r.IsMuted,
                 r.IsPinned,
-                r.NotifyMode.ToContract()))
+                r.NotifyMode.ToContract(),
+                r.HasUnreadMention))
             .ToList();
     }
-
-    [GeneratedRegex(@"@([^\s@][^@]*?)(?=\s|$|[,.!?])", RegexOptions.CultureInvariant)]
-    private static partial Regex MentionPattern();
 }

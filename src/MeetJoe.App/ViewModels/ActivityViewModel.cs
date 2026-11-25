@@ -37,12 +37,22 @@ public sealed record MeetingInvitePrompt(
     string ActorName,
     string TimeText);
 
+/// <summary>Payload for a shell toast when the user is @mentioned in a group chat.</summary>
+public sealed record MentionPrompt(
+    Guid ActivityId,
+    Guid? ConversationId,
+    string Summary,
+    string ActorName,
+    string TimeText);
+
 /// <summary>Mentions, replies, and reactions aimed at the signed-in user.</summary>
 public partial class ActivityViewModel : ViewModelBase
 {
     private readonly SessionContext _context;
     private readonly HashSet<Guid> _knownMeetingInviteIds = [];
+    private readonly HashSet<Guid> _knownMentionIds = [];
     private bool _meetingInvitesSeeded;
+    private bool _mentionsSeeded;
 
     public ActivityViewModel(SessionContext context)
     {
@@ -70,6 +80,9 @@ public partial class ActivityViewModel : ViewModelBase
     /// <summary>Fired for newly arrived unread meeting invites (not historical ones from first load).</summary>
     public event Action<MeetingInvitePrompt>? IncomingMeetingInvite;
 
+    /// <summary>Fired for newly arrived unread @mentions in group chat.</summary>
+    public event Action<MentionPrompt>? IncomingMention;
+
     public void Detach() => _context.Realtime.ActivityChanged -= OnActivityChanged;
 
     public async Task LoadAsync()
@@ -84,6 +97,7 @@ public partial class ActivityViewModel : ViewModelBase
             UnreadCount = Items.Count(i => i.IsUnread);
             UnreadChanged?.Invoke();
             DetectNewMeetingInvites();
+            DetectNewMentions();
         }
         catch (Exception ex)
         {
@@ -115,6 +129,31 @@ public partial class ActivityViewModel : ViewModelBase
             IncomingMeetingInvite?.Invoke(new MeetingInvitePrompt(
                 item.Id,
                 item.MeetingId!.Value,
+                item.Summary,
+                item.Actor.DisplayName,
+                item.TimeText));
+        }
+    }
+
+    private void DetectNewMentions()
+    {
+        var mentions = Items
+            .Where(i => i.Kind == ActivityKind.Mention && i.ConversationId is not null)
+            .ToList();
+
+        if (!_mentionsSeeded)
+        {
+            foreach (var item in mentions) _knownMentionIds.Add(item.Id);
+            _mentionsSeeded = true;
+            return;
+        }
+
+        foreach (var item in mentions.Where(i => i.IsUnread))
+        {
+            if (!_knownMentionIds.Add(item.Id)) continue;
+            IncomingMention?.Invoke(new MentionPrompt(
+                item.Id,
+                item.ConversationId,
                 item.Summary,
                 item.Actor.DisplayName,
                 item.TimeText));
