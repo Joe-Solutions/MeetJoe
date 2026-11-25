@@ -12,6 +12,12 @@ public sealed partial class MarkdownText : SelectableTextBlock
     public static readonly StyledProperty<string?> MarkdownProperty =
         AvaloniaProperty.Register<MarkdownText, string?>(nameof(Markdown));
 
+    /// <summary>
+    /// Use Fluent's SelectableTextBlock theme (selection brush, I-beam, Copy context flyout).
+    /// Without this, Avalonia styles the control as MarkdownText and selection/copy feel broken.
+    /// </summary>
+    protected override Type StyleKeyOverride => typeof(SelectableTextBlock);
+
     public string? Markdown
     {
         get => GetValue(MarkdownProperty);
