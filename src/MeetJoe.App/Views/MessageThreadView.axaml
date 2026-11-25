@@ -43,56 +43,55 @@
                   </StackPanel>
 
                   <!--
-                    Side actions are docked in-layout (not overlaid with negative margins) so the
-                    message hit-box includes the icons — moving the pointer onto them keeps hover.
-                    Reaction picker stacks above the icons, never over the bubble text.
+                    Side actions dock beside the bubble. They stay IsHitTestVisible even when
+                    Opacity=0 so the strip is not a dead zone that clears message :pointerover.
+                    Reaction choices use a Flyout so they stay interactive outside the bubble.
                   -->
                   <DockPanel Classes="messagechrome" Classes.mine="{Binding IsMine}" ClipToBounds="False">
                     <StackPanel Classes="message-sideactions" Classes.mine="{Binding IsMine}"
-                                Orientation="Vertical" Spacing="4"
+                                Orientation="Horizontal" Spacing="2"
                                 IsVisible="{Binding ShowActions}"
                                 VerticalAlignment="Center" ZIndex="20">
-                      <Border Classes="message-reactionpicker"
-                              IsVisible="{Binding ShowReactionPicker}">
-                        <ItemsControl ItemsSource="{Binding ReactionChoices}">
-                          <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                              <StackPanel Orientation="Horizontal" Spacing="0" />
-                            </ItemsPanelTemplate>
-                          </ItemsControl.ItemsPanel>
-                          <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="x:String">
-                              <Button Classes="hoverreact"
-                                      Content="{Binding}"
-                                      ToolTip.Tip="{Binding}"
-                                      ToolTip.Placement="Top"
-                                      Command="{Binding $parent[ItemsControl].((vm:MessageViewModel)DataContext).ReactCommand}"
-                                      CommandParameter="{Binding}" />
-                            </DataTemplate>
-                          </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                      </Border>
-
-                      <StackPanel Orientation="Horizontal" Spacing="2">
-                        <Button Classes="hovericon" ToolTip.Tip="Add reaction" ToolTip.Placement="Top"
-                                Command="{Binding ToggleReactionPickerCommand}">
-                          <c:Icon Data="{StaticResource Icon.Smile}" Size="14" />
-                        </Button>
-                        <Button Classes="hovericon" ToolTip.Tip="Reply" ToolTip.Placement="Top"
-                                Command="{Binding BeginReplyCommand}">
-                          <c:Icon Data="{StaticResource Icon.Reply}" Size="14" />
-                        </Button>
-                        <Button Classes="hovericon" ToolTip.Tip="Edit" ToolTip.Placement="Top"
-                                Command="{Binding BeginEditCommand}"
-                                IsVisible="{Binding CanMutate}">
-                          <c:Icon Data="{StaticResource Icon.Edit}" Size="14" />
-                        </Button>
-                        <Button Classes="hovericon danger" ToolTip.Tip="Delete" ToolTip.Placement="Top"
-                                Command="{Binding DeleteCommand}"
-                                IsVisible="{Binding CanMutate}">
-                          <c:Icon Data="{StaticResource Icon.Trash}" Size="14" />
-                        </Button>
-                      </StackPanel>
+                      <Button Classes="hovericon" ToolTip.Tip="Add reaction" ToolTip.Placement="Top">
+                        <Button.Flyout>
+                          <Flyout Placement="Top" ShowMode="Standard">
+                            <Border Classes="message-reactionpicker">
+                              <ItemsControl ItemsSource="{Binding ReactionChoices}">
+                                <ItemsControl.ItemsPanel>
+                                  <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" Spacing="0" />
+                                  </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                  <DataTemplate x:DataType="x:String">
+                                    <Button Classes="hoverreact"
+                                            Content="{Binding}"
+                                            ToolTip.Tip="{Binding}"
+                                            ToolTip.Placement="Top"
+                                            Command="{Binding $parent[ItemsControl].((vm:MessageViewModel)DataContext).ReactCommand}"
+                                            CommandParameter="{Binding}" />
+                                  </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                              </ItemsControl>
+                            </Border>
+                          </Flyout>
+                        </Button.Flyout>
+                        <c:Icon Data="{StaticResource Icon.Smile}" Size="14" />
+                      </Button>
+                      <Button Classes="hovericon" ToolTip.Tip="Reply" ToolTip.Placement="Top"
+                              Command="{Binding BeginReplyCommand}">
+                        <c:Icon Data="{StaticResource Icon.Reply}" Size="14" />
+                      </Button>
+                      <Button Classes="hovericon" ToolTip.Tip="Edit" ToolTip.Placement="Top"
+                              Command="{Binding BeginEditCommand}"
+                              IsVisible="{Binding CanMutate}">
+                        <c:Icon Data="{StaticResource Icon.Edit}" Size="14" />
+                      </Button>
+                      <Button Classes="hovericon danger" ToolTip.Tip="Delete" ToolTip.Placement="Top"
+                              Command="{Binding DeleteCommand}"
+                              IsVisible="{Binding CanMutate}">
+                        <c:Icon Data="{StaticResource Icon.Trash}" Size="14" />
+                      </Button>
                     </StackPanel>
 
                     <StackPanel Spacing="4" Classes.mine="{Binding IsMine}">
