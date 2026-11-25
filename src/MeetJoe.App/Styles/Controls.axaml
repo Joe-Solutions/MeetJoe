@@ -464,42 +464,42 @@
   </Style>
 
   <!--
-    Floating reaction / reply pill overlays the top of the bubble (Slack/Teams style).
-    Positioned absolutely inside Panel.messagechrome so hover never expands layout.
+    Emoji + reply icons sit just outside the bubble (right of others, left of mine).
+    Hidden until the message row is hovered, or a reaction picker is open.
   -->
-  <Style Selector="Border.message-hoverbar">
-    <Setter Property="Background" Value="#E6121E2E" />
-    <Setter Property="BorderBrush" Value="#3D6A94" />
-    <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="999" />
-    <Setter Property="Padding" Value="5,3" />
+  <Style Selector="StackPanel.message-sideactions">
     <Setter Property="HorizontalAlignment" Value="Right" />
-    <Setter Property="VerticalAlignment" Value="Top" />
-    <Setter Property="Margin" Value="0,-16,6,0" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Margin" Value="0,0,-120,0" />
     <Setter Property="Opacity" Value="0" />
     <Setter Property="IsHitTestVisible" Value="False" />
-    <Setter Property="BoxShadow" Value="0 10 28 0 #66000000" />
   </Style>
-  <Style Selector="Border.message-hoverbar.mine">
+  <Style Selector="StackPanel.message-sideactions.mine">
     <Setter Property="HorizontalAlignment" Value="Left" />
-    <Setter Property="Margin" Value="6,-16,0,0" />
+    <Setter Property="Margin" Value="-120,0,0,0" />
   </Style>
-  <Style Selector="DockPanel.message:pointerover Border.message-hoverbar">
+  <Style Selector="DockPanel.message:pointerover StackPanel.message-sideactions">
     <Setter Property="Opacity" Value="1" />
     <Setter Property="IsHitTestVisible" Value="True" />
   </Style>
-  <Style Selector="Border.message-hoverbar:pointerover">
+  <Style Selector="DockPanel.message.picking StackPanel.message-sideactions">
     <Setter Property="Opacity" Value="1" />
     <Setter Property="IsHitTestVisible" Value="True" />
   </Style>
 
-  <Style Selector="Border.hoverbardivider">
-    <Setter Property="Width" Value="1" />
-    <Setter Property="Height" Value="16" />
-    <Setter Property="Margin" Value="3,0" />
-    <Setter Property="Background" Value="{DynamicResource Brush.Border}" />
-    <Setter Property="VerticalAlignment" Value="Center" />
-    <Setter Property="Opacity" Value="0.85" />
+  <Style Selector="Border.message-reactionpicker">
+    <Setter Property="Background" Value="#E6121E2E" />
+    <Setter Property="BorderBrush" Value="#3D6A94" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="999" />
+    <Setter Property="Padding" Value="4,3" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="VerticalAlignment" Value="Bottom" />
+    <Setter Property="Margin" Value="0,0,0,32" />
+    <Setter Property="BoxShadow" Value="0 10 28 0 #66000000" />
+  </Style>
+  <Style Selector="Border.message-reactionpicker.mine">
+    <Setter Property="HorizontalAlignment" Value="Right" />
   </Style>
 
   <Style Selector="Button.hoverreact">

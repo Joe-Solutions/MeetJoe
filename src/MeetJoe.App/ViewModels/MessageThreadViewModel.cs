@@ -167,6 +167,10 @@ public partial class MessageViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(HasReactions))]
     private IReadOnlyList<ReactionChipViewModel> _reactions = [];
 
+    /// <summary>Hover emoji icon opens this picker beside the message (not over the bubble).</summary>
+    [ObservableProperty]
+    private bool _showReactionPicker;
+
     /// <summary>False when this continues a run from the same sender, so the name and avatar are not repeated.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowAvatar), nameof(IsContinuation))]
@@ -215,10 +219,18 @@ public partial class MessageViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void BeginReply() => _thread?.BeginReplyCommand.Execute(this);
+    private void BeginReply()
+    {
+        ShowReactionPicker = false;
+        _thread?.BeginReplyCommand.Execute(this);
+    }
 
     [RelayCommand]
-    private void BeginEdit() => _thread?.BeginEditCommand.Execute(this);
+    private void BeginEdit()
+    {
+        ShowReactionPicker = false;
+        _thread?.BeginEditCommand.Execute(this);
+    }
 
     [RelayCommand]
     private void CancelEdit() => _thread?.CancelEditCommand.Execute(this);
@@ -233,7 +245,19 @@ public partial class MessageViewModel : ObservableObject
     private Task OpenRepliesAsync() => _thread?.OpenRepliesCommand.ExecuteAsync(this) ?? Task.CompletedTask;
 
     [RelayCommand]
-    private Task ReactAsync(string emoji) => _thread?.ReactToAsync(this, emoji) ?? Task.CompletedTask;
+    private void ToggleReactionPicker()
+    {
+        var open = !ShowReactionPicker;
+        _thread?.CloseReactionPickers(except: open ? this : null);
+        ShowReactionPicker = open;
+    }
+
+    [RelayCommand]
+    private async Task ReactAsync(string emoji)
+    {
+        ShowReactionPicker = false;
+        await (_thread?.ReactToAsync(this, emoji) ?? Task.CompletedTask);
+    }
 
     [RelayCommand]
     private Task ToggleChipAsync(ReactionChipViewModel chip) =>
@@ -816,6 +840,15 @@ public partial class MessageThreadViewModel : ViewModelBase
         catch (Exception ex)
         {
             ErrorMessage = Describe.Error(ex);
+        }
+    }
+
+    internal void CloseReactionPickers(MessageViewModel? except = null)
+    {
+        foreach (var message in Messages)
+        {
+            if (ReferenceEquals(message, except)) continue;
+            message.ShowReactionPicker = false;
         }
     }
 

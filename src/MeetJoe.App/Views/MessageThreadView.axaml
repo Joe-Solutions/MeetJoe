@@ -11,7 +11,7 @@
       <Grid RowDefinitions="*,Auto">
     <!-- Messages -->
     <ScrollViewer x:Name="Scroller" Grid.Row="0">
-      <StackPanel Margin="24,16,24,8" VerticalAlignment="Bottom">
+      <StackPanel Margin="24,16,72,8" VerticalAlignment="Bottom">
         <Button Classes="ghost tint" HorizontalAlignment="Center" Margin="0,0,0,8"
                 Content="Show earlier messages" Command="{Binding LoadOlderCommand}"
                 IsVisible="{Binding HasOlder}" />
@@ -20,7 +20,8 @@
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:MessageViewModel">
               <DockPanel Classes="message" Classes.first="{Binding StartsGroup}"
-                         Classes.mine="{Binding IsMine}" Classes.continuation="{Binding IsContinuation}">
+                         Classes.mine="{Binding IsMine}" Classes.continuation="{Binding IsContinuation}"
+                         Classes.picking="{Binding ShowReactionPicker}">
                 <!-- Fixed gutter so consecutive other-user bubbles share one left edge. Own messages omit this. -->
                 <Panel DockPanel.Dock="Left" Width="44" IsVisible="{Binding !IsMine}">
                   <c:Avatar Width="34" Height="34" VerticalAlignment="Top" Margin="0,2,0,0"
@@ -31,7 +32,6 @@
 
                 <StackPanel Classes="messagebody" Classes.mine="{Binding IsMine}" Spacing="3"
                             ClipToBounds="False">
-                  <!-- Name/time only — reaction pill floats over the bubble so hover never shifts layout. -->
                   <StackPanel Classes="messagemeta" Classes.mine="{Binding IsMine}"
                               Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
                               IsVisible="{Binding StartsGroup}" Margin="2,0,2,2">
@@ -42,6 +42,7 @@
                                IsVisible="{Binding ShowEdited}" />
                   </StackPanel>
 
+                  <!-- Bubble with hover emoji/reply icons parked just outside (not over the bubble). -->
                   <Panel Classes="messagechrome" Classes.mine="{Binding IsMine}" ClipToBounds="False">
                     <StackPanel Spacing="4" Classes.mine="{Binding IsMine}">
                       <Border Classes="messagebubble" Classes.mine="{Binding IsMine}"
@@ -120,47 +121,52 @@
                       </Button>
                     </StackPanel>
 
-                    <!-- Floating emoji / reply pill — overlays the bubble, zero layout impact. -->
-                    <Border Classes="message-hoverbar" Classes.mine="{Binding IsMine}"
-                            IsVisible="{Binding ShowActions}"
-                            ZIndex="20">
-                      <StackPanel Orientation="Horizontal" Spacing="0">
-                        <ItemsControl ItemsSource="{Binding ReactionChoices}">
-                          <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                              <StackPanel Orientation="Horizontal" Spacing="0" />
-                            </ItemsPanelTemplate>
-                          </ItemsControl.ItemsPanel>
-                          <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="x:String">
-                              <Button Classes="hoverreact"
-                                      Content="{Binding}"
-                                      ToolTip.Tip="{Binding}"
-                                      ToolTip.Placement="Top"
-                                      Command="{Binding $parent[ItemsControl].((vm:MessageViewModel)DataContext).ReactCommand}"
-                                      CommandParameter="{Binding}" />
-                            </DataTemplate>
-                          </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                    <StackPanel Classes="message-sideactions" Classes.mine="{Binding IsMine}"
+                                Orientation="Horizontal" Spacing="2"
+                                IsVisible="{Binding ShowActions}"
+                                VerticalAlignment="Center" ClipToBounds="False" ZIndex="20">
+                      <Panel ClipToBounds="False">
+                        <Button Classes="hovericon" ToolTip.Tip="Add reaction" ToolTip.Placement="Top"
+                                Command="{Binding ToggleReactionPickerCommand}">
+                          <c:Icon Data="{StaticResource Icon.Smile}" Size="14" />
+                        </Button>
+                        <Border Classes="message-reactionpicker" Classes.mine="{Binding IsMine}"
+                                IsVisible="{Binding ShowReactionPicker}" ZIndex="30">
+                          <ItemsControl ItemsSource="{Binding ReactionChoices}">
+                            <ItemsControl.ItemsPanel>
+                              <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="0" />
+                              </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate x:DataType="x:String">
+                                <Button Classes="hoverreact"
+                                        Content="{Binding}"
+                                        ToolTip.Tip="{Binding}"
+                                        ToolTip.Placement="Top"
+                                        Command="{Binding $parent[ItemsControl].((vm:MessageViewModel)DataContext).ReactCommand}"
+                                        CommandParameter="{Binding}" />
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                        </Border>
+                      </Panel>
 
-                        <Border Classes="hoverbardivider" />
-
-                        <Button Classes="hovericon" ToolTip.Tip="Reply" ToolTip.Placement="Top"
-                                Command="{Binding BeginReplyCommand}">
-                          <c:Icon Data="{StaticResource Icon.Reply}" Size="14" />
-                        </Button>
-                        <Button Classes="hovericon" ToolTip.Tip="Edit" ToolTip.Placement="Top"
-                                Command="{Binding BeginEditCommand}"
-                                IsVisible="{Binding CanMutate}">
-                          <c:Icon Data="{StaticResource Icon.Edit}" Size="14" />
-                        </Button>
-                        <Button Classes="hovericon danger" ToolTip.Tip="Delete" ToolTip.Placement="Top"
-                                Command="{Binding DeleteCommand}"
-                                IsVisible="{Binding CanMutate}">
-                          <c:Icon Data="{StaticResource Icon.Trash}" Size="14" />
-                        </Button>
-                      </StackPanel>
-                    </Border>
+                      <Button Classes="hovericon" ToolTip.Tip="Reply" ToolTip.Placement="Top"
+                              Command="{Binding BeginReplyCommand}">
+                        <c:Icon Data="{StaticResource Icon.Reply}" Size="14" />
+                      </Button>
+                      <Button Classes="hovericon" ToolTip.Tip="Edit" ToolTip.Placement="Top"
+                              Command="{Binding BeginEditCommand}"
+                              IsVisible="{Binding CanMutate}">
+                        <c:Icon Data="{StaticResource Icon.Edit}" Size="14" />
+                      </Button>
+                      <Button Classes="hovericon danger" ToolTip.Tip="Delete" ToolTip.Placement="Top"
+                              Command="{Binding DeleteCommand}"
+                              IsVisible="{Binding CanMutate}">
+                        <c:Icon Data="{StaticResource Icon.Trash}" Size="14" />
+                      </Button>
+                    </StackPanel>
                   </Panel>
 
                   <StackPanel Spacing="6" IsVisible="{Binding IsEditing}" Margin="0,2,0,0">
