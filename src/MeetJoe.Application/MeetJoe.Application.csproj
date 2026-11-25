@@ -6,4 +6,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="MeetJoe.Api.Tests" />
+  </ItemGroup>
 </Project>

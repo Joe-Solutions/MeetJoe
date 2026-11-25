@@ -7,7 +7,7 @@
   <Grid ColumnDefinitions="*,Auto" RowDefinitions="*,Auto">
     <!-- Full conversation (history + composer) accepts file drops. -->
     <Border x:Name="ThreadDropZone" Grid.Row="0" Grid.Column="0" Grid.RowSpan="2"
-            Classes="chatdrop" ToolTip.Tip="Drop files anywhere in the conversation to attach">
+            Classes="chatdrop">
       <Grid RowDefinitions="*,Auto">
     <!-- Messages -->
     <ScrollViewer x:Name="Scroller" Grid.Row="0">
@@ -297,6 +297,42 @@
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
+          </Border>
+
+          <Border IsVisible="{Binding ShowMentionSuggestions}" Margin="8,0,8,0"
+                  Background="{StaticResource Brush.PanelRaised}" CornerRadius="10"
+                  BorderBrush="{StaticResource Brush.Border}" BorderThickness="1" MaxHeight="200">
+            <ScrollViewer>
+              <ItemsControl ItemsSource="{Binding MentionSuggestions}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:MentionSuggestion">
+                    <Button Classes="ghost" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                            Padding="12,10" CornerRadius="0"
+                            Command="{Binding $parent[UserControl].((vm:MessageThreadViewModel)DataContext).PickMentionCommand}"
+                            CommandParameter="{Binding}">
+                      <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Border Width="28" Height="28" CornerRadius="14"
+                                Background="{StaticResource Brush.Accent}"
+                                IsVisible="{Binding IsEveryone}" VerticalAlignment="Center">
+                          <TextBlock Text="@" FontWeight="Bold" FontSize="13"
+                                     Foreground="{StaticResource Brush.OnAccent}"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <c:Avatar Width="28" Height="28" DisplayName="{Binding Label}"
+                                  Photo="{Binding Person.Photo}"
+                                  IsVisible="{Binding !IsEveryone}" />
+                        <StackPanel Spacing="1" VerticalAlignment="Center" MinWidth="0">
+                          <TextBlock FontWeight="SemiBold" Text="{Binding Label}"
+                                     MaxLines="1" TextTrimming="CharacterEllipsis" />
+                          <TextBlock Classes="muted small" Text="{Binding Detail}"
+                                     MaxLines="1" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                      </StackPanel>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
           </Border>
 
           <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6" Margin="8,6,6,4">

@@ -69,6 +69,7 @@ public partial class ShellViewModel : ViewModelBase
 
         Activity.UnreadChanged += () => _activityItem.Badge = Activity.UnreadCount;
         Activity.IncomingMeetingInvite += OnIncomingMeetingInvite;
+        Activity.IncomingMention += OnIncomingMention;
         Chat.UnreadChanged += () => _chatItem.Badge = Chat.UnreadTotal;
         Calls.IncomingChanged += () =>
         {
@@ -133,11 +134,18 @@ public partial class ShellViewModel : ViewModelBase
     private MeetingInvitePrompt? _pendingMeetingInvite;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowMentionToast))]
+    private MentionPrompt? _pendingMention;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowCallDeclinedToast))]
     private CallDeclinedNotice? _pendingCallDeclined;
 
     /// <summary>Bottom-right toast when someone invites the user into a meeting.</summary>
     public bool ShowMeetingInviteToast => PendingMeetingInvite is not null;
+
+    /// <summary>Bottom-right toast when the user is @mentioned in a group chat.</summary>
+    public bool ShowMentionToast => PendingMention is not null;
 
     /// <summary>Bottom-right toast when a callee declines an outgoing ring.</summary>
     public bool ShowCallDeclinedToast => PendingCallDeclined is not null;
@@ -246,6 +254,39 @@ public partial class ShellViewModel : ViewModelBase
     {
         // Newest invite wins; keep a single toast so the corner stays uncluttered.
         PendingMeetingInvite = prompt;
+    }
+
+    private void OnIncomingMention(MentionPrompt prompt)
+    {
+        PendingMention = prompt;
+        if (prompt.ConversationId is { } conversationId)
+            Chat.ApplyIncomingMention(conversationId);
+    }
+
+    [RelayCommand]
+    private void DismissMention()
+    {
+        var prompt = PendingMention;
+        PendingMention = null;
+        if (prompt is null) return;
+        var item = Activity.Items.FirstOrDefault(i => i.Id == prompt.ActivityId);
+        if (item is not null && item.IsUnread && Activity.MarkReadCommand.CanExecute(item))
+            Activity.MarkReadCommand.Execute(item);
+    }
+
+    [RelayCommand]
+    private async Task OpenMentionAsync()
+    {
+        var prompt = PendingMention;
+        if (prompt?.ConversationId is not { } conversationId) return;
+
+        PendingMention = null;
+        var item = Activity.Items.FirstOrDefault(i => i.Id == prompt.ActivityId);
+        if (item is not null && item.IsUnread && Activity.MarkReadCommand.CanExecute(item))
+            Activity.MarkReadCommand.Execute(item);
+
+        Navigate(_chatItem);
+        await Chat.OpenConversationAsync(conversationId);
     }
 
     [RelayCommand]
