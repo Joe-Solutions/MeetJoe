@@ -7,30 +7,30 @@ namespace MeetJoe.App.ViewModels;
 
 public partial class ConversationViewModel : ObservableObject
 {
+    private readonly PeopleStore _people;
+    private string? _storedTitle;
+
     public ConversationViewModel(ConversationDto conversation, PeopleStore people)
     {
+        _people = people;
         Id = conversation.Id;
         IsDirect = conversation.Kind == ConversationKind.Direct;
-        Members = conversation.Members.Select(people.Get).ToList();
-
-        var others = Members.Where(m => !m.IsMe).ToList();
-        Other = IsDirect ? others.FirstOrDefault() : null;
-        Title = IsDirect
-            ? Other?.DisplayName ?? "Direct chat"
-            : !string.IsNullOrWhiteSpace(conversation.Title)
-                ? conversation.Title
-                : string.Join(", ", others.Select(m => m.DisplayName));
-        Subtitle = IsDirect ? "Direct chat" : $"{Members.Count} people";
-
+        _storedTitle = conversation.Title;
+        Other = IsDirect
+            ? conversation.Members.Select(people.Get).FirstOrDefault(m => !m.IsMe)
+            : null;
+        ApplyMembers(conversation);
         Update(conversation);
     }
 
     public Guid Id { get; }
     public bool IsDirect { get; }
     public bool IsGroup => !IsDirect;
-    public string Title { get; }
-    public string Subtitle { get; }
-    public IReadOnlyList<PersonViewModel> Members { get; }
+
+    [ObservableProperty] private string _title = string.Empty;
+    [ObservableProperty] private string _subtitle = string.Empty;
+
+    public ObservableCollection<PersonViewModel> Members { get; } = [];
 
     /// <summary>The other person in a direct chat, whose presence the list shows.</summary>
     public PersonViewModel? Other { get; }
@@ -56,12 +56,38 @@ public partial class ConversationViewModel : ObservableObject
 
     public void Update(ConversationDto conversation)
     {
+        _storedTitle = conversation.Title;
         Preview = conversation.LastMessagePreview ?? "No messages yet";
         LastMessageAt = conversation.LastMessageAt;
         TimeText = conversation.LastMessageAt is { } at ? Describe.Time(at) : string.Empty;
         UnreadCount = conversation.UnreadCount;
         IsMuted = conversation.IsMuted;
         IsPinned = conversation.IsPinned;
+        ApplyMembers(conversation);
+    }
+
+    private void ApplyMembers(ConversationDto conversation)
+    {
+        var next = conversation.Members.Select(_people.Get).ToList();
+        for (var i = Members.Count - 1; i >= 0; i--)
+        {
+            if (next.All(p => p.Id != Members[i].Id))
+                Members.RemoveAt(i);
+        }
+
+        foreach (var person in next)
+        {
+            if (Members.All(m => m.Id != person.Id))
+                Members.Add(person);
+        }
+
+        var others = Members.Where(m => !m.IsMe).ToList();
+        Title = IsDirect
+            ? Other?.DisplayName ?? "Direct chat"
+            : !string.IsNullOrWhiteSpace(_storedTitle)
+                ? _storedTitle
+                : string.Join(", ", others.Select(m => m.DisplayName));
+        Subtitle = IsDirect ? "Direct chat" : $"{Members.Count} people";
     }
 
     public void RecordMessage(MessageDto message, bool countAsUnread)
@@ -109,7 +135,7 @@ public partial class ChatViewModel : ViewModelBase
     [ObservableProperty] private bool _isMembersPanelOpen;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasSelection), nameof(ShowEmptyState))]
+    [NotifyPropertyChangedFor(nameof(HasSelection), nameof(ShowEmptyState), nameof(CanManageMembers))]
     private ConversationViewModel? _selected;
 
     [ObservableProperty]
@@ -118,9 +144,19 @@ public partial class ChatViewModel : ViewModelBase
     [ObservableProperty] private string _newChatTitle = string.Empty;
     [ObservableProperty] private string? _newChatError;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasMemberSuggestions))]
+    private string _memberEmailQuery = string.Empty;
+
+    [ObservableProperty] private string? _memberManageStatus;
+
+    public ObservableCollection<PersonViewModel> MemberSuggestions { get; } = [];
+
     public bool HasSelection => Selected is not null;
     public bool ShowEmptyState => Selected is null && !IsStartingChat;
     public bool HasNoConversations => !IsLoading && Conversations.Count == 0;
+    public bool CanManageMembers => Selected?.IsGroup == true;
+    public bool HasMemberSuggestions => MemberSuggestions.Count > 0;
 
     /// <summary>Total unread across conversations, shown on the rail.</summary>
     public int UnreadTotal => Conversations.Sum(c => c.UnreadCount);
@@ -226,7 +262,121 @@ public partial class ChatViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void ToggleMembersPanel() => IsMembersPanelOpen = !IsMembersPanelOpen;
+    private void ToggleMembersPanel()
+    {
+        IsMembersPanelOpen = !IsMembersPanelOpen;
+        if (IsMembersPanelOpen)
+        {
+            MemberEmailQuery = string.Empty;
+            MemberManageStatus = null;
+            RefreshMemberSuggestions();
+        }
+        else
+        {
+            MemberSuggestions.Clear();
+            MemberManageStatus = null;
+        }
+    }
+
+    partial void OnMemberEmailQueryChanged(string value) => RefreshMemberSuggestions();
+
+    [RelayCommand]
+    private Task PickMemberSuggestionAsync(PersonViewModel person)
+    {
+        MemberEmailQuery = person.Email;
+        return AddMemberAsync();
+    }
+
+    [RelayCommand]
+    private async Task AddMemberAsync()
+    {
+        if (Selected is not { IsGroup: true } conversation) return;
+        var match = ResolveMemberInvitee();
+        if (match is null)
+        {
+            MemberManageStatus = string.IsNullOrWhiteSpace(MemberEmailQuery)
+                ? "Enter an email to add someone."
+                : "No matching person in this organization.";
+            return;
+        }
+
+        MemberManageStatus = null;
+        try
+        {
+            var updated = await _context.Api.AddConversationMemberAsync(conversation.Id, match.Id);
+            conversation.Update(updated);
+            MemberEmailQuery = string.Empty;
+            RefreshMemberSuggestions();
+        }
+        catch (Exception ex)
+        {
+            MemberManageStatus = Describe.Error(ex);
+        }
+    }
+
+    [RelayCommand]
+    private async Task RemoveMemberAsync(PersonViewModel person)
+    {
+        if (Selected is not { IsGroup: true } conversation || person.IsMe) return;
+        MemberManageStatus = null;
+        try
+        {
+            var updated = await _context.Api.RemoveConversationMemberAsync(conversation.Id, person.Id);
+            conversation.Update(updated);
+            RefreshMemberSuggestions();
+        }
+        catch (Exception ex)
+        {
+            MemberManageStatus = Describe.Error(ex);
+        }
+    }
+
+    private PersonViewModel? ResolveMemberInvitee()
+    {
+        var q = MemberEmailQuery.Trim();
+        if (q.Length == 0) return null;
+        var eligible = EligibleMemberInvitees().ToList();
+        return eligible.FirstOrDefault(p => p.Email.Equals(q, StringComparison.OrdinalIgnoreCase))
+               ?? (MemberSuggestions.Count == 1 ? MemberSuggestions[0] : null);
+    }
+
+    private IEnumerable<PersonViewModel> EligibleMemberInvitees()
+    {
+        if (Selected is not { IsGroup: true } conversation)
+            return [];
+        var already = conversation.Members.Select(m => m.Id).ToHashSet();
+        return _context.People.People.Where(p =>
+            !p.IsMe
+            && !already.Contains(p.Id)
+            && !string.IsNullOrWhiteSpace(p.Email));
+    }
+
+    private void RefreshMemberSuggestions()
+    {
+        MemberSuggestions.Clear();
+        if (!CanManageMembers)
+        {
+            OnPropertyChanged(nameof(HasMemberSuggestions));
+            return;
+        }
+
+        var q = MemberEmailQuery.Trim();
+        if (q.Length == 0)
+        {
+            OnPropertyChanged(nameof(HasMemberSuggestions));
+            return;
+        }
+
+        foreach (var person in EligibleMemberInvitees()
+                     .Where(p => p.Email.Contains(q, StringComparison.OrdinalIgnoreCase)
+                                 || p.DisplayName.Contains(q, StringComparison.OrdinalIgnoreCase))
+                     .Take(8))
+        {
+            MemberSuggestions.Add(person);
+        }
+
+        OnPropertyChanged(nameof(HasMemberSuggestions));
+    }
 
     [RelayCommand]
     private async Task StartCallAsync()

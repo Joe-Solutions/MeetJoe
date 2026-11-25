@@ -76,6 +76,66 @@ public sealed partial class ChatService(IAppDbContext db, IRealtimePublisher rea
         return await GetConversationAsync(userId, conversationId, ct);
     }
 
+    public async Task<ConversationDto> AddMemberAsync(
+        Guid userId, Guid conversationId, AddConversationMemberRequest request, CancellationToken ct = default)
+    {
+        var conversation = await RequireGroupMembershipAsync(userId, conversationId, ct);
+
+        var inOrg = await db.Memberships.AnyAsync(
+            m => m.OrganizationId == conversation.OrganizationId && m.UserId == request.UserId, ct);
+        if (!inOrg) throw AppException.Validation("That person must belong to the organization.");
+
+        var notify = conversation.Members.Select(m => m.UserId).Append(request.UserId).Distinct().ToList();
+        try
+        {
+            conversation.AddMember(request.UserId, time.Now());
+        }
+        catch (Domain.DomainException ex)
+        {
+            throw AppException.Validation(ex.Message);
+        }
+
+        await db.SaveChangesAsync(ct);
+        await realtime.ConversationsChangedAsync(notify, ct);
+        return await GetConversationAsync(userId, conversationId, ct);
+    }
+
+    public async Task<ConversationDto> RemoveMemberAsync(
+        Guid userId, Guid conversationId, Guid memberUserId, CancellationToken ct = default)
+    {
+        if (memberUserId == userId)
+            throw AppException.Validation("You cannot remove yourself from the group.");
+
+        var conversation = await RequireGroupMembershipAsync(userId, conversationId, ct);
+        var notify = conversation.Members.Select(m => m.UserId).ToList();
+        try
+        {
+            conversation.RemoveMember(memberUserId);
+        }
+        catch (Domain.DomainException ex)
+        {
+            throw AppException.Validation(ex.Message);
+        }
+
+        await db.SaveChangesAsync(ct);
+        await realtime.ConversationsChangedAsync(notify, ct);
+        return await GetConversationAsync(userId, conversationId, ct);
+    }
+
+    private async Task<Domain.Conversation> RequireGroupMembershipAsync(
+        Guid userId, Guid conversationId, CancellationToken ct)
+    {
+        var conversation = await db.Conversations
+                               .Include(c => c.Members)
+                               .FirstOrDefaultAsync(c => c.Id == conversationId, ct)
+                           ?? throw AppException.NotFound("Conversation");
+        if (conversation.Members.All(m => m.UserId != userId))
+            throw AppException.NotFound("Conversation");
+        if (conversation.Kind != Domain.ConversationKind.Group)
+            throw AppException.Validation("Only group conversations can change membership.");
+        return conversation;
+    }
+
     public async Task<IReadOnlyList<MessageDto>> GetMessagesAsync(
         Guid userId, Guid? conversationId, Guid? channelId, DateTimeOffset? before, int? limit, CancellationToken ct = default)
     {

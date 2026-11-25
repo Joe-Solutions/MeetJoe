@@ -172,6 +172,39 @@ public class ConversationTests
     }
 
     [Fact]
+    public void A_group_can_add_and_remove_members()
+    {
+        var creator = Guid.NewGuid();
+        var a = Guid.NewGuid();
+        var b = Guid.NewGuid();
+        var c = Guid.NewGuid();
+        var group = Conversation.CreateGroup(Org, creator, [a, b], "JS Team", Now);
+
+        group.AddMember(c, Now.AddMinutes(1));
+        Assert.Equal(4, group.Members.Count);
+
+        Assert.Throws<DomainException>(() => group.AddMember(c, Now.AddMinutes(2)));
+
+        group.RemoveMember(c);
+        Assert.Equal(3, group.Members.Count);
+
+        group.RemoveMember(b);
+        Assert.Equal(2, group.Members.Count);
+        Assert.Throws<DomainException>(() => group.RemoveMember(a));
+    }
+
+    [Fact]
+    public void Direct_conversations_cannot_change_membership()
+    {
+        var a = Guid.NewGuid();
+        var b = Guid.NewGuid();
+        var direct = Conversation.CreateDirect(Org, a, b, Now);
+
+        Assert.Throws<DomainException>(() => direct.AddMember(Guid.NewGuid(), Now));
+        Assert.Throws<DomainException>(() => direct.RemoveMember(b));
+    }
+
+    [Fact]
     public void Reading_never_moves_the_marker_backwards()
     {
         var member = new ConversationMember(Guid.NewGuid(), Guid.NewGuid(), Now);

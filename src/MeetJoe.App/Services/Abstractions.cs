@@ -90,6 +90,8 @@ public interface IMeetJoeApi
 
     Task<IReadOnlyList<ConversationDto>> GetConversationsAsync(Guid organizationId, CancellationToken ct = default);
     Task<ConversationDto> CreateConversationAsync(Guid organizationId, CreateConversationRequest request, CancellationToken ct = default);
+    Task<ConversationDto> AddConversationMemberAsync(Guid conversationId, Guid userId, CancellationToken ct = default);
+    Task<ConversationDto> RemoveConversationMemberAsync(Guid conversationId, Guid userId, CancellationToken ct = default);
     Task<ConversationDto> UpdateConversationPrefsAsync(Guid conversationId, UpdateConversationPrefsRequest request, CancellationToken ct = default);
     Task<IReadOnlyList<MessageDto>> GetMessagesAsync(Guid? conversationId, Guid? channelId, DateTimeOffset? before, CancellationToken ct = default);
     Task<IReadOnlyList<MessageDto>> GetRepliesAsync(Guid parentMessageId, CancellationToken ct = default);

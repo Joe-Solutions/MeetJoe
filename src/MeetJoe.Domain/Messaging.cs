@@ -66,6 +66,31 @@ public class Conversation
     public static string DirectKeyFor(Guid userA, Guid userB) =>
         userA.CompareTo(userB) < 0 ? $"{userA:N}:{userB:N}" : $"{userB:N}:{userA:N}";
 
+    public ConversationMember AddMember(Guid userId, DateTimeOffset now)
+    {
+        if (Kind != ConversationKind.Group)
+            throw new DomainException("Only group conversations can add people.");
+        if (Members.Any(m => m.UserId == userId))
+            throw new DomainException("That person is already in this conversation.");
+        if (Members.Count >= MaxGroupMembers)
+            throw new DomainException($"A group conversation can have at most {MaxGroupMembers} people.");
+
+        var member = new ConversationMember(Id, userId, now);
+        Members.Add(member);
+        return member;
+    }
+
+    public void RemoveMember(Guid userId)
+    {
+        if (Kind != ConversationKind.Group)
+            throw new DomainException("Only group conversations can remove people.");
+        var member = Members.FirstOrDefault(m => m.UserId == userId)
+                     ?? throw new DomainException("That person is not in this conversation.");
+        if (Members.Count <= 2)
+            throw new DomainException("A group needs at least two people.");
+        Members.Remove(member);
+    }
+
     public void RecordMessage(Message message)
     {
         LastMessageAt = message.CreatedAt;
