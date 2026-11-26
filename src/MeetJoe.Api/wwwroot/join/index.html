@@ -160,7 +160,7 @@
         meet.searchParams.set("u", join.serverUrl);
         meet.searchParams.set("t", join.token);
         meet.searchParams.set("guest", "1");
-        if (join.inLobby) meet.searchParams.set("lobby", "1");
+        // Guests always join with publish rights (mic/camera). Lobby is for app members only.
         location.href = meet.toString();
       } catch (err) {
         qs("joinWeb").disabled = false;

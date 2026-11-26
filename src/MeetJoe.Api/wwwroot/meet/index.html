@@ -60,6 +60,7 @@
     }
     .ctrl:hover { background: var(--bar-hover); color: var(--text); }
     .ctrl .icon {
+      position: relative;
       width: 36px; height: 36px; border-radius: 8px;
       display: grid; place-items: center;
       background: #1B2430; color: var(--text);
@@ -70,12 +71,17 @@
     .ctrl.active .icon { background: var(--accent); color: #04262B; }
     .ctrl svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
     .ctrl .badge {
-      position: absolute; top: 2px; right: 10px;
+      position: absolute; top: -5px; right: -6px;
       min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
       background: var(--accent); color: #04262B; font-size: 10px; font-weight: 700;
       display: grid; place-items: center;
+      line-height: 1;
+      z-index: 2;
+      pointer-events: none;
     }
     .ctrl-wrap { position: relative; }
+    html.guest #record,
+    html.guest #hold { display: none !important; }
 
     /* Floating REC indicator — visible even when Avalonia hides #toolbar (embed / PiP). */
     #rec-badge {
@@ -420,13 +426,13 @@
         <span class="icon"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
         Chat
       </button>
-      <div class="ctrl-wrap">
-        <button class="ctrl" id="people" type="button" title="People">
-          <span class="icon"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
-          People
-        </button>
-        <span class="badge" id="people-count" hidden>0</span>
-      </div>
+      <button class="ctrl" id="people" type="button" title="People">
+        <span class="icon">
+          <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span class="badge" id="people-count" hidden>0</span>
+        </span>
+        People
+      </button>
       <button class="ctrl" id="hold" type="button" title="Hold" disabled>
         <span class="icon"><svg viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></span>
         Hold
@@ -482,6 +488,20 @@
     const url = params.get("u");
     const token = params.get("t");
     const embedded = params.get("embed") === "1";
+    const isGuest = params.get("guest") === "1";
+    if (isGuest) {
+      document.documentElement.classList.add("guest");
+      // Guests join via email link — recording is host-only.
+      const recordBtn = document.getElementById("record");
+      if (recordBtn) recordBtn.hidden = true;
+      const holdBtn = document.getElementById("hold");
+      if (holdBtn) holdBtn.hidden = true;
+    }
+    function mediaPermissionHint(kind) {
+      if (embedded)
+        return `Allow ${kind} access for MeetJoe in System Settings, then try again.`;
+      return `Allow ${kind} for this site in your browser (lock icon in the address bar), then try again.`;
+    }
     if (embedded) {
       document.documentElement.classList.add("embed");
       const toolbar = document.getElementById("toolbar");
@@ -1409,7 +1429,7 @@
           notifyHost("mic-off");
           if (wantMic) {
             notifyHost("permission-mic");
-            showBanner("Microphone is blocked. Allow mic access for MeetJoe in System Settings, then rejoin.");
+            showBanner("Microphone is blocked. " + mediaPermissionHint("microphone"));
           }
         }
         try {
@@ -1423,7 +1443,7 @@
           if (wantCam) {
             notifyHost("permission-camera");
             const prior = banner.classList.contains("show") ? banner.textContent + " " : "";
-            showBanner(prior + "Camera is blocked. Allow camera access for MeetJoe in System Settings.");
+            showBanner(prior + "Camera is blocked. " + mediaPermissionHint("camera"));
           }
         }
 
@@ -1556,7 +1576,7 @@
         } catch (err) {
           console.error(err);
           notifyHost("permission-camera");
-          showBanner("Could not toggle camera. Allow camera access for MeetJoe in System Settings.");
+          showBanner("Could not toggle camera. " + mediaPermissionHint("camera"));
           reportMediaState();
           return false;
         }
@@ -1584,7 +1604,7 @@
         } catch (err) {
           console.error(err);
           notifyHost("permission-mic");
-          showBanner("Could not toggle microphone. Allow mic access for MeetJoe in System Settings.");
+          showBanner("Could not toggle microphone. " + mediaPermissionHint("microphone"));
           reportMediaState();
           return false;
         }
@@ -2085,7 +2105,7 @@
       };
       leaveBtn.onclick = async () => {
         await window.meetjoeShutdown?.();
-        setStatus("You left. Close this view from MeetJoe.", "error");
+        setStatus(isGuest ? "You left the meeting." : "You left. Close this view from MeetJoe.", "error");
         signalLeave();
       };
 

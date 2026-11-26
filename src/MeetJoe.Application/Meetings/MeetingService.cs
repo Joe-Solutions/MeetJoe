@@ -189,15 +189,17 @@ public sealed class MeetingService(
 
         var now = time.Now();
         var isHost = meeting.HostId == user.Id;
-        var inLobby = meeting.LobbyEnabled && !isHost;
+        // Email/web guests need mic and camera immediately — do not park them in the lobby
+        // with a non-publish token (that surfaces as a false "permission" error in the browser).
+        const bool inLobby = false;
         var existing = meeting.Participants.FirstOrDefault(p => p.UserId == user.Id && p.IsPresent);
         if (existing is null)
         {
             db.MeetingParticipants.Add(new Domain.MeetingParticipant(meeting.Id, user.Id, now, inLobby));
         }
-        else
+        else if (existing.InLobby)
         {
-            inLobby = existing.InLobby;
+            existing.Admit();
         }
 
         await db.SaveChangesAsync(ct);
@@ -206,10 +208,10 @@ public sealed class MeetingService(
 
         var connection = tokens.Issue(
             meeting.RoomName, user.Id, displayName,
-            canPublish: !inLobby,
+            canPublish: true,
             roomAdmin: isHost);
         return new GuestJoinDto(
-            meeting.Id, connection.ServerUrl, meeting.RoomName, connection.Token, inLobby, displayName, user.Id);
+            meeting.Id, connection.ServerUrl, meeting.RoomName, connection.Token, InLobby: false, displayName, user.Id);
     }
 
     public async Task<MeetingJoinDto> JoinAsync(Guid userId, Guid meetingId, CancellationToken ct = default)
