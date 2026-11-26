@@ -170,6 +170,15 @@ internal static class Clock
         var now = time.GetUtcNow();
         return new DateTimeOffset(now.Ticks - now.Ticks % 10, TimeSpan.Zero);
     }
+
+    /// <summary>
+    /// Npgsql only accepts offset 0 for <c>timestamp with time zone</c>. Clients often send local
+    /// wall times (e.g. +08:00); normalize before query binds or inserts.
+    /// </summary>
+    public static DateTimeOffset AsUtc(this DateTimeOffset value) => value.ToUniversalTime();
+
+    public static DateTimeOffset? AsUtc(this DateTimeOffset? value) =>
+        value is { } v ? v.ToUniversalTime() : null;
 }
 
 /// <summary>The conversation, channel, or meeting a message belongs to, with everyone who can see it.</summary>

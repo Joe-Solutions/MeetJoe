@@ -45,6 +45,8 @@ public sealed class MeetingService(
         Guid userId, Guid organizationId, DateTimeOffset from, DateTimeOffset to, CancellationToken ct = default)
     {
         await db.RequireMembershipAsync(userId, organizationId, ct);
+        from = from.AsUtc();
+        to = to.AsUtc();
         if (to <= from) throw AppException.Validation("Calendar range must end after it starts.");
 
         var meetings = await db.Meetings.AsNoTracking()
@@ -109,10 +111,13 @@ public sealed class MeetingService(
         }
 
         var now = time.Now();
+        var startsAt = request.StartsAt.AsUtc();
+        var endsAt = request.EndsAt.AsUtc();
+        var recurrenceUntil = request.RecurrenceUntil.AsUtc();
         var recurrence = request.Recurrence.ToDomain();
         var primary = Domain.Meeting.Schedule(
-            organizationId, userId, request.Title, request.Description, request.StartsAt, request.EndsAt,
-            request.LobbyEnabled, invitees, now, recurrence, request.RecurrenceUntil);
+            organizationId, userId, request.Title, request.Description, startsAt, endsAt,
+            request.LobbyEnabled, invitees, now, recurrence, recurrenceUntil);
 
         // External (or unresolved) emails become guest invites with join tokens.
         var memberEmails = await db.Users
@@ -127,12 +132,12 @@ public sealed class MeetingService(
 
         db.Meetings.Add(primary);
 
-        var duration = request.EndsAt is { } end ? end - request.StartsAt : (TimeSpan?)null;
-        foreach (var startsAt in primary.NextOccurrences(RecurrenceExpandCount))
+        var duration = endsAt is { } end ? end - startsAt : (TimeSpan?)null;
+        foreach (var occurrenceStartsAt in primary.NextOccurrences(RecurrenceExpandCount))
         {
-            var endsAt = duration is { } d ? startsAt + d : (DateTimeOffset?)null;
+            var occurrenceEndsAt = duration is { } d ? occurrenceStartsAt + d : (DateTimeOffset?)null;
             var occurrence = Domain.Meeting.Schedule(
-                organizationId, userId, request.Title, request.Description, startsAt, endsAt,
+                organizationId, userId, request.Title, request.Description, occurrenceStartsAt, occurrenceEndsAt,
                 request.LobbyEnabled, invitees, now, Domain.RecurrenceKind.None, null, primary.SeriesId);
             foreach (var guestEmail in guestEmails)
                 occurrence.AddGuestInvite(guestEmail, null, now);
