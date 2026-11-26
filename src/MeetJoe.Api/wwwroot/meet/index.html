@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#141A22" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>MeetJoe · Meeting</title>
   <style>
     :root {
@@ -23,8 +26,13 @@
       font-family: Manrope, "Segoe UI", system-ui, sans-serif;
       background: var(--stage); color: var(--text);
       user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
     }
-    body { display: flex; flex-direction: column; }
+    body {
+      display: flex; flex-direction: column;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+    }
 
     #toolbar {
       display: grid;
@@ -66,10 +74,15 @@
       background: #1B2430; color: var(--text);
     }
     .ctrl:hover .icon { background: #243041; }
-    .ctrl.off .icon { background: #3A4452; }
-    .ctrl.off { color: var(--muted); }
+    .ctrl.off .icon { background: #C43B3B; color: #fff; }
+    .ctrl.off { color: #FF8A7A; }
     .ctrl.active .icon { background: var(--accent); color: #04262B; }
     .ctrl svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+    .ctrl .icon-on,
+    .ctrl .icon-off { display: grid; place-items: center; }
+    .ctrl .icon-off { display: none; }
+    .ctrl.off .icon-on { display: none; }
+    .ctrl.off .icon-off { display: grid; }
     .ctrl .badge {
       position: absolute; top: -5px; right: -6px;
       min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
@@ -81,7 +94,9 @@
     }
     .ctrl-wrap { position: relative; }
     html.guest #record,
-    html.guest #hold { display: none !important; }
+    html.guest #hold,
+    html.guest #more,
+    html:not(.embed) #more { display: none !important; }
 
     /* Floating REC indicator — visible even when Avalonia hides #toolbar (embed / PiP). */
     #rec-badge {
@@ -172,7 +187,8 @@
     html.pip #stage { padding: 0; position: relative; }
     html.pip #status,
     html.pip #banner,
-    html.pip #roster { display: none !important; }
+    html.pip #roster,
+    html.pip #chat-panel { display: none !important; }
     html.pip #grid {
       display: block;
       height: 100%;
@@ -381,14 +397,35 @@
       stroke-linecap: round; stroke-linejoin: round;
     }
 
-    #roster {
-      display: none; position: absolute; inset: 0; z-index: 4;
-      background: rgba(5, 13, 22, 0.92); padding: 24px;
-      overflow: auto;
+    #roster,
+    #chat-panel {
+      display: none;
+      position: absolute;
+      top: 0; right: 0; bottom: 0;
+      width: min(380px, 100%);
+      z-index: 6;
+      background: rgba(10, 16, 24, 0.97);
+      border-left: 1px solid var(--tile-border);
+      box-shadow: -8px 0 28px rgba(0,0,0,.35);
+      padding: 16px;
+      overflow: hidden;
+      flex-direction: column;
     }
-    #roster.open { display: block; }
-    #roster h2 { margin: 0 0 16px; font-size: 18px; }
-    #roster-list { display: flex; flex-direction: column; gap: 10px; max-width: 420px; }
+    #roster.open,
+    #chat-panel.open { display: flex; }
+    #roster h2,
+    #chat-panel h2 { margin: 0; font-size: 18px; }
+    .panel-head {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; margin-bottom: 14px; flex: 0 0 auto;
+    }
+    .panel-close {
+      appearance: none; border: 0; background: #1B2430; color: var(--text);
+      width: 36px; height: 36px; border-radius: 8px; cursor: pointer;
+      font-size: 18px; line-height: 1;
+    }
+    .panel-close:hover { background: #243041; }
+    #roster-list { display: flex; flex-direction: column; gap: 10px; overflow: auto; flex: 1; min-height: 0; }
     .roster-row {
       display: flex; align-items: center; gap: 12px;
       padding: 10px 12px; border-radius: 10px; background: #122033;
@@ -397,6 +434,131 @@
       width: 36px; height: 36px; border-radius: 50%;
       display: grid; place-items: center;
       background: #1A3852; font-weight: 700; font-size: 13px;
+    }
+    #chat-messages {
+      flex: 1; min-height: 0; overflow: auto;
+      display: flex; flex-direction: column; gap: 10px;
+      padding-right: 4px;
+    }
+    .chat-row {
+      max-width: 92%;
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: #122033;
+      align-self: flex-start;
+    }
+    .chat-row.mine {
+      align-self: flex-end;
+      background: #163A44;
+    }
+    .chat-meta {
+      display: flex; gap: 8px; align-items: baseline;
+      font-size: 11px; color: var(--muted); margin-bottom: 4px;
+    }
+    .chat-meta .who { font-weight: 700; color: var(--accent); }
+    .chat-body {
+      font-size: 14px; line-height: 1.35; white-space: pre-wrap; word-break: break-word;
+      user-select: text;
+    }
+    #chat-form {
+      display: flex; gap: 8px; margin-top: 12px; flex: 0 0 auto;
+    }
+    #chat-input {
+      flex: 1; min-width: 0;
+      appearance: none; border: 1px solid var(--tile-border);
+      background: #0A1018; color: var(--text);
+      border-radius: 10px; padding: 10px 12px;
+      font: inherit; font-size: 14px;
+    }
+    #chat-input:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+    #chat-send {
+      appearance: none; border: 0; cursor: pointer;
+      background: var(--accent); color: #04262B;
+      border-radius: 10px; padding: 0 14px;
+      font: inherit; font-size: 13px; font-weight: 700;
+    }
+    #chat-send:disabled { opacity: 0.5; cursor: default; }
+
+    /* Mobile / narrow devices */
+    @media (max-width: 820px) {
+      #toolbar {
+        grid-template-columns: 1fr auto;
+        grid-template-areas:
+          "left right"
+          "center center";
+        gap: 6px;
+        padding: 8px 10px;
+        padding-bottom: max(8px, env(safe-area-inset-bottom));
+        min-height: 0;
+      }
+      .bar-left { grid-area: left; }
+      .bar-right { grid-area: right; }
+      .bar-center {
+        grid-area: center;
+        justify-content: flex-start;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        gap: 2px;
+        width: 100%;
+        padding-bottom: 2px;
+      }
+      .ctrl {
+        width: 56px;
+        flex: 0 0 auto;
+        padding: 4px 2px;
+        font-size: 10px;
+      }
+      .ctrl .icon { width: 34px; height: 34px; }
+      .leave {
+        padding: 8px 12px;
+        font-size: 13px;
+      }
+      #stage { padding: 8px; }
+      #grid {
+        gap: 8px;
+        padding: 2px;
+      }
+      #grid[data-count="2"],
+      #grid[data-count="3"],
+      #grid[data-count="4"] {
+        grid-template-columns: 1fr;
+      }
+      #stage.presenting #grid {
+        height: 96px;
+        min-height: 96px;
+        grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+      }
+      .tile { min-height: 160px; border-radius: 10px; }
+      .tile-avatar { width: min(110px, 38%); }
+      #roster,
+      #chat-panel {
+        width: 100%;
+        border-left: 0;
+        border-top: 1px solid var(--tile-border);
+        top: auto;
+        height: min(62vh, 480px);
+        border-radius: 16px 16px 0 0;
+        padding-bottom: max(16px, env(safe-area-inset-bottom));
+      }
+      #session-badge { top: 8px; right: 8px; font-size: 11px; padding: 4px 8px; }
+      #rec-badge { top: 8px; left: 8px; font-size: 11px; padding: 4px 8px; }
+    }
+
+    @media (max-width: 420px) {
+      .ctrl { width: 48px; }
+      .ctrl .icon { width: 32px; height: 32px; }
+      .leave span { display: none; }
+      .timer { font-size: 12px; }
+    }
+
+    @media (orientation: landscape) and (max-height: 500px) {
+      #toolbar { min-height: 0; padding: 4px 8px; }
+      .ctrl { width: 48px; padding: 2px; gap: 2px; font-size: 9px; }
+      .ctrl .icon { width: 30px; height: 30px; }
+      #grid[data-count="2"] { grid-template-columns: 1fr 1fr; }
+      #roster,
+      #chat-panel { height: 100%; top: 0; border-radius: 0; }
     }
   </style>
 </head>
@@ -410,20 +572,29 @@
     </div>
 
     <div class="bar-center">
-      <button class="ctrl" id="mic" type="button" title="Microphone">
-        <span class="icon"><svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></span>
+      <button class="ctrl" id="mic" type="button" title="Microphone" aria-pressed="false">
+        <span class="icon">
+          <span class="icon-on" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></span>
+          <span class="icon-off" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/><line x1="1" y1="1" x2="23" y2="23"/></svg></span>
+        </span>
         Mic
       </button>
-      <button class="ctrl" id="cam" type="button" title="Camera">
-        <span class="icon"><svg viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></span>
+      <button class="ctrl" id="cam" type="button" title="Camera" aria-pressed="false">
+        <span class="icon">
+          <span class="icon-on" aria-hidden="true"><svg viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></span>
+          <span class="icon-off" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M16 16V5a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10"/><path d="M23 7l-7 5 7 5V7z"/><line x1="1" y1="1" x2="23" y2="23"/></svg></span>
+        </span>
         Camera
       </button>
       <button class="ctrl" id="share" type="button" title="Share screen">
         <span class="icon"><svg viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></span>
         Share
       </button>
-      <button class="ctrl" id="chat" type="button" title="Chat" disabled>
-        <span class="icon"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+      <button class="ctrl" id="chat" type="button" title="Chat">
+        <span class="icon">
+          <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span class="badge" id="chat-count" hidden>0</span>
+        </span>
         Chat
       </button>
       <button class="ctrl" id="people" type="button" title="People">
@@ -450,7 +621,7 @@
     <div class="bar-right">
       <button class="leave" id="leave" type="button" title="Leave">
         <svg viewBox="0 0 24 24"><path d="M10 9l-6 3 6 3"/><path d="M4 12h12"/><path d="M15 5h3a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-3"/></svg>
-        Leave
+        <span>Leave</span>
       </button>
     </div>
   </header>
@@ -475,8 +646,23 @@
     <div id="grid" data-count="0" style="--cols: 1"></div>
 
     <aside id="roster" aria-label="People in this call">
-      <h2>People</h2>
+      <div class="panel-head">
+        <h2>People</h2>
+        <button type="button" class="panel-close" id="roster-close" aria-label="Close people">×</button>
+      </div>
       <div id="roster-list"></div>
+    </aside>
+
+    <aside id="chat-panel" aria-label="Meeting chat">
+      <div class="panel-head">
+        <h2>Chat</h2>
+        <button type="button" class="panel-close" id="chat-close" aria-label="Close chat">×</button>
+      </div>
+      <div id="chat-messages" role="log" aria-live="polite"></div>
+      <form id="chat-form" autocomplete="off">
+        <input id="chat-input" type="text" maxlength="2000" placeholder="Type a message" enterkeyhint="send" />
+        <button id="chat-send" type="submit">Send</button>
+      </form>
     </aside>
   </div>
 
@@ -491,11 +677,11 @@
     const isGuest = params.get("guest") === "1";
     if (isGuest) {
       document.documentElement.classList.add("guest");
-      // Guests join via email link — recording is host-only.
-      const recordBtn = document.getElementById("record");
-      if (recordBtn) recordBtn.hidden = true;
-      const holdBtn = document.getElementById("hold");
-      if (holdBtn) holdBtn.hidden = true;
+      // Guests join via email link — host-only controls stay hidden.
+      ["record", "hold", "more"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.hidden = true;
+      });
     }
     function mediaPermissionHint(kind) {
       if (embedded)
@@ -527,6 +713,16 @@
     const peopleCount = document.getElementById("people-count");
     const roster = document.getElementById("roster");
     const rosterList = document.getElementById("roster-list");
+    const rosterClose = document.getElementById("roster-close");
+    const chatPanel = document.getElementById("chat-panel");
+    const chatMessages = document.getElementById("chat-messages");
+    const chatForm = document.getElementById("chat-form");
+    const chatInput = document.getElementById("chat-input");
+    const chatCount = document.getElementById("chat-count");
+    const chatClose = document.getElementById("chat-close");
+    /** @type {Set<string>} */
+    const seenChatIds = new Set();
+    let chatUnread = 0;
 
     const MIC_SVG =
       '<svg viewBox="0 0 24 24" aria-hidden="true">' +
@@ -534,6 +730,67 @@
       '<path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/>' +
       '<line x1="8" y1="23" x2="16" y2="23"/><line x1="4" y1="4" x2="20" y2="20"/>' +
       "</svg>";
+
+    function formatChatTime(ts) {
+      try {
+        return new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      } catch (_) {
+        return "";
+      }
+    }
+
+    function setChatUnread(n) {
+      chatUnread = Math.max(0, n | 0);
+      if (!chatCount) return;
+      chatCount.textContent = chatUnread > 99 ? "99+" : String(chatUnread);
+      chatCount.hidden = chatUnread === 0;
+    }
+
+    function appendChatMessage({ id, body, name, at, mine }) {
+      if (!chatMessages || !body) return;
+      const key = id || (name + "|" + at + "|" + body);
+      if (seenChatIds.has(key)) return;
+      seenChatIds.add(key);
+      const row = document.createElement("div");
+      row.className = "chat-row" + (mine ? " mine" : "");
+      row.innerHTML =
+        `<div class="chat-meta"><span class="who"></span><span class="when"></span></div>` +
+        `<div class="chat-body"></div>`;
+      row.querySelector(".who").textContent = mine ? "You" : (name || "Guest");
+      row.querySelector(".when").textContent = formatChatTime(at || Date.now());
+      row.querySelector(".chat-body").textContent = body;
+      chatMessages.appendChild(row);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+      if (!mine && !chatPanel?.classList.contains("open")) setChatUnread(chatUnread + 1);
+    }
+
+    function closeSidePanels() {
+      roster?.classList.remove("open");
+      chatPanel?.classList.remove("open");
+      document.getElementById("people")?.classList.remove("active");
+      document.getElementById("chat")?.classList.remove("active");
+    }
+
+    function openRoster() {
+      const open = !roster.classList.contains("open");
+      closeSidePanels();
+      if (open) {
+        roster.classList.add("open");
+        document.getElementById("people")?.classList.add("active");
+      }
+    }
+
+    function openChat() {
+      const open = !chatPanel.classList.contains("open");
+      closeSidePanels();
+      if (open) {
+        chatPanel.classList.add("open");
+        document.getElementById("chat")?.classList.add("active");
+        setChatUnread(0);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        setTimeout(() => chatInput?.focus(), 50);
+      }
+    }
 
     /** @type {Map<string, { name: string, isLocal: boolean, hasVideo: boolean, muted: boolean, el: HTMLElement|null }>} */
     const people = new Map();
@@ -671,7 +928,14 @@
     }
 
     function columnsFor(count) {
+      const narrow = window.matchMedia("(max-width: 820px)").matches
+        && !window.matchMedia("(orientation: landscape) and (max-height: 500px)").matches;
       if (count <= 1) return 1;
+      if (narrow) {
+        if (count <= 2) return 1;
+        if (count <= 4) return 2;
+        return 2;
+      }
       if (count <= 2) return 2;
       if (count <= 4) return 2;
       if (count <= 9) return 3;
@@ -1359,6 +1623,16 @@
               setRoomRecordingUi(!!msg.on, msg.at, msg.by || participant?.name, false);
               return;
             }
+            if (msg?.t === "chat") {
+              appendChatMessage({
+                id: msg.id,
+                body: typeof msg.body === "string" ? msg.body : "",
+                name: msg.name || participant?.name || "Guest",
+                at: msg.at || Date.now(),
+                mine: !!(participant && localId && participant.identity === localId),
+              });
+              return;
+            }
             if (msg?.t !== "mic" || !participant) return;
             const info = people.get(participant.identity);
             if (!info) {
@@ -1417,6 +1691,8 @@
         try {
           await me.setMicrophoneEnabled(wantMic);
           micBtn.classList.toggle("off", !wantMic);
+          micBtn.setAttribute("aria-pressed", wantMic ? "true" : "false");
+          micBtn.title = wantMic ? "Mute microphone" : "Unmute microphone";
           const info = people.get(me.identity);
           if (info) { info.muted = !wantMic; syncTile(me.identity); }
           notifyHost(wantMic ? "mic-on" : "mic-off");
@@ -1424,6 +1700,8 @@
         } catch (micErr) {
           console.error(micErr);
           micBtn.classList.toggle("off", true);
+          micBtn.setAttribute("aria-pressed", "false");
+          micBtn.title = "Unmute microphone";
           const info = people.get(me.identity);
           if (info) { info.muted = true; syncTile(me.identity); }
           notifyHost("mic-off");
@@ -1435,10 +1713,14 @@
         try {
           await me.setCameraEnabled(wantCam);
           camBtn.classList.toggle("off", !wantCam);
+          camBtn.setAttribute("aria-pressed", wantCam ? "true" : "false");
+          camBtn.title = wantCam ? "Turn camera off" : "Turn camera on";
           notifyHost(wantCam ? "camera-on" : "camera-off");
         } catch (camErr) {
           console.error(camErr);
           camBtn.classList.toggle("off", true);
+          camBtn.setAttribute("aria-pressed", "false");
+          camBtn.title = "Turn camera on";
           notifyHost("camera-off");
           if (wantCam) {
             notifyHost("permission-camera");
@@ -1480,6 +1762,7 @@
       const micBtn = document.getElementById("mic");
       const camBtn = document.getElementById("cam");
       const shareBtn = document.getElementById("share");
+      const chatBtn = document.getElementById("chat");
       const peopleBtn = document.getElementById("people");
       const leaveBtn = document.getElementById("leave");
 
@@ -1489,11 +1772,37 @@
         const shareOn = !!room.localParticipant.isScreenShareEnabled;
         camBtn.classList.toggle("off", !camOn);
         micBtn.classList.toggle("off", !micOn);
+        micBtn.setAttribute("aria-pressed", micOn ? "true" : "false");
+        camBtn.setAttribute("aria-pressed", camOn ? "true" : "false");
+        micBtn.title = micOn ? "Mute microphone" : "Unmute microphone";
+        camBtn.title = camOn ? "Turn camera off" : "Turn camera on";
         shareBtn.classList.toggle("active", shareOn);
         window.meetjoePreferredMedia = { camera: camOn, mic: micOn };
         notifyHost(camOn ? "camera-on" : "camera-off");
         notifyHost(micOn ? "mic-on" : "mic-off");
         notifyHost(shareOn ? "share-on" : "share-off");
+      }
+
+      async function publishChatMessage(body) {
+        const text = (body || "").trim();
+        if (!text || !room?.localParticipant) return false;
+        const payload = {
+          t: "chat",
+          id: (crypto.randomUUID && crypto.randomUUID()) || (Date.now() + "-" + Math.random()),
+          body: text.slice(0, 2000),
+          name: room.localParticipant.name || "You",
+          at: Date.now(),
+        };
+        appendChatMessage({ ...payload, mine: true });
+        try {
+          const bytes = new TextEncoder().encode(JSON.stringify(payload));
+          await room.localParticipant.publishData(bytes, { reliable: true });
+          return true;
+        } catch (err) {
+          console.error(err);
+          showBanner("Could not send chat message.");
+          return false;
+        }
       }
 
       window.meetjoeApplyPreferredMedia = async () => {
@@ -1622,7 +1931,9 @@
           notifyHost(on ? "share-on" : "share-off");
           if (wantOn && !on) {
             notifyHost("permission-share");
-            showBanner("Screen sharing was cancelled or blocked. Allow Screen Recording for MeetJoe in System Settings if needed.");
+            showBanner(embedded
+              ? "Screen sharing was cancelled or blocked. Allow Screen Recording for MeetJoe in System Settings if needed."
+              : "Screen sharing was cancelled or is not available in this browser.");
           }
           return on;
         } catch (err) {
@@ -1630,7 +1941,9 @@
           shareBtn.classList.toggle("active", false);
           notifyHost("share-off");
           notifyHost("permission-share");
-          showBanner("Could not share screen. Allow Screen Recording for MeetJoe in System Settings, then try again.");
+          showBanner(embedded
+            ? "Could not share screen. Allow Screen Recording for MeetJoe in System Settings, then try again."
+            : "Could not share screen. Your browser or device may not support screen sharing.");
           return false;
         }
       };
@@ -2099,10 +2412,27 @@
       camBtn.onclick = async () => { await window.meetjoeToggleCamera(); };
       shareBtn.onclick = async () => { await window.meetjoeToggleScreenShare(); };
       reportMediaState();
-      peopleBtn.onclick = () => {
-        roster.classList.toggle("open");
-        peopleBtn.classList.toggle("active", roster.classList.contains("open"));
-      };
+      if (chatBtn) {
+        chatBtn.disabled = false;
+        chatBtn.onclick = () => openChat();
+      }
+      peopleBtn.onclick = () => openRoster();
+      rosterClose?.addEventListener("click", () => closeSidePanels());
+      chatClose?.addEventListener("click", () => closeSidePanels());
+      chatForm?.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const text = chatInput?.value || "";
+        if (!text.trim()) return;
+        chatInput.value = "";
+        await publishChatMessage(text);
+        chatInput.focus();
+      });
+      window.addEventListener("resize", () => {
+        try {
+          grid.dataset.count = String(people.size);
+          grid.style.setProperty("--cols", String(columnsFor(people.size)));
+        } catch (_) { /* ignore */ }
+      });
       leaveBtn.onclick = async () => {
         await window.meetjoeShutdown?.();
         setStatus(isGuest ? "You left the meeting." : "You left. Close this view from MeetJoe.", "error");
