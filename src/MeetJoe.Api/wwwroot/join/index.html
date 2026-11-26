@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#07111c" />
   <title>Join meeting · MeetJoe</title>
   <style>
     :root {
@@ -16,14 +17,17 @@
     }
     * { box-sizing: border-box; }
     body {
-      margin: 0; min-height: 100vh;
+      margin: 0; min-height: 100vh; min-height: 100dvh;
       font-family: Manrope, "Segoe UI", system-ui, sans-serif;
       background:
         radial-gradient(900px 420px at 10% -10%, rgba(30,200,200,.18), transparent 55%),
         radial-gradient(700px 380px at 100% 0%, rgba(56,120,220,.16), transparent 50%),
         var(--bg);
       color: var(--text);
-      display: grid; place-items: center; padding: 24px;
+      display: grid; place-items: center;
+      padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+               max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+      -webkit-tap-highlight-color: transparent;
     }
     .card {
       width: min(440px, 100%);
@@ -34,7 +38,12 @@
       box-shadow: 0 24px 60px rgba(0,0,0,.35);
     }
     .brand { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 700; margin: 0 0 10px; }
-    h1 { margin: 0 0 8px; font-size: 26px; line-height: 1.2; }
+    h1 { margin: 0 0 8px; font-size: clamp(22px, 5vw, 26px); line-height: 1.2; }
+    @media (max-width: 420px) {
+      .card { padding: 22px 18px 20px; border-radius: 14px; }
+      .actions { gap: 8px; }
+      button, .btn { padding: 14px 16px; font-size: 15px; }
+    }
     .meta { color: var(--muted); font-size: 14px; margin: 0 0 6px; line-height: 1.45; }
     .desc { color: var(--muted); font-size: 14px; margin: 12px 0 0; white-space: pre-wrap; }
     label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin: 18px 0 6px; }
