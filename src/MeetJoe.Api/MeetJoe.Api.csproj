@@ -13,6 +13,6 @@
   </ItemGroup>
   <ItemGroup>
     <!-- Velopack release packages served at /updates/desktop/{rid}/ -->
-    <Content Include="releases\desktop\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Update="releases\desktop\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

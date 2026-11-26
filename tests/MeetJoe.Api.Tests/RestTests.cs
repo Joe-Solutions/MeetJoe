@@ -879,6 +879,26 @@ public class MeetingTests(ApiFactory api)
     }
 
     [Fact]
+    public async Task Scheduling_accepts_local_offset_datetimes_and_stores_utc()
+    {
+        var (org, people) = await api.NewOrganizationAsync("Ana");
+        var ana = people[0];
+        // Desktop clients send wall-clock times with a local offset (e.g. PH +08:00).
+        // Npgsql rejects non-UTC DateTimeOffset for timestamptz unless we normalize first.
+        var starts = new DateTimeOffset(2026, 11, 26, 20, 12, 0, TimeSpan.FromHours(8));
+
+        var meeting = await ana.PostAsync<MeetingDto>(
+            $"/api/orgs/{org.Id}/meetings/schedule",
+            new ScheduleMeetingRequest(
+                "Client Demo", "EOG", starts, starts.AddHours(1), true, null, RecurrenceKind.None, null,
+                ["guest@example.com"]));
+
+        Assert.Equal(TimeSpan.Zero, meeting.StartsAt.Offset);
+        Assert.Equal(starts.ToUniversalTime(), meeting.StartsAt);
+        Assert.True(meeting.IsScheduled);
+    }
+
+    [Fact]
     public async Task Participants_can_invite_org_members_into_a_live_meeting()
     {
         var (org, people) = await api.NewOrganizationAsync("Ana", "Ben", "Chloe");
