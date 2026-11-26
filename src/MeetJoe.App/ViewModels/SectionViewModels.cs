@@ -169,13 +169,18 @@ public partial class MeetingViewModel : ObservableObject
                 : "Repeats weekly",
             _ => string.Empty,
         };
+        var lobbySuffix = IsHostedByMe && meeting.Lobby.Count > 0
+            ? meeting.Lobby.Count == 1
+                ? " · 1 waiting in lobby"
+                : $" · {meeting.Lobby.Count} waiting in lobby"
+            : string.Empty;
         Summary = HasEnded
             ? $"Hosted by {meeting.Host.DisplayName} · ended"
             : meeting.Participants.Count switch
             {
-                0 => $"Hosted by {meeting.Host.DisplayName} · nobody has joined yet",
-                1 => $"Hosted by {meeting.Host.DisplayName} · 1 person in the meeting",
-                var n => $"Hosted by {meeting.Host.DisplayName} · {n} people in the meeting",
+                0 => $"Hosted by {meeting.Host.DisplayName} · nobody has joined yet{lobbySuffix}",
+                1 => $"Hosted by {meeting.Host.DisplayName} · 1 person in the meeting{lobbySuffix}",
+                var n => $"Hosted by {meeting.Host.DisplayName} · {n} people in the meeting{lobbySuffix}",
             };
         OnPropertyChanged(string.Empty);
     }
@@ -186,6 +191,7 @@ public partial class MeetingStageViewModel : ViewModelBase
 {
     private readonly SessionContext _context;
     private readonly Dictionary<Guid, DateTimeOffset> _chatReadAt = [];
+    private int _lastLobbyCount;
 
     public MeetingStageViewModel(
         MeetingViewModel meeting, MeetingJoinDto join, SessionContext context,
@@ -198,6 +204,8 @@ public partial class MeetingStageViewModel : ViewModelBase
         MediaServer = join.ServerUrl;
         RoomName = join.RoomName;
         MediaPageUri = BuildMediaPageUri(context.Config.ApiBaseUri, join);
+        _lastLobbyCount = meeting.Lobby.Count;
+        RefreshLobbyWaitingUi(notifyHost: false);
         context.Realtime.MeetingUpdated += OnMeetingUpdated;
         context.Realtime.MeetingChat += OnMeetingChat;
         context.Realtime.ParticipantRemoved += OnRemoved;
@@ -322,9 +330,19 @@ public partial class MeetingStageViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(UnreadChatBadge))]
     private int _unreadChatCount;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasLobbyWaiting))]
+    [NotifyPropertyChangedFor(nameof(LobbyWaitingBadge))]
+    private int _lobbyWaitingCount;
+
+    [ObservableProperty] private string? _lobbyWaitingNotice;
+
     public bool ShowChatPanel => !ShowPeoplePanel;
     public bool HasUnreadChat => UnreadChatCount > 0;
     public string UnreadChatBadge => UnreadChatCount > 99 ? "99+" : UnreadChatCount.ToString();
+    /// <summary>Host-only: someone is waiting to be admitted from the lobby.</summary>
+    public bool HasLobbyWaiting => Meeting.IsHostedByMe && LobbyWaitingCount > 0;
+    public string LobbyWaitingBadge => LobbyWaitingCount > 99 ? "99+" : LobbyWaitingCount.ToString();
     public bool HasInviteSuggestions => InviteSuggestions.Count > 0;
 
     /// <summary>Meet-style tile columns for the center participant grid.</summary>
@@ -363,6 +381,9 @@ public partial class MeetingStageViewModel : ViewModelBase
         IsMediaOpen = false;
         IsLiveKitSurfaceReady = false;
         UnreadChatCount = 0;
+        LobbyWaitingCount = 0;
+        LobbyWaitingNotice = null;
+        _lastLobbyCount = 0;
         ShowEmojiPicker = false;
         PendingAttachments.Clear();
         HasPendingAttachments = false;
@@ -986,6 +1007,7 @@ public partial class MeetingStageViewModel : ViewModelBase
         if (wasInLobby && !InLobby)
             _ = EnterMeetingAfterAdmitAsync();
         if (InLobby) IsMediaOpen = false;
+        RefreshLobbyWaitingUi(notifyHost: true);
         if (ShowAddPeople) RefreshInviteSuggestions();
         if (meeting.ChatReadCursors is { } cursors)
         {
@@ -993,6 +1015,36 @@ public partial class MeetingStageViewModel : ViewModelBase
                 _chatReadAt[cursor.UserId] = cursor.ReadAt;
             RefreshChatSeenBy();
         }
+    }
+
+    private void RefreshLobbyWaitingUi(bool notifyHost)
+    {
+        // Only the host sees lobby waiters in People / gets prompted to admit.
+        if (!Meeting.IsHostedByMe)
+        {
+            LobbyWaitingCount = 0;
+            LobbyWaitingNotice = null;
+            _lastLobbyCount = 0;
+            OnPropertyChanged(nameof(HasLobbyWaiting));
+            return;
+        }
+
+        var lobby = Meeting.Lobby;
+        var count = lobby.Count;
+        var arrived = notifyHost && count > _lastLobbyCount;
+        LobbyWaitingCount = count;
+        LobbyWaitingNotice = count switch
+        {
+            0 => null,
+            1 => $"{lobby[0].DisplayName} is waiting in the lobby. Admit them to join the meeting.",
+            _ => $"{count} people are waiting in the lobby. Admit them to join the meeting.",
+        };
+        _lastLobbyCount = count;
+        OnPropertyChanged(nameof(HasLobbyWaiting));
+        OnPropertyChanged(nameof(LobbyWaitingBadge));
+
+        if (arrived)
+            ShowPeoplePanel = true;
     }
 
     private async Task WatchLobbyAdmitAsync()

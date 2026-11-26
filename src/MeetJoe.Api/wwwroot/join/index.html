@@ -170,6 +170,7 @@
         meet.searchParams.set("t", join.token);
         meet.searchParams.set("guest", "1");
         meet.searchParams.set("invite", token);
+        meet.searchParams.set("name", name);
         if (join.meetingId) meet.searchParams.set("mid", join.meetingId);
         if (join.guestUserId) meet.searchParams.set("uid", join.guestUserId);
         if (join.inLobby) meet.searchParams.set("lobby", "1");
