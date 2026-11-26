@@ -223,6 +223,7 @@ public partial class MeetingStageView : UserControl
             _stage.ToggleScreenShareHandler = () => host.ToggleScreenShareAsync();
             _stage.StartRecordingHandler = (url, token, name) => host.StartRecordingAsync(url, token, name);
             _stage.StopRecordingHandler = () => host.StopRecordingAsync();
+            _stage.PublishChatHandler = (id, body, name, at) => host.PublishChatAsync(id, body, name, at);
         }
 
         host.Show(uri);

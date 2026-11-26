@@ -259,6 +259,25 @@ public sealed class InAppMediaHost : Panel
             .ConfigureAwait(true);
     }
 
+    /// <summary>Publish a meeting chat message into the LiveKit room for web guests.</summary>
+    public Task PublishChatAsync(string id, string body, string? displayName, long createdAtUnixMs)
+    {
+        static string Esc(string? value) =>
+            (value ?? string.Empty)
+                .Replace("\\", "\\\\", StringComparison.Ordinal)
+                .Replace("\"", "\\\"", StringComparison.Ordinal)
+                .Replace("\r", "\\r", StringComparison.Ordinal)
+                .Replace("\n", "\\n", StringComparison.Ordinal)
+                .Replace("\u2028", "\\u2028", StringComparison.Ordinal)
+                .Replace("\u2029", "\\u2029", StringComparison.Ordinal);
+
+        var script =
+            "(async function(){ try { if (window.meetjoePublishChat) await window.meetjoePublishChat({" +
+            $"id:\"{Esc(id)}\",body:\"{Esc(body)}\",name:\"{Esc(displayName)}\",at:{createdAtUnixMs}" +
+            "}); } catch(e) { console.error(e); } })()";
+        return RunPageScriptAsync(script);
+    }
+
     private Task PushPreferredMediaAsync()
     {
         var cam = IsCameraEnabled ? "true" : "false";

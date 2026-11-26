@@ -297,6 +297,8 @@ public record GuestMeetingInviteDto(
 
 public record GuestJoinRequest(string DisplayName);
 
+public record GuestChatRequest(string? Body);
+
 public record GuestJoinDto(
     Guid MeetingId,
     string ServerUrl,

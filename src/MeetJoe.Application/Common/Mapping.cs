@@ -236,12 +236,19 @@ internal static class Access
         if (meeting is null) throw AppException.NotFound("Meeting");
         var inOrg = await db.Memberships.AnyAsync(
             m => m.OrganizationId == meeting.OrganizationId && m.UserId == userId, ct);
-        if (!inOrg) throw AppException.NotFound("Meeting");
+        var isPresent = meeting.Participants.Any(p => p.UserId == userId && p.IsPresent);
+        // Org members and present guests (email join) can read/send meeting chat.
+        if (!inOrg && !isPresent) throw AppException.NotFound("Meeting");
 
         var memberIds = await db.Memberships
             .Where(m => m.OrganizationId == meeting.OrganizationId)
             .Select(m => m.UserId)
             .ToListAsync(ct);
+        foreach (var participantId in meeting.Participants.Where(p => p.IsPresent).Select(p => p.UserId))
+        {
+            if (!memberIds.Contains(participantId))
+                memberIds.Add(participantId);
+        }
         return new MessageTarget(meeting.OrganizationId, null, null, meeting, memberIds);
     }
 
