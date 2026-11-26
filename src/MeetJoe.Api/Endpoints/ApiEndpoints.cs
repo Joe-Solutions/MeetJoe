@@ -51,6 +51,10 @@ internal static class ApiEndpoints
             (string token, GuestJoinRequest request, MeetingService meetings, CancellationToken ct) =>
                 meetings.JoinAsGuestAsync(token, request, ct));
 
+        pub.MapGet("/meeting-invites/{token}/session",
+            (string token, MeetingService meetings, CancellationToken ct) =>
+                meetings.GetGuestSessionAsync(token, ct));
+
         pub.MapGet("/meeting-invites/{token}/messages",
             (string token, DateTimeOffset? before, int? limit, MeetingService meetings, CancellationToken ct) =>
                 meetings.GetGuestMeetingMessagesAsync(token, before, limit, ct));

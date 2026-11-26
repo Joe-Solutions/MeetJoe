@@ -194,17 +194,17 @@ public sealed class MeetingService(
 
         var now = time.Now();
         var isHost = meeting.HostId == user.Id;
-        // Email/web guests need mic and camera immediately — do not park them in the lobby
-        // with a non-publish token (that surfaces as a false "permission" error in the browser).
-        const bool inLobby = false;
+        // Guests wait in the lobby when the host enabled it; only the host Admit moves them in.
+        var inLobby = meeting.LobbyEnabled && !isHost;
         var existing = meeting.Participants.FirstOrDefault(p => p.UserId == user.Id && p.IsPresent);
         if (existing is null)
         {
             db.MeetingParticipants.Add(new Domain.MeetingParticipant(meeting.Id, user.Id, now, inLobby));
         }
-        else if (existing.InLobby)
+        else
         {
-            existing.Admit();
+            // Never auto-admit on refresh — keep the host's lobby decision.
+            inLobby = existing.InLobby;
         }
 
         await db.SaveChangesAsync(ct);
@@ -213,10 +213,49 @@ public sealed class MeetingService(
 
         var connection = tokens.Issue(
             meeting.RoomName, user.Id, displayName,
-            canPublish: true,
+            canPublish: !inLobby,
             roomAdmin: isHost);
         return new GuestJoinDto(
-            meeting.Id, connection.ServerUrl, meeting.RoomName, connection.Token, InLobby: false, displayName, user.Id);
+            meeting.Id, connection.ServerUrl, meeting.RoomName, connection.Token, inLobby, displayName, user.Id);
+    }
+
+    /// <summary>
+    /// Poll lobby/admit state for an already-joined guest and issue a fresh LiveKit token.
+    /// Does not change lobby membership — only Admit/Reject do that.
+    /// </summary>
+    public async Task<GuestJoinDto> GetGuestSessionAsync(string token, CancellationToken ct = default)
+    {
+        var (meeting, _, _, inviteToken) = await ResolveInviteTokenAsync(token, ct);
+        if (!meeting.IsActive) throw AppException.Conflict("This meeting has ended.");
+
+        var guestInvite = meeting.GuestInvites.FirstOrDefault(i => i.InviteToken == inviteToken);
+        Guid userId;
+        string displayName;
+        if (guestInvite?.JoinedUserId is { } joined)
+        {
+            userId = joined;
+            displayName = string.IsNullOrWhiteSpace(guestInvite.DisplayName)
+                ? await db.Users.Where(u => u.Id == userId).Select(u => u.DisplayName).FirstAsync(ct)
+                : guestInvite.DisplayName!;
+        }
+        else
+        {
+            var memberInvite = meeting.Invites.FirstOrDefault(i => i.InviteToken == inviteToken)
+                               ?? throw AppException.Validation("Join the meeting first.");
+            userId = memberInvite.UserId;
+            displayName = await db.Users.Where(u => u.Id == userId).Select(u => u.DisplayName).FirstAsync(ct);
+        }
+
+        var participant = meeting.Participants.FirstOrDefault(p => p.UserId == userId && p.IsPresent)
+                          ?? throw AppException.Validation("You are not in this meeting. Join again from your invite link.");
+        var inLobby = participant.InLobby;
+        var isHost = meeting.HostId == userId;
+        var connection = tokens.Issue(
+            meeting.RoomName, userId, displayName,
+            canPublish: !inLobby,
+            roomAdmin: isHost);
+        return new GuestJoinDto(
+            meeting.Id, connection.ServerUrl, meeting.RoomName, connection.Token, inLobby, displayName, userId);
     }
 
     /// <summary>Load meeting chat for a guest using their invite token (no OpenIddict session).</summary>

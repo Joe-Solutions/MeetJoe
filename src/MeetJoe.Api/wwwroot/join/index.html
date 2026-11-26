@@ -172,7 +172,7 @@
         meet.searchParams.set("invite", token);
         if (join.meetingId) meet.searchParams.set("mid", join.meetingId);
         if (join.guestUserId) meet.searchParams.set("uid", join.guestUserId);
-        // Guests always join with publish rights (mic/camera). Lobby is for app members only.
+        if (join.inLobby) meet.searchParams.set("lobby", "1");
         location.href = meet.toString();
       } catch (err) {
         qs("joinWeb").disabled = false;

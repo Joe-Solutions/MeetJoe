@@ -431,6 +431,9 @@ internal sealed class FakeApi : IMeetJoeApi
         Task.FromResult(new GuestJoinDto(
             Guid.NewGuid(), "ws://localhost", "room", "token", false, displayName, Guid.NewGuid()));
 
+    public Task<GuestJoinDto> GetGuestMeetingSessionAsync(string token, CancellationToken ct = default) =>
+        JoinGuestMeetingInviteAsync(token, "Guest", ct);
+
     public Task<MeetingDto> ScheduleMeetingAsync(
         Guid organizationId, ScheduleMeetingRequest request, CancellationToken ct = default)
     {
