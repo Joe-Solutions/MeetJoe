@@ -188,10 +188,12 @@ public partial class MeetingStageViewModel : ViewModelBase
     private readonly Dictionary<Guid, DateTimeOffset> _chatReadAt = [];
 
     public MeetingStageViewModel(
-        MeetingViewModel meeting, MeetingJoinDto join, SessionContext context)
+        MeetingViewModel meeting, MeetingJoinDto join, SessionContext context,
+        string? guestInviteToken = null)
     {
         _meeting = meeting;
         _context = context;
+        GuestInviteToken = guestInviteToken;
         InLobby = join.InLobby;
         MediaServer = join.ServerUrl;
         RoomName = join.RoomName;
@@ -201,12 +203,17 @@ public partial class MeetingStageViewModel : ViewModelBase
         context.Realtime.ParticipantRemoved += OnRemoved;
         context.Realtime.ReadReceipt += OnReadReceipt;
         _ = LoadChatAsync();
+        if (InLobby) _ = WatchLobbyAdmitAsync();
     }
+
+    /// <summary>Email/deep-link invite token used to refresh LiveKit creds after lobby admit.</summary>
+    public string? GuestInviteToken { get; }
 
     public Guid Id => Meeting.Id;
 
     [ObservableProperty] private MeetingViewModel _meeting;
     [ObservableProperty] private bool _inLobby;
+    [ObservableProperty] private Uri _mediaPageUri = null!;
     [ObservableProperty] private string _chatDraft = string.Empty;
     [ObservableProperty] private bool _handRaised;
     [ObservableProperty]
@@ -347,15 +354,9 @@ public partial class MeetingStageViewModel : ViewModelBase
     }
 
     /// <summary>Where the media room lives, shown so a connection can be diagnosed.</summary>
-    public string MediaServer { get; }
+    public string MediaServer { get; private set; }
 
-    public string RoomName { get; }
-
-    /// <summary>
-    /// In-app LiveKit media page. Token stays in the URL fragment so it is not sent to the MeetJoe API
-    /// when the static page is fetched.
-    /// </summary>
-    public Uri MediaPageUri { get; }
+    public string RoomName { get; private set; }
 
     public void Detach()
     {
@@ -982,7 +983,8 @@ public partial class MeetingStageViewModel : ViewModelBase
         HandRaised = meeting.RaisedHands.Contains(_context.People.MyId);
         var wasInLobby = InLobby;
         InLobby = meeting.Lobby.Any(p => p.Id == _context.People.MyId);
-        if (wasInLobby && !InLobby) IsMediaOpen = true;
+        if (wasInLobby && !InLobby)
+            _ = EnterMeetingAfterAdmitAsync();
         if (InLobby) IsMediaOpen = false;
         if (ShowAddPeople) RefreshInviteSuggestions();
         if (meeting.ChatReadCursors is { } cursors)
@@ -991,6 +993,81 @@ public partial class MeetingStageViewModel : ViewModelBase
                 _chatReadAt[cursor.UserId] = cursor.ReadAt;
             RefreshChatSeenBy();
         }
+    }
+
+    private async Task WatchLobbyAdmitAsync()
+    {
+        // Guests (and members without MeetingUpdated) poll until the host admits them.
+        while (InLobby)
+        {
+            try { await Task.Delay(2500); }
+            catch { return; }
+            if (!InLobby) return;
+            try
+            {
+                MeetingJoinDto join;
+                if (!string.IsNullOrWhiteSpace(GuestInviteToken))
+                {
+                    var session = await _context.Api.GetGuestMeetingSessionAsync(GuestInviteToken);
+                    join = new MeetingJoinDto(
+                        session.MeetingId, session.ServerUrl, session.RoomName, session.Token, session.InLobby);
+                }
+                else
+                {
+                    join = await _context.Api.JoinMeetingAsync(Id);
+                }
+
+                if (join.InLobby) continue;
+                ApplyAdmittedJoin(join);
+                return;
+            }
+            catch
+            {
+                // Keep waiting while the lobby is still open.
+            }
+        }
+    }
+
+    private async Task EnterMeetingAfterAdmitAsync()
+    {
+        try
+        {
+            MeetingJoinDto join;
+            if (!string.IsNullOrWhiteSpace(GuestInviteToken))
+            {
+                var session = await _context.Api.GetGuestMeetingSessionAsync(GuestInviteToken);
+                join = new MeetingJoinDto(
+                    session.MeetingId, session.ServerUrl, session.RoomName, session.Token, session.InLobby);
+            }
+            else
+            {
+                join = await _context.Api.JoinMeetingAsync(Id);
+            }
+
+            if (join.InLobby)
+            {
+                InLobby = true;
+                IsMediaOpen = false;
+                return;
+            }
+
+            ApplyAdmittedJoin(join);
+        }
+        catch
+        {
+            // Fall back to opening media with the prior token if refresh fails.
+            InLobby = false;
+            IsMediaOpen = true;
+        }
+    }
+
+    private void ApplyAdmittedJoin(MeetingJoinDto join)
+    {
+        InLobby = false;
+        MediaServer = join.ServerUrl;
+        RoomName = join.RoomName;
+        MediaPageUri = BuildMediaPageUri(_context.Config.ApiBaseUri, join);
+        IsMediaOpen = true;
     }
 
     private void OnMeetingChat(MessageDto message)
@@ -1680,7 +1757,7 @@ public partial class CalendarViewModel : ViewModelBase
                               _context.People);
 
             Stage?.Detach();
-            Stage = new MeetingStageViewModel(meeting, join, _context);
+            Stage = new MeetingStageViewModel(meeting, join, _context, guestInviteToken: token);
             if (!join.InLobby) Stage.OpenMediaCommand.Execute(null);
             return true;
         }

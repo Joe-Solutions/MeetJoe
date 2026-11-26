@@ -480,6 +480,52 @@
     }
     #chat-send:disabled { opacity: 0.5; cursor: default; }
 
+    #lobby {
+      display: none;
+      position: fixed; inset: 0; z-index: 40;
+      align-items: center; justify-content: center;
+      padding: max(24px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+               max(24px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+      background:
+        radial-gradient(900px 420px at 15% -10%, rgba(30,200,200,.18), transparent 55%),
+        radial-gradient(700px 380px at 100% 100%, rgba(56,120,220,.16), transparent 50%),
+        var(--stage);
+      text-align: center;
+    }
+    #lobby.show { display: flex; }
+    .lobby-card {
+      width: min(420px, 100%);
+      background: rgba(20, 26, 34, 0.92);
+      border: 1px solid var(--tile-border);
+      border-radius: 18px;
+      padding: 32px 26px 26px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.4);
+    }
+    .lobby-pulse {
+      width: 56px; height: 56px; margin: 0 auto 16px;
+      border-radius: 50%;
+      border: 3px solid rgba(30, 200, 200, 0.35);
+      border-top-color: var(--accent);
+      animation: lobby-spin 1s linear infinite;
+    }
+    @keyframes lobby-spin { to { transform: rotate(360deg); } }
+    .lobby-card h1 {
+      margin: 0 0 10px; font-size: clamp(20px, 4.5vw, 26px); line-height: 1.2;
+    }
+    .lobby-card p {
+      margin: 0 auto; max-width: 34ch;
+      color: var(--muted); font-size: 14px; line-height: 1.5;
+    }
+    .lobby-card .lobby-status {
+      margin-top: 16px; font-size: 13px; font-weight: 600; color: var(--accent);
+    }
+    .lobby-card .lobby-leave {
+      appearance: none; border: 0; cursor: pointer; margin-top: 22px;
+      background: var(--danger); color: #fff;
+      border-radius: 10px; padding: 12px 18px;
+      font: inherit; font-size: 14px; font-weight: 700;
+    }
+
     #thanks {
       display: none;
       position: fixed; inset: 0; z-index: 50;
@@ -723,6 +769,16 @@
     </aside>
   </div>
 
+  <section id="lobby" aria-live="polite">
+    <div class="lobby-card">
+      <div class="lobby-pulse" aria-hidden="true"></div>
+      <h1>You're in the lobby</h1>
+      <p>The host enabled the lobby for this meeting. Camera, mic, and chat unlock after they admit you.</p>
+      <p class="lobby-status" id="lobby-status">Waiting for the host to admit you…</p>
+      <button type="button" class="lobby-leave" id="lobby-leave">Leave</button>
+    </div>
+  </section>
+
   <section id="thanks" aria-live="polite">
     <div class="thanks-card">
       <div class="thanks-logo" aria-hidden="true"><span>mj</span></div>
@@ -742,13 +798,14 @@
     const LivekitClient = window.LivekitClient;
     const params = new URLSearchParams(
       location.search ? location.search.slice(1) : location.hash.replace(/^#/, ""));
-    const url = params.get("u");
-    const token = params.get("t");
+    let url = params.get("u");
+    let token = params.get("t");
     const embedded = params.get("embed") === "1";
     const isGuest = params.get("guest") === "1";
     const inviteToken = params.get("invite") || "";
     const meetingId = params.get("mid") || "";
     let localGuestUserId = params.get("uid") || null;
+    let waitingInLobby = isGuest && params.get("lobby") === "1";
     if (isGuest) {
       document.documentElement.classList.add("guest");
       // Guests join via email link — present/share and host-only controls stay hidden.
@@ -1627,6 +1684,77 @@
     }
     window.meetjoeEnsureAudio = ensureAudioPlayback;
 
+    async function waitForLobbyAdmit() {
+      if (!waitingInLobby || !isGuest || !inviteToken || embedded) return true;
+
+      const lobbyEl = document.getElementById("lobby");
+      const lobbyStatus = document.getElementById("lobby-status");
+      const toolbar = document.getElementById("toolbar");
+      const stage = document.getElementById("stage");
+      lobbyEl?.classList.add("show");
+      if (toolbar) toolbar.style.display = "none";
+      if (stage) stage.style.display = "none";
+      document.getElementById("banner")?.classList.remove("show");
+
+      const leaveBtn = document.getElementById("lobby-leave");
+      if (leaveBtn) {
+        leaveBtn.onclick = () => {
+          waitingInLobby = false;
+          showThanksScreen();
+        };
+      }
+
+      while (waitingInLobby) {
+        await new Promise((r) => setTimeout(r, 2500));
+        if (!waitingInLobby) return false;
+        try {
+          const res = await fetch(
+            "/api/public/meeting-invites/" + encodeURIComponent(inviteToken) + "/session");
+          if (res.status === 409) {
+            if (lobbyStatus) lobbyStatus.textContent = "This meeting has ended.";
+            waitingInLobby = false;
+            setTimeout(() => showThanksScreen(), 1200);
+            return false;
+          }
+          if (res.status === 400 || res.status === 404) {
+            const problem = await res.json().catch(() => null);
+            if (lobbyStatus) {
+              lobbyStatus.textContent = problem?.detail
+                || "The host did not admit you, or you left the lobby.";
+            }
+            waitingInLobby = false;
+            setTimeout(() => showThanksScreen(), 1600);
+            return false;
+          }
+          if (!res.ok) continue;
+          const session = await res.json();
+          if (session.inLobby) {
+            if (lobbyStatus) lobbyStatus.textContent = "Waiting for the host to admit you…";
+            continue;
+          }
+
+          url = session.serverUrl || url;
+          token = session.token || token;
+          if (session.guestUserId) localGuestUserId = session.guestUserId;
+          waitingInLobby = false;
+          lobbyEl?.classList.remove("show");
+          if (toolbar) toolbar.style.display = "";
+          if (stage) stage.style.display = "";
+
+          const next = new URL(location.href);
+          if (url) next.searchParams.set("u", url);
+          if (token) next.searchParams.set("t", token);
+          next.searchParams.delete("lobby");
+          if (localGuestUserId) next.searchParams.set("uid", String(localGuestUserId));
+          history.replaceState(null, "", next.toString());
+          return true;
+        } catch (_) {
+          if (lobbyStatus) lobbyStatus.textContent = "Still waiting for the host…";
+        }
+      }
+      return false;
+    }
+
     async function main() {
       if (!url || !token) {
         setStatus("Missing join details. Re-open media from MeetJoe.", "error");
@@ -1634,6 +1762,13 @@
       }
       if (!window.isSecureContext && !/^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/i.test(location.origin)) {
         showBanner("Camera and microphone need a secure context (https or localhost).");
+      }
+
+      const admitted = await waitForLobbyAdmit();
+      if (!admitted) return;
+      if (!url || !token) {
+        setStatus("Missing join details after admit. Rejoin from your invite link.", "error");
+        return;
       }
 
       const room = new LivekitClient.Room({

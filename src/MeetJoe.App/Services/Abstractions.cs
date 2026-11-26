@@ -137,6 +137,7 @@ public interface IMeetJoeApi
     Task<MeetingDto> ScheduleMeetingAsync(Guid organizationId, ScheduleMeetingRequest request, CancellationToken ct = default);
     Task<GuestMeetingInviteDto> GetGuestMeetingInviteAsync(string token, CancellationToken ct = default);
     Task<GuestJoinDto> JoinGuestMeetingInviteAsync(string token, string displayName, CancellationToken ct = default);
+    Task<GuestJoinDto> GetGuestMeetingSessionAsync(string token, CancellationToken ct = default);
     Task<MeetingJoinDto> JoinMeetingAsync(Guid meetingId, CancellationToken ct = default);
     Task LeaveMeetingAsync(Guid meetingId, CancellationToken ct = default);
     Task EndMeetingAsync(Guid meetingId, CancellationToken ct = default);
