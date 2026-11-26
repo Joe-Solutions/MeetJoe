@@ -24,6 +24,8 @@ internal static class ApiEndpoints
 {
     public static void MapApiEndpoints(this IEndpointRouteBuilder app)
     {
+        MapPublicGuestInvites(app);
+
         var api = app.MapGroup("/api").RequireAuthorization();
 
         MapProfile(api);
@@ -35,6 +37,19 @@ internal static class ApiEndpoints
         MapMeetings(api);
         MapCalls(api);
         MapSearch(api);
+    }
+
+    /// <summary>Unauthenticated join links from email / deep links.</summary>
+    private static void MapPublicGuestInvites(IEndpointRouteBuilder app)
+    {
+        var pub = app.MapGroup("/api/public").AllowAnonymous();
+
+        pub.MapGet("/meeting-invites/{token}", (string token, MeetingService meetings, CancellationToken ct) =>
+            meetings.GetGuestInviteAsync(token, ct));
+
+        pub.MapPost("/meeting-invites/{token}/join",
+            (string token, GuestJoinRequest request, MeetingService meetings, CancellationToken ct) =>
+                meetings.JoinAsGuestAsync(token, request, ct));
     }
 
     private static void MapProfile(RouteGroupBuilder api)

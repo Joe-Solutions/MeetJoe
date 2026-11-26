@@ -437,6 +437,50 @@ namespace MeetJoe.Infrastructure.Persistence.Migrations
                     b.ToTable("Meetings");
                 });
 
+            modelBuilder.Entity("MeetJoe.Domain.MeetingGuestInvite", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)");
+
+                    b.Property<string>("InviteToken")
+                        .IsRequired()
+                        .HasMaxLength(43)
+                        .HasColumnType("character varying(43)");
+
+                    b.Property<DateTimeOffset?>("JoinedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("JoinedUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("MeetingId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InviteToken")
+                        .IsUnique();
+
+                    b.HasIndex("JoinedUserId");
+
+                    b.HasIndex("MeetingId", "Email")
+                        .IsUnique();
+
+                    b.ToTable("MeetingGuestInvites");
+                });
+
             modelBuilder.Entity("MeetJoe.Domain.MeetingInvite", b =>
                 {
                     b.Property<Guid>("MeetingId")
@@ -444,6 +488,11 @@ namespace MeetJoe.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("InviteToken")
+                        .IsRequired()
+                        .HasMaxLength(43)
+                        .HasColumnType("character varying(43)");
 
                     b.Property<DateTimeOffset>("InvitedAt")
                         .HasColumnType("timestamp with time zone");
@@ -455,6 +504,9 @@ namespace MeetJoe.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("MeetingId", "UserId");
+
+                    b.HasIndex("InviteToken")
+                        .IsUnique();
 
                     b.HasIndex("UserId");
 
@@ -1293,9 +1345,27 @@ namespace MeetJoe.Infrastructure.Persistence.Migrations
                     b.Navigation("Host");
                 });
 
+            modelBuilder.Entity("MeetJoe.Domain.MeetingGuestInvite", b =>
+                {
+                    b.HasOne("MeetJoe.Domain.User", "JoinedUser")
+                        .WithMany()
+                        .HasForeignKey("JoinedUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("MeetJoe.Domain.Meeting", "Meeting")
+                        .WithMany("GuestInvites")
+                        .HasForeignKey("MeetingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("JoinedUser");
+
+                    b.Navigation("Meeting");
+                });
+
             modelBuilder.Entity("MeetJoe.Domain.MeetingInvite", b =>
                 {
-                    b.HasOne("MeetJoe.Domain.Meeting", null)
+                    b.HasOne("MeetJoe.Domain.Meeting", "Meeting")
                         .WithMany("Invites")
                         .HasForeignKey("MeetingId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -1306,6 +1376,8 @@ namespace MeetJoe.Infrastructure.Persistence.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Meeting");
 
                     b.Navigation("User");
                 });
@@ -1509,6 +1581,8 @@ namespace MeetJoe.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("MeetJoe.Domain.Meeting", b =>
                 {
+                    b.Navigation("GuestInvites");
+
                     b.Navigation("Invites");
 
                     b.Navigation("Participants");

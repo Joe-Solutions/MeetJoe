@@ -23,6 +23,7 @@ public interface IAppDbContext
     DbSet<Meeting> Meetings { get; }
     DbSet<MeetingParticipant> MeetingParticipants { get; }
     DbSet<MeetingInvite> MeetingInvites { get; }
+    DbSet<MeetingGuestInvite> MeetingGuestInvites { get; }
     DbSet<MeetingRecording> MeetingRecordings { get; }
     DbSet<Call> Calls { get; }
     DbSet<CallParticipant> CallParticipants { get; }
@@ -79,4 +80,34 @@ public sealed record MeetingConnection(string ServerUrl, string Token);
 public interface IMeetingTokenIssuer
 {
     MeetingConnection Issue(string roomName, Guid userId, string displayName, bool canPublish = true, bool roomAdmin = false);
+}
+
+/// <summary>Outbound email (SMTP or logged sink in development).</summary>
+public interface IEmailSender
+{
+    Task SendAsync(string toEmail, string subject, string htmlBody, CancellationToken ct = default);
+}
+
+/// <summary>Creates or reuses guest accounts for email invitees who are not org members.</summary>
+public interface IGuestAccountService
+{
+    Task<User> GetOrCreateGuestAsync(string email, string displayName, CancellationToken ct = default);
+}
+
+/// <summary>Public site / deep-link base URLs used in invite emails.</summary>
+public sealed class PublicUrlsOptions
+{
+    public const string Section = "PublicUrls";
+
+    /// <summary>HTTPS origin of the API / web host, e.g. https://api.meetjoe.example.</summary>
+    public string WebBaseUrl { get; set; } = "http://localhost:5080";
+
+    /// <summary>Custom URL scheme registered by the desktop app.</summary>
+    public string DesktopScheme { get; set; } = "meetjoe";
+
+    public string JoinUrl(string token) =>
+        $"{WebBaseUrl.TrimEnd('/')}/join/?token={Uri.EscapeDataString(token)}";
+
+    public string DesktopDeepLink(string token) =>
+        $"{DesktopScheme}://join?token={Uri.EscapeDataString(token)}";
 }

@@ -274,7 +274,37 @@ public record ScheduleMeetingRequest(
     bool LobbyEnabled,
     IReadOnlyList<Guid>? InviteeIds,
     RecurrenceKind Recurrence = RecurrenceKind.None,
-    DateTimeOffset? RecurrenceUntil = null);
+    DateTimeOffset? RecurrenceUntil = null,
+    /// <summary>External or org emails that receive a join-link invite.</summary>
+    IReadOnlyList<string>? InviteeEmails = null);
+
+/// <summary>Public meeting details for an email / deep-link invite (no auth).</summary>
+public record GuestMeetingInviteDto(
+    string Token,
+    Guid MeetingId,
+    string Title,
+    string? Description,
+    string HostName,
+    DateTimeOffset StartsAt,
+    DateTimeOffset? EndsAt,
+    bool LobbyEnabled,
+    bool IsActive,
+    bool HasEnded,
+    string? InviteeEmail,
+    string? SuggestedDisplayName,
+    string WebJoinUrl,
+    string DesktopDeepLink);
+
+public record GuestJoinRequest(string DisplayName);
+
+public record GuestJoinDto(
+    Guid MeetingId,
+    string ServerUrl,
+    string RoomName,
+    string Token,
+    bool InLobby,
+    string DisplayName,
+    Guid GuestUserId);
 
 public record RespondInviteRequest(InviteStatus Status);
 

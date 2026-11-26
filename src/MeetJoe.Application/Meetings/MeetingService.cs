@@ -15,8 +15,12 @@ public sealed class MeetingService(
     IMeetingTokenIssuer tokens,
     IRealtimePublisher realtime,
     TimeProvider time,
-    ChatService chat)
+    ChatService chat,
+    IEmailSender email,
+    IGuestAccountService guests,
+    Microsoft.Extensions.Options.IOptions<PublicUrlsOptions> publicUrls)
 {
+    private readonly PublicUrlsOptions _urls = publicUrls.Value;
     private const int RecurrenceExpandCount = 8;
 
     public async Task<IReadOnlyList<MeetingDto>> GetActiveAsync(
@@ -82,11 +86,45 @@ public sealed class MeetingService(
                 throw AppException.Validation("Everyone invited must belong to the organization.");
         }
 
+        var hostEmail = await db.Users.Where(u => u.Id == userId).Select(u => u.Email).FirstAsync(ct);
+        var emailInvitees = NormalizeEmails(request.InviteeEmails)
+            .Where(e => !string.Equals(e, hostEmail, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // Map org-member emails onto InviteeIds so they get in-app + email invites.
+        if (emailInvitees.Count > 0)
+        {
+            var membersByEmail = await db.Memberships
+                .Where(m => m.OrganizationId == organizationId)
+                .Select(m => new { m.UserId, m.User.Email })
+                .ToListAsync(ct);
+            foreach (var row in membersByEmail)
+            {
+                if (row.Email is null) continue;
+                if (!emailInvitees.Contains(row.Email, StringComparer.OrdinalIgnoreCase)) continue;
+                if (row.UserId != userId && !invitees.Contains(row.UserId))
+                    invitees.Add(row.UserId);
+            }
+        }
+
         var now = time.Now();
         var recurrence = request.Recurrence.ToDomain();
         var primary = Domain.Meeting.Schedule(
             organizationId, userId, request.Title, request.Description, request.StartsAt, request.EndsAt,
             request.LobbyEnabled, invitees, now, recurrence, request.RecurrenceUntil);
+
+        // External (or unresolved) emails become guest invites with join tokens.
+        var memberEmails = await db.Users
+            .Where(u => invitees.Contains(u.Id))
+            .Select(u => u.Email!)
+            .ToListAsync(ct);
+        var guestEmails = emailInvitees
+            .Where(e => memberEmails.All(m => !string.Equals(m, e, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        foreach (var guestEmail in guestEmails)
+            primary.AddGuestInvite(guestEmail, null, now);
+
         db.Meetings.Add(primary);
 
         var duration = request.EndsAt is { } end ? end - request.StartsAt : (TimeSpan?)null;
@@ -96,6 +134,8 @@ public sealed class MeetingService(
             var occurrence = Domain.Meeting.Schedule(
                 organizationId, userId, request.Title, request.Description, startsAt, endsAt,
                 request.LobbyEnabled, invitees, now, Domain.RecurrenceKind.None, null, primary.SeriesId);
+            foreach (var guestEmail in guestEmails)
+                occurrence.AddGuestInvite(guestEmail, null, now);
             db.Meetings.Add(occurrence);
         }
 
@@ -110,7 +150,66 @@ public sealed class MeetingService(
         await db.SaveChangesAsync(ct);
         await NotifyAsync(organizationId, ct);
         if (invitees.Count > 0) await realtime.ActivityChangedAsync(invitees, ct);
+
+        await SendScheduleInviteEmailsAsync(primary.Id, actorName, ct);
         return ToDto(await LoadAsync(primary.Id, ct));
+    }
+
+    public async Task<GuestMeetingInviteDto> GetGuestInviteAsync(string token, CancellationToken ct = default)
+    {
+        var (meeting, inviteEmail, suggestedName, inviteToken) = await ResolveInviteTokenAsync(token, ct);
+        return MeetingInviteMail.ToPublicDto(
+            inviteToken, meeting, meeting.Host.DisplayName, inviteEmail, suggestedName, _urls);
+    }
+
+    public async Task<GuestJoinDto> JoinAsGuestAsync(
+        string token, GuestJoinRequest request, CancellationToken ct = default)
+    {
+        var (meeting, inviteEmail, _, inviteToken) = await ResolveInviteTokenAsync(token, ct);
+        if (!meeting.IsActive) throw AppException.Conflict("This meeting has ended.");
+
+        var displayName = string.IsNullOrWhiteSpace(request.DisplayName)
+            ? inviteEmail?.Split('@')[0] ?? "Guest"
+            : request.DisplayName.Trim();
+        if (displayName.Length > Domain.User.MaxDisplayNameLength)
+            displayName = displayName[..Domain.User.MaxDisplayNameLength];
+
+        var email = inviteEmail
+                    ?? throw AppException.Validation("This invite is missing an email address.");
+        var user = await guests.GetOrCreateGuestAsync(email, displayName, ct);
+
+        // Member invites: mark accepted when they join from the link.
+        var memberInvite = meeting.Invites.FirstOrDefault(i => i.InviteToken == inviteToken);
+        if (memberInvite is not null && memberInvite.Status == Domain.InviteStatus.Pending)
+            memberInvite.Respond(Domain.InviteStatus.Accepted, time.Now());
+
+        var guestInvite = meeting.GuestInvites.FirstOrDefault(i => i.InviteToken == inviteToken);
+        guestInvite?.SetDisplayName(displayName);
+        guestInvite?.MarkJoined(user.Id, time.Now());
+
+        var now = time.Now();
+        var isHost = meeting.HostId == user.Id;
+        var inLobby = meeting.LobbyEnabled && !isHost;
+        var existing = meeting.Participants.FirstOrDefault(p => p.UserId == user.Id && p.IsPresent);
+        if (existing is null)
+        {
+            db.MeetingParticipants.Add(new Domain.MeetingParticipant(meeting.Id, user.Id, now, inLobby));
+        }
+        else
+        {
+            inLobby = existing.InLobby;
+        }
+
+        await db.SaveChangesAsync(ct);
+        await NotifyAsync(meeting.OrganizationId, ct);
+        await PublishMeetingAsync(meeting.Id, ct);
+
+        var connection = tokens.Issue(
+            meeting.RoomName, user.Id, displayName,
+            canPublish: !inLobby,
+            roomAdmin: isHost);
+        return new GuestJoinDto(
+            meeting.Id, connection.ServerUrl, meeting.RoomName, connection.Token, inLobby, displayName, user.Id);
     }
 
     public async Task<MeetingJoinDto> JoinAsync(Guid userId, Guid meetingId, CancellationToken ct = default)
@@ -494,4 +593,64 @@ public sealed class MeetingService(
                 .OrderBy(p => p.User.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .Select(p => new ReadCursorDto(p.UserId, p.User.DisplayName, p.LastReadAt))
                 .ToList());
+
+    private static List<string> NormalizeEmails(IReadOnlyList<string>? emails) =>
+        (emails ?? [])
+            .Select(e => e.Trim().ToLowerInvariant())
+            .Where(e => e.Length > 0 && e.Contains('@') && !e.Contains(' '))
+            .ToList();
+
+    private async Task<(Domain.Meeting Meeting, string? InviteEmail, string? SuggestedName, string Token)>
+        ResolveInviteTokenAsync(string token, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+            throw AppException.NotFound("Invite");
+
+        var guest = await db.MeetingGuestInvites
+            .Include(i => i.Meeting).ThenInclude(m => m.Host)
+            .Include(i => i.Meeting).ThenInclude(m => m.Invites)
+            .Include(i => i.Meeting).ThenInclude(m => m.GuestInvites)
+            .Include(i => i.Meeting).ThenInclude(m => m.Participants)
+            .FirstOrDefaultAsync(i => i.InviteToken == token, ct);
+        if (guest is not null)
+            return (guest.Meeting, guest.Email, guest.DisplayName, guest.InviteToken);
+
+        var member = await db.MeetingInvites
+            .Include(i => i.User)
+            .Include(i => i.Meeting).ThenInclude(m => m.Host)
+            .Include(i => i.Meeting).ThenInclude(m => m.Invites)
+            .Include(i => i.Meeting).ThenInclude(m => m.GuestInvites)
+            .Include(i => i.Meeting).ThenInclude(m => m.Participants)
+            .FirstOrDefaultAsync(i => i.InviteToken == token, ct)
+            ?? throw AppException.NotFound("Invite");
+
+        return (member.Meeting, member.User.Email, member.User.DisplayName, member.InviteToken);
+    }
+
+    private async Task SendScheduleInviteEmailsAsync(Guid meetingId, string hostName, CancellationToken ct)
+    {
+        var meeting = await db.Meetings
+            .AsNoTracking()
+            .Include(m => m.Host)
+            .Include(m => m.Invites).ThenInclude(i => i.User)
+            .Include(m => m.GuestInvites)
+            .FirstAsync(m => m.Id == meetingId, ct);
+
+        foreach (var invite in meeting.Invites)
+        {
+            if (invite.User.Email is null) continue;
+            var (subject, html) = MeetingInviteMail.Build(
+                meeting.Title, hostName, meeting.StartsAt, meeting.EndsAt, meeting.Description,
+                _urls.JoinUrl(invite.InviteToken), _urls.DesktopDeepLink(invite.InviteToken));
+            await email.SendAsync(invite.User.Email, subject, html, ct);
+        }
+
+        foreach (var invite in meeting.GuestInvites)
+        {
+            var (subject, html) = MeetingInviteMail.Build(
+                meeting.Title, hostName, meeting.StartsAt, meeting.EndsAt, meeting.Description,
+                _urls.JoinUrl(invite.InviteToken), _urls.DesktopDeepLink(invite.InviteToken));
+            await email.SendAsync(invite.Email, subject, html, ct);
+        }
+    }
 }

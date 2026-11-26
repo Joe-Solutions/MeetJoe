@@ -189,6 +189,13 @@ public partial class MainViewModel : ViewModelBase
         _shell = shell;
         Current = shell;
         await shell.InitializeAsync();
+
+        if (App.PendingDeepLink is { Length: > 0 } token)
+        {
+            App.PendingDeepLink = null;
+            shell.ShowCalendar();
+            _ = shell.Calendar.JoinFromInviteTokenAsync(token);
+        }
     }
 
     /// <summary>After leaving the only organization, return to create/join setup while staying signed in.</summary>

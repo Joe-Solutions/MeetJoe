@@ -198,6 +198,7 @@ public class Meeting
     public User Host { get; private set; } = null!;
     public List<MeetingParticipant> Participants { get; private set; } = [];
     public List<MeetingInvite> Invites { get; private set; } = [];
+    public List<MeetingGuestInvite> GuestInvites { get; private set; } = [];
     public List<MeetingRecording> Recordings { get; private set; } = [];
 
     public bool IsActive => EndedAt is null;
@@ -248,6 +249,13 @@ public class Meeting
             meeting.Invites.Add(new MeetingInvite(meeting.Id, inviteeId, now));
 
         return meeting;
+    }
+
+    public MeetingGuestInvite AddGuestInvite(string email, string? displayName, DateTimeOffset now)
+    {
+        var invite = MeetingGuestInvite.Create(Id, email, displayName, now);
+        GuestInvites.Add(invite);
+        return invite;
     }
 
     public void End(DateTimeOffset now)
@@ -355,20 +363,96 @@ public class MeetingParticipant
     }
 }
 
-public class MeetingInvite(Guid meetingId, Guid userId, DateTimeOffset invitedAt)
+public class MeetingInvite
 {
-    public Guid MeetingId { get; private set; } = meetingId;
-    public Guid UserId { get; private set; } = userId;
-    public InviteStatus Status { get; private set; } = InviteStatus.Pending;
-    public DateTimeOffset InvitedAt { get; private set; } = invitedAt;
-    public DateTimeOffset? RespondedAt { get; private set; }
+    private MeetingInvite() { }
 
+    public MeetingInvite(Guid meetingId, Guid userId, DateTimeOffset invitedAt)
+    {
+        MeetingId = meetingId;
+        UserId = userId;
+        InvitedAt = invitedAt;
+        InviteToken = InviteTokens.Create();
+    }
+
+    public Guid MeetingId { get; private set; }
+    public Guid UserId { get; private set; }
+    public InviteStatus Status { get; private set; } = InviteStatus.Pending;
+    public DateTimeOffset InvitedAt { get; private set; }
+    public DateTimeOffset? RespondedAt { get; private set; }
+    /// <summary>Opaque token used in email / deep-link join URLs.</summary>
+    public string InviteToken { get; private set; } = string.Empty;
+
+    public Meeting Meeting { get; private set; } = null!;
     public User User { get; private set; } = null!;
 
     public void Respond(InviteStatus status, DateTimeOffset now)
     {
         Status = status;
         RespondedAt = now;
+    }
+}
+
+/// <summary>Email invite for someone who may not have a MeetJoe account yet (guest join).</summary>
+public class MeetingGuestInvite
+{
+    public const int MaxEmailLength = 254;
+    public const int MaxDisplayNameLength = 80;
+    public const int TokenLength = 43; // base64url of 32 bytes
+
+    private MeetingGuestInvite() { }
+
+    public Guid Id { get; private set; }
+    public Guid MeetingId { get; private set; }
+    public string Email { get; private set; } = string.Empty;
+    public string? DisplayName { get; private set; }
+    public string InviteToken { get; private set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; private set; }
+    public DateTimeOffset? JoinedAt { get; private set; }
+    public Guid? JoinedUserId { get; private set; }
+
+    public Meeting Meeting { get; private set; } = null!;
+    public User? JoinedUser { get; private set; }
+
+    public static MeetingGuestInvite Create(Guid meetingId, string email, string? displayName, DateTimeOffset now)
+    {
+        var normalized = Guard.Required(email, "Email", MaxEmailLength).Trim().ToLowerInvariant();
+        if (!normalized.Contains('@') || normalized.Contains(' '))
+            throw new DomainException("Enter a valid email address.");
+
+        return new MeetingGuestInvite
+        {
+            Id = Guid.CreateVersion7(),
+            MeetingId = meetingId,
+            Email = normalized,
+            DisplayName = Guard.Optional(displayName, "Display name", MaxDisplayNameLength),
+            InviteToken = InviteTokens.Create(),
+            CreatedAt = now,
+        };
+    }
+
+    public void MarkJoined(Guid userId, DateTimeOffset now)
+    {
+        JoinedUserId = userId;
+        JoinedAt ??= now;
+        if (string.IsNullOrWhiteSpace(DisplayName) == false) return;
+    }
+
+    public void SetDisplayName(string displayName) =>
+        DisplayName = Guard.Required(displayName, "Display name", MaxDisplayNameLength);
+}
+
+/// <summary>URL-safe opaque invite tokens for email and deep links.</summary>
+public static class InviteTokens
+{
+    public static string Create()
+    {
+        Span<byte> bytes = stackalloc byte[32];
+        System.Security.Cryptography.RandomNumberGenerator.Fill(bytes);
+        return Convert.ToBase64String(bytes)
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
     }
 }
 

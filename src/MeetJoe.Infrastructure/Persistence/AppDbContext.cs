@@ -25,6 +25,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Meeting> Meetings => Set<Meeting>();
     public DbSet<MeetingParticipant> MeetingParticipants => Set<MeetingParticipant>();
     public DbSet<MeetingInvite> MeetingInvites => Set<MeetingInvite>();
+    public DbSet<MeetingGuestInvite> MeetingGuestInvites => Set<MeetingGuestInvite>();
     public DbSet<MeetingRecording> MeetingRecordings => Set<MeetingRecording>();
     public DbSet<Call> Calls => Set<Call>();
     public DbSet<CallParticipant> CallParticipants => Set<CallParticipant>();
@@ -204,9 +205,23 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
         builder.Entity<MeetingInvite>(e =>
         {
             e.HasKey(x => new { x.MeetingId, x.UserId });
-            e.HasOne<Meeting>().WithMany(m => m.Invites).HasForeignKey(x => x.MeetingId);
+            e.Property(x => x.InviteToken).HasMaxLength(MeetingGuestInvite.TokenLength);
+            e.HasOne(x => x.Meeting).WithMany(m => m.Invites).HasForeignKey(x => x.MeetingId);
             e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId);
             e.HasIndex(x => x.UserId);
+            e.HasIndex(x => x.InviteToken).IsUnique();
+        });
+
+        builder.Entity<MeetingGuestInvite>(e =>
+        {
+            e.Property(x => x.Email).HasMaxLength(MeetingGuestInvite.MaxEmailLength);
+            e.Property(x => x.DisplayName).HasMaxLength(MeetingGuestInvite.MaxDisplayNameLength);
+            e.Property(x => x.InviteToken).HasMaxLength(MeetingGuestInvite.TokenLength);
+            e.HasOne(x => x.Meeting).WithMany(m => m.GuestInvites).HasForeignKey(x => x.MeetingId);
+            e.HasOne(x => x.JoinedUser).WithMany().HasForeignKey(x => x.JoinedUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(x => x.InviteToken).IsUnique();
+            e.HasIndex(x => new { x.MeetingId, x.Email }).IsUnique();
         });
 
         builder.Entity<MeetingRecording>(e =>

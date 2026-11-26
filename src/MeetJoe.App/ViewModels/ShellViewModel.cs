@@ -221,6 +221,8 @@ public partial class ShellViewModel : ViewModelBase
     [RelayCommand]
     private void ReturnToMeeting() => Navigate(_calendarItem);
 
+    public void ShowCalendar() => Navigate(_calendarItem);
+
     [RelayCommand]
     private void ReturnToCall() => Calls.ExpandStageCommand.Execute(null);
 

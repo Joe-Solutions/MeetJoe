@@ -1,5 +1,7 @@
 using MeetJoe.Application.Common;
 using MeetJoe.Domain;
+using MeetJoe.Infrastructure.Email;
+using MeetJoe.Infrastructure.Identity;
 using MeetJoe.Infrastructure.Meetings;
 using MeetJoe.Infrastructure.Persistence;
 using MeetJoe.Infrastructure.Presence;
@@ -58,6 +60,11 @@ public static class DependencyInjection
 
         services.Configure<LiveKitOptions>(configuration.GetSection(LiveKitOptions.Section));
         services.AddSingleton<IMeetingTokenIssuer, LiveKitTokenIssuer>();
+
+        services.Configure<PublicUrlsOptions>(configuration.GetSection(PublicUrlsOptions.Section));
+        services.Configure<EmailOptions>(configuration.GetSection(EmailOptions.Section));
+        services.AddSingleton<IEmailSender, SmtpEmailSender>();
+        services.AddScoped<IGuestAccountService, GuestAccountService>();
 
         return services;
     }

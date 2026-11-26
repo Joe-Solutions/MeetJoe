@@ -16,6 +16,11 @@ internal static class Program
             .SetAutoApplyOnStartup(true)
             .Run();
 
+        // meetjoe://join?token=… from email deep links.
+        MeetJoe.App.App.PendingDeepLink = args
+            .Select(DeepLinkParser.TryParseJoinToken)
+            .FirstOrDefault(t => t is not null);
+
 #if OSX
         if (OperatingSystem.IsMacOS())
         {
