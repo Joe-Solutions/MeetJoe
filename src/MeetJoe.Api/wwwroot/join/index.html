@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Join meeting · MeetJoe</title>
+  <style>
+    :root {
+      --bg: #07111c;
+      --panel: #101a26;
+      --text: #f3f6f8;
+      --muted: #9aa7b5;
+      --accent: #1ec8c8;
+      --border: #243041;
+      --danger: #e35d5d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh;
+      font-family: Manrope, "Segoe UI", system-ui, sans-serif;
+      background:
+        radial-gradient(900px 420px at 10% -10%, rgba(30,200,200,.18), transparent 55%),
+        radial-gradient(700px 380px at 100% 0%, rgba(56,120,220,.16), transparent 50%),
+        var(--bg);
+      color: var(--text);
+      display: grid; place-items: center; padding: 24px;
+    }
+    .card {
+      width: min(440px, 100%);
+      background: rgba(16,26,38,.92);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 28px 26px 24px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.35);
+    }
+    .brand { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 700; margin: 0 0 10px; }
+    h1 { margin: 0 0 8px; font-size: 26px; line-height: 1.2; }
+    .meta { color: var(--muted); font-size: 14px; margin: 0 0 6px; line-height: 1.45; }
+    .desc { color: var(--muted); font-size: 14px; margin: 12px 0 0; white-space: pre-wrap; }
+    label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin: 18px 0 6px; }
+    input {
+      width: 100%; border-radius: 10px; border: 1px solid var(--border);
+      background: #0b1520; color: var(--text); padding: 12px 14px; font: inherit; font-size: 15px;
+    }
+    input:focus { outline: 2px solid rgba(30,200,200,.45); border-color: var(--accent); }
+    .actions { display: grid; gap: 10px; margin-top: 20px; }
+    button, .btn {
+      appearance: none; border: 0; border-radius: 10px; padding: 12px 16px;
+      font: inherit; font-weight: 700; font-size: 14px; cursor: pointer; text-align: center; text-decoration: none;
+    }
+    .primary { background: var(--accent); color: #04262b; }
+    .primary:disabled { opacity: .55; cursor: wait; }
+    .secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+    .error { color: var(--danger); font-size: 13px; margin-top: 12px; }
+    .hint { color: var(--muted); font-size: 12px; margin-top: 14px; line-height: 1.4; }
+    .ended { opacity: .75; }
+  </style>
+</head>
+<body>
+  <main class="card" id="card">
+    <p class="brand">MeetJoe</p>
+    <h1 id="title">Loading invite…</h1>
+    <p class="meta" id="when"></p>
+    <p class="meta" id="host"></p>
+    <p class="desc" id="description" hidden></p>
+    <div id="joinPanel" hidden>
+      <label for="displayName">Your name</label>
+      <input id="displayName" maxlength="80" placeholder="How you’ll appear in the meeting" autocomplete="name" />
+      <div class="actions">
+        <a class="btn secondary" id="openApp" href="#">Open in MeetJoe app</a>
+        <button class="primary" id="joinWeb" type="button">Join in browser</button>
+      </div>
+      <p class="hint">If MeetJoe is installed, the app link opens the meeting there. Otherwise join here with mic and camera.</p>
+    </div>
+    <p class="error" id="error" hidden></p>
+  </main>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const token = params.get("token") || "";
+    const qs = (id) => document.getElementById(id);
+
+    function formatWhen(startsAt, endsAt) {
+      const start = new Date(startsAt);
+      const opts = { weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" };
+      let text = start.toLocaleString(undefined, opts);
+      if (endsAt) {
+        const end = new Date(endsAt);
+        text += " – " + end.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+      }
+      return text;
+    }
+
+    async function load() {
+      if (!token) {
+        qs("title").textContent = "Invite not found";
+        qs("error").hidden = false;
+        qs("error").textContent = "This join link is missing an invite token.";
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/public/meeting-invites/" + encodeURIComponent(token));
+        if (!res.ok) throw new Error("This invite is invalid or has expired.");
+        const invite = await res.json();
+        qs("title").textContent = invite.title;
+        qs("when").textContent = formatWhen(invite.startsAt, invite.endsAt);
+        qs("host").textContent = "Hosted by " + invite.hostName;
+        if (invite.description) {
+          qs("description").hidden = false;
+          qs("description").textContent = invite.description;
+        }
+        qs("openApp").href = invite.desktopDeepLink || ("meetjoe://join?token=" + encodeURIComponent(token));
+        if (invite.suggestedDisplayName) qs("displayName").value = invite.suggestedDisplayName;
+
+        if (invite.hasEnded || !invite.isActive) {
+          qs("card").classList.add("ended");
+          qs("error").hidden = false;
+          qs("error").textContent = "This meeting has ended.";
+          return;
+        }
+
+        qs("joinPanel").hidden = false;
+
+        // Try deep-link once; browser stays on this page as the fallback.
+        try {
+          const iframe = document.createElement("iframe");
+          iframe.style.display = "none";
+          iframe.src = qs("openApp").href;
+          document.body.appendChild(iframe);
+          setTimeout(() => iframe.remove(), 1500);
+        } catch (_) { /* ignore */ }
+      } catch (err) {
+        qs("title").textContent = "Unable to open invite";
+        qs("error").hidden = false;
+        qs("error").textContent = err.message || "Something went wrong.";
+      }
+    }
+
+    qs("joinWeb").addEventListener("click", async () => {
+      const name = qs("displayName").value.trim();
+      if (!name) {
+        qs("error").hidden = false;
+        qs("error").textContent = "Enter your name to join.";
+        return;
+      }
+      qs("joinWeb").disabled = true;
+      qs("error").hidden = true;
+      try {
+        const res = await fetch("/api/public/meeting-invites/" + encodeURIComponent(token) + "/join", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ displayName: name }),
+        });
+        if (!res.ok) {
+          const problem = await res.json().catch(() => null);
+          throw new Error(problem?.detail || "Could not join the meeting.");
+        }
+        const join = await res.json();
+        const meet = new URL("/meet/", location.origin);
+        meet.searchParams.set("u", join.serverUrl);
+        meet.searchParams.set("t", join.token);
+        meet.searchParams.set("guest", "1");
+        if (join.inLobby) meet.searchParams.set("lobby", "1");
+        location.href = meet.toString();
+      } catch (err) {
+        qs("joinWeb").disabled = false;
+        qs("error").hidden = false;
+        qs("error").textContent = err.message || "Could not join the meeting.";
+      }
+    });
+
+    load();
+  </script>
+</body>
+</html>

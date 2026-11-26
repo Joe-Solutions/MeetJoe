@@ -1096,6 +1096,7 @@ public partial class CalendarViewModel : ViewModelBase
     public ObservableCollection<CalendarDayCellViewModel> MonthDays { get; } = [];
     public ObservableCollection<MeetingViewModel> SelectedDayMeetings { get; } = [];
     public ObservableCollection<PersonViewModel> ScheduleInvitees { get; } = [];
+    public ObservableCollection<string> ScheduleGuestEmails { get; } = [];
     public ObservableCollection<PersonViewModel> ScheduleInviteSuggestions { get; } = [];
 
     public IReadOnlyList<RecurrenceOption> RecurrenceOptions { get; } =
@@ -1142,7 +1143,7 @@ public partial class CalendarViewModel : ViewModelBase
     public bool IsInMeeting => Stage is not null;
     public bool HasSelectedDayMeetings => SelectedDayMeetings.Count > 0;
     public bool ShowRecurrenceUntil => ScheduleRecurrence.Kind != RecurrenceKind.None;
-    public bool HasScheduleInvitees => ScheduleInvitees.Count > 0;
+    public bool HasScheduleInvitees => ScheduleInvitees.Count > 0 || ScheduleGuestEmails.Count > 0;
     public bool HasScheduleInviteSuggestions => ScheduleInviteSuggestions.Count > 0;
     public string MonthLabel => DisplayMonth.ToString("MMMM yyyy");
     public string SelectedDayMeetingsHeading =>
@@ -1371,24 +1372,43 @@ public partial class CalendarViewModel : ViewModelBase
     {
         ScheduleInviteStatus = null;
         ErrorMessage = null;
-        var match = ResolveScheduleInvitee();
-        if (match is null)
+        var raw = ScheduleInviteEmail.Trim();
+        if (raw.Length == 0)
         {
-            ScheduleInviteStatus = string.IsNullOrWhiteSpace(ScheduleInviteEmail)
-                ? "Enter an email address to invite someone."
-                : "No one in your organization matches that email.";
+            ScheduleInviteStatus = "Enter an email address to invite someone.";
             ErrorMessage = ScheduleInviteStatus;
             return false;
         }
 
-        if (ScheduleInvitees.Any(p => p.Id == match.Id))
+        var match = ResolveScheduleInvitee();
+        if (match is not null)
+        {
+            if (ScheduleInvitees.All(p => p.Id != match.Id))
+                ScheduleInvitees.Add(match);
+            ScheduleInviteEmail = string.Empty;
+            ScheduleInviteStatus = null;
+            OnPropertyChanged(nameof(HasScheduleInvitees));
+            RefreshScheduleInviteSuggestions();
+            return true;
+        }
+
+        if (!LooksLikeEmail(raw))
+        {
+            ScheduleInviteStatus = "Enter a valid email address.";
+            ErrorMessage = ScheduleInviteStatus;
+            return false;
+        }
+
+        var email = raw.ToLowerInvariant();
+        if (ScheduleGuestEmails.Any(e => e.Equals(email, StringComparison.OrdinalIgnoreCase))
+            || ScheduleInvitees.Any(p => p.Email.Equals(email, StringComparison.OrdinalIgnoreCase)))
         {
             ScheduleInviteEmail = string.Empty;
             RefreshScheduleInviteSuggestions();
             return true;
         }
 
-        ScheduleInvitees.Add(match);
+        ScheduleGuestEmails.Add(email);
         ScheduleInviteEmail = string.Empty;
         ScheduleInviteStatus = null;
         OnPropertyChanged(nameof(HasScheduleInvitees));
@@ -1396,12 +1416,23 @@ public partial class CalendarViewModel : ViewModelBase
         return true;
     }
 
+    private static bool LooksLikeEmail(string value) =>
+        value.Contains('@') && !value.Contains(' ') && value.IndexOf('@') is > 0 and var at
+        && value.IndexOf('.', at) > at + 1;
+
     [RelayCommand]
     private void RemoveScheduleInvite(PersonViewModel person)
     {
         ScheduleInvitees.Remove(person);
         OnPropertyChanged(nameof(HasScheduleInvitees));
         RefreshScheduleInviteSuggestions();
+    }
+
+    [RelayCommand]
+    private void RemoveScheduleGuestEmail(string email)
+    {
+        ScheduleGuestEmails.Remove(email);
+        OnPropertyChanged(nameof(HasScheduleInvitees));
     }
 
     private PersonViewModel? ResolveScheduleInvitee()
@@ -1473,6 +1504,11 @@ public partial class CalendarViewModel : ViewModelBase
             }
 
             var invitees = ScheduleInvitees.Select(p => p.Id).ToList();
+            var inviteEmails = ScheduleInvitees.Select(p => p.Email)
+                .Concat(ScheduleGuestEmails)
+                .Where(e => !string.IsNullOrWhiteSpace(e))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
             await _context.Api.ScheduleMeetingAsync(
                 _context.Organization.Id,
                 new ScheduleMeetingRequest(
@@ -1483,7 +1519,8 @@ public partial class CalendarViewModel : ViewModelBase
                     ScheduleLobbyEnabled,
                     invitees,
                     recurrence,
-                    recurrenceUntil));
+                    recurrenceUntil,
+                    inviteEmails));
 
             ScheduleTitle = string.Empty;
             ScheduleDescription = string.Empty;
@@ -1492,6 +1529,7 @@ public partial class CalendarViewModel : ViewModelBase
             ScheduleRecurrenceUntilText = string.Empty;
             ScheduleInviteEmail = string.Empty;
             ScheduleInvitees.Clear();
+            ScheduleGuestEmails.Clear();
             OnPropertyChanged(nameof(HasScheduleInvitees));
             RefreshScheduleInviteSuggestions();
             await LoadAsync();
@@ -1561,6 +1599,60 @@ public partial class CalendarViewModel : ViewModelBase
 
             await JoinAsync(meeting);
             return Stage?.Id == meetingId;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = Describe.Error(ex);
+            return false;
+        }
+    }
+
+    /// <summary>Join from a meetjoe:// email deep-link token (guest or member).</summary>
+    public async Task<bool> JoinFromInviteTokenAsync(string token)
+    {
+        ErrorMessage = null;
+        try
+        {
+            var invite = await _context.Api.GetGuestMeetingInviteAsync(token);
+            if (invite.HasEnded || !invite.IsActive)
+            {
+                ErrorMessage = "This meeting has ended.";
+                return false;
+            }
+
+            var displayName = invite.SuggestedDisplayName
+                              ?? _context.People.Me.DisplayName
+                              ?? "Guest";
+            var guest = await _context.Api.JoinGuestMeetingInviteAsync(token, displayName);
+            var join = new MeetingJoinDto(
+                guest.MeetingId, guest.ServerUrl, guest.RoomName, guest.Token, guest.InLobby);
+
+            await LoadAsync();
+            var meeting = FindMeeting(guest.MeetingId)
+                          ?? new MeetingViewModel(
+                              new MeetingDto(
+                                  guest.MeetingId,
+                                  invite.Title,
+                                  invite.Description,
+                                  new UserSummaryDto(Guid.Empty, invite.HostName),
+                                  invite.StartsAt,
+                                  invite.StartsAt,
+                                  invite.EndsAt,
+                                  invite.IsActive,
+                                  invite.LobbyEnabled,
+                                  true,
+                                  RecurrenceKind.None,
+                                  null,
+                                  [],
+                                  [],
+                                  [],
+                                  []),
+                              _context.People);
+
+            Stage?.Detach();
+            Stage = new MeetingStageViewModel(meeting, join, _context);
+            if (!join.InLobby) Stage.OpenMediaCommand.Execute(null);
+            return true;
         }
         catch (Exception ex)
         {

@@ -18,6 +18,9 @@ public partial class App : Application
     /// <summary>Desktop host plugs in the OS credential store so sign-in survives restarts.</summary>
     public static Func<ISessionStore>? SessionStoreFactory { get; set; }
 
+    /// <summary>Invite token from a meetjoe://join?token=… deep link, if the process was launched that way.</summary>
+    public static string? PendingDeepLink { get; set; }
+
     public override void RegisterServices()
     {
         base.RegisterServices();

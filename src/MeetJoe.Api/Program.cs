@@ -44,6 +44,11 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<AppExceptionHandler>();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("GuestJoin", policy =>
+        policy.AllowAnyHeader().AllowAnyMethod().SetIsOriginAllowed(_ => true));
+});
 
 // Room for the largest allowed upload (recordings) plus multipart framing.
 builder.WebHost.ConfigureKestrel(kestrel =>
@@ -54,6 +59,7 @@ var app = builder.Build();
 app.UseForwardedHeaders();
 app.UseExceptionHandler();
 app.UseRateLimiter();
+app.UseCors("GuestJoin");
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
