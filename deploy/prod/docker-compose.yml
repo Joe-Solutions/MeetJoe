@@ -60,6 +60,17 @@ services:
       LiveKit__Url: wss://${MEETJOE_API_DOMAIN}
       LiveKit__ApiKey: ${LIVEKIT_API_KEY}
       LiveKit__ApiSecret: ${LIVEKIT_API_SECRET}
+      # Guest invite emails (Amazon SES SMTP — same identity as email-service)
+      PublicUrls__WebBaseUrl: https://${MEETJOE_API_DOMAIN}
+      PublicUrls__DesktopScheme: meetjoe
+      Email__Enabled: ${EMAIL_ENABLED:-false}
+      Email__Host: ${EMAIL_HOST:-}
+      Email__Port: ${EMAIL_PORT:-587}
+      Email__UseSsl: ${EMAIL_USE_SSL:-true}
+      Email__Username: ${EMAIL_USERNAME:-}
+      Email__Password: ${EMAIL_PASSWORD:-}
+      Email__FromAddress: ${EMAIL_FROM_ADDRESS:-noreply@joesolutions.ph}
+      Email__FromName: ${EMAIL_FROM_NAME:-MeetJoe}
     volumes:
       - api-keys:/var/meetjoe/keys
       # Velopack desktop update feed (nupkgs + releases.*.json per RID)
