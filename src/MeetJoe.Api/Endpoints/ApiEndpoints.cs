@@ -50,6 +50,14 @@ internal static class ApiEndpoints
         pub.MapPost("/meeting-invites/{token}/join",
             (string token, GuestJoinRequest request, MeetingService meetings, CancellationToken ct) =>
                 meetings.JoinAsGuestAsync(token, request, ct));
+
+        pub.MapGet("/meeting-invites/{token}/messages",
+            (string token, DateTimeOffset? before, int? limit, MeetingService meetings, CancellationToken ct) =>
+                meetings.GetGuestMeetingMessagesAsync(token, before, limit, ct));
+
+        pub.MapPost("/meeting-invites/{token}/messages",
+            (string token, GuestChatRequest request, MeetingService meetings, CancellationToken ct) =>
+                meetings.SendGuestMeetingChatAsync(token, request, ct));
     }
 
     private static void MapProfile(RouteGroupBuilder api)

@@ -265,6 +265,8 @@ public partial class MeetingStageViewModel : ViewModelBase
     public Func<Task>? ToggleScreenShareHandler { get; set; }
     public Func<string, string, string, Task<bool>>? StartRecordingHandler { get; set; }
     public Func<Task<Guid?>>? StopRecordingHandler { get; set; }
+    /// <summary>Fan meeting chat out to web guests in the LiveKit room.</summary>
+    public Func<string, string, string?, long, Task>? PublishChatHandler { get; set; }
 
     /// <summary>Host-only recording control.</summary>
     public bool CanRecord => Meeting.IsHostedByMe && IsMediaOpen && !InLobby;
@@ -372,6 +374,7 @@ public partial class MeetingStageViewModel : ViewModelBase
         ToggleScreenShareHandler = null;
         StartRecordingHandler = null;
         StopRecordingHandler = null;
+        PublishChatHandler = null;
         _context.Realtime.MeetingUpdated -= OnMeetingUpdated;
         _context.Realtime.MeetingChat -= OnMeetingChat;
         _context.Realtime.ParticipantRemoved -= OnRemoved;
@@ -927,6 +930,21 @@ public partial class MeetingStageViewModel : ViewModelBase
             RoomChatMessageViewModel.TryAdd(ChatMessages, sent, _context);
             RefreshChatSeenBy();
             RequestChatFollow();
+            if (PublishChatHandler is not null && !string.IsNullOrWhiteSpace(sent.Body))
+            {
+                try
+                {
+                    await PublishChatHandler.Invoke(
+                        sent.Id.ToString("D"),
+                        sent.Body,
+                        sent.Sender.DisplayName,
+                        sent.CreatedAt.ToUnixTimeMilliseconds());
+                }
+                catch
+                {
+                    // LiveKit fan-out is best-effort for web guests.
+                }
+            }
         }
         catch
         {
@@ -986,6 +1004,18 @@ public partial class MeetingStageViewModel : ViewModelBase
             UnreadChatCount++;
         else
             _ = MarkMeetingChatReadAsync();
+
+        // Fan guest/API chat into LiveKit so browser guests see desktop (and other) messages live.
+        if (PublishChatHandler is not null
+            && message.Sender.Id != _context.People.MyId
+            && !string.IsNullOrWhiteSpace(message.Body))
+        {
+            _ = PublishChatHandler.Invoke(
+                message.Id.ToString("D"),
+                message.Body,
+                message.Sender.DisplayName,
+                message.CreatedAt.ToUnixTimeMilliseconds());
+        }
     }
 
     private void OnReadReceipt(ReadReceiptDto receipt)

@@ -219,6 +219,24 @@ public sealed class MeetingService(
             meeting.Id, connection.ServerUrl, meeting.RoomName, connection.Token, InLobby: false, displayName, user.Id);
     }
 
+    /// <summary>Load meeting chat for a guest using their invite token (no OpenIddict session).</summary>
+    public async Task<IReadOnlyList<MessageDto>> GetGuestMeetingMessagesAsync(
+        string token, DateTimeOffset? before, int? limit, CancellationToken ct = default)
+    {
+        var (meeting, userId) = await RequireJoinedGuestAsync(token, ct);
+        return await chat.GetMeetingMessagesAsync(userId, meeting.Id, before, limit, ct);
+    }
+
+    /// <summary>Persist guest meeting chat so desktop MeetJoe receives it via SignalR.</summary>
+    public async Task<MessageDto> SendGuestMeetingChatAsync(
+        string token, GuestChatRequest request, CancellationToken ct = default)
+    {
+        var (meeting, userId) = await RequireJoinedGuestAsync(token, ct);
+        if (!meeting.IsActive) throw AppException.Conflict("This meeting has ended.");
+        return await chat.SendAsync(
+            userId, new SendMessageRequest(null, null, request.Body, null, null, meeting.Id), ct);
+    }
+
     public async Task<MeetingJoinDto> JoinAsync(Guid userId, Guid meetingId, CancellationToken ct = default)
     {
         var meeting = await RequireAccessibleAsync(userId, meetingId, ct);
@@ -606,6 +624,27 @@ public sealed class MeetingService(
             .Select(e => e.Trim().ToLowerInvariant())
             .Where(e => e.Length > 0 && e.Contains('@') && !e.Contains(' '))
             .ToList();
+
+    private async Task<(Domain.Meeting Meeting, Guid UserId)> RequireJoinedGuestAsync(
+        string token, CancellationToken ct)
+    {
+        var (meeting, _, _, inviteToken) = await ResolveInviteTokenAsync(token, ct);
+        Guid userId;
+        var guestInvite = meeting.GuestInvites.FirstOrDefault(i => i.InviteToken == inviteToken);
+        if (guestInvite?.JoinedUserId is { } joined)
+            userId = joined;
+        else
+        {
+            var memberInvite = meeting.Invites.FirstOrDefault(i => i.InviteToken == inviteToken)
+                               ?? throw AppException.Validation("Join the meeting before using chat.");
+            userId = memberInvite.UserId;
+        }
+
+        if (!meeting.Participants.Any(p => p.UserId == userId && p.IsPresent && !p.InLobby))
+            throw AppException.Validation("Join the meeting before using chat.");
+
+        return (meeting, userId);
+    }
 
     private async Task<(Domain.Meeting Meeting, string? InviteEmail, string? SuggestedName, string Token)>
         ResolveInviteTokenAsync(string token, CancellationToken ct)
