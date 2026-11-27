@@ -12,6 +12,7 @@ public partial class ActivityItemViewModel(ActivityDto item, PeopleStore people)
     public Guid? ConversationId { get; } = item.ConversationId;
     public Guid? ChannelId { get; } = item.ChannelId;
     public Guid? MeetingId { get; } = item.MeetingId;
+    public Guid? CallId { get; } = item.CallId;
     public ActivityKind Kind { get; } = item.Kind;
     public PersonViewModel Actor { get; } = people.Get(item.Actor);
     public string Summary { get; } = item.Summary;
@@ -52,7 +53,10 @@ public partial class ActivityItemViewModel(ActivityDto item, PeopleStore people)
         Kind is not ActivityKind.MissedCall
         && !string.Equals(Summary, Headline, StringComparison.OrdinalIgnoreCase);
 
+    public bool CanOpenChat => ConversationId is not null || ChannelId is not null;
+
     [ObservableProperty] private bool _isUnread = item.IsUnread;
+    [ObservableProperty] private bool _isSelected;
 }
 
 /// <summary>Payload for a shell toast when someone invites the user to a meeting.</summary>
@@ -79,6 +83,7 @@ public partial class ActivityViewModel : ViewModelBase
     private readonly HashSet<Guid> _knownMentionIds = [];
     private bool _meetingInvitesSeeded;
     private bool _mentionsSeeded;
+    private int _openGeneration;
 
     public ActivityViewModel(SessionContext context)
     {
@@ -87,6 +92,16 @@ public partial class ActivityViewModel : ViewModelBase
     }
 
     public ObservableCollection<ActivityItemViewModel> Items { get; } = [];
+
+    /// <summary>Optional: resolve conversation chrome from the Chat list when already loaded.</summary>
+    public Func<Guid, ConversationViewModel?>? ConversationLookup { get; set; }
+
+    /// <summary>Optional: resolve channel chrome from Workspaces when already loaded.</summary>
+    public Func<Guid, (string Name, string Subtitle)?>? ChannelLookup { get; set; }
+
+    public Action? OpenCalendarHandler { get; set; }
+    public Action? OpenCallsHandler { get; set; }
+    public Func<Guid, Task>? JoinMeetingHandler { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsEmpty))]
@@ -98,8 +113,24 @@ public partial class ActivityViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(HasUnread))]
     private int _unreadCount;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSelection), nameof(ShowEmptyDetail), nameof(ShowThread), nameof(ShowDetailCard))]
+    private ActivityItemViewModel? _selected;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowThread), nameof(ShowDetailCard), nameof(ShowEmptyDetail))]
+    private MessageThreadViewModel? _thread;
+
+    [ObservableProperty] private string _detailTitle = string.Empty;
+    [ObservableProperty] private string _detailSubtitle = string.Empty;
+
     public bool IsEmpty => !IsLoading && Items.Count == 0 && ErrorMessage is null;
     public bool HasUnread => UnreadCount > 0;
+    public bool HasSelection => Selected is not null;
+    public bool ShowThread => Thread is not null;
+    public bool ShowDetailCard => Selected is not null && Thread is null && !CanOpenSelectedAsChat;
+    public bool ShowEmptyDetail => Selected is null;
+    private bool CanOpenSelectedAsChat => Selected?.CanOpenChat == true;
 
     public event Action? UnreadChanged;
 
@@ -115,6 +146,7 @@ public partial class ActivityViewModel : ViewModelBase
     {
         IsLoading = true;
         ErrorMessage = null;
+        var selectedId = Selected?.Id;
         try
         {
             var feed = await _context.Api.GetActivityAsync(_context.Organization.Id);
@@ -124,6 +156,19 @@ public partial class ActivityViewModel : ViewModelBase
             UnreadChanged?.Invoke();
             DetectNewMeetingInvites();
             DetectNewMentions();
+
+            if (selectedId is { } id && Items.FirstOrDefault(i => i.Id == id) is { } match)
+            {
+                match.IsSelected = true;
+                Selected = match;
+            }
+            else
+            {
+                Selected = null;
+                Thread = null;
+                DetailTitle = string.Empty;
+                DetailSubtitle = string.Empty;
+            }
         }
         catch (Exception ex)
         {
@@ -217,6 +262,116 @@ public partial class ActivityViewModel : ViewModelBase
         {
             ErrorMessage = Describe.Error(ex);
         }
+    }
+
+    [RelayCommand]
+    private async Task SelectAsync(ActivityItemViewModel item)
+    {
+        if (Selected is not null) Selected.IsSelected = false;
+        item.IsSelected = true;
+        Selected = item;
+        DetailTitle = item.Headline;
+        DetailSubtitle = item.TimeText;
+
+        if (item.IsUnread)
+            await MarkReadAsync(item);
+
+        var generation = ++_openGeneration;
+        Thread = null;
+
+        if (item.ConversationId is { } conversationId)
+        {
+            await OpenConversationAsync(item, conversationId, generation);
+            return;
+        }
+
+        if (item.ChannelId is { } channelId)
+        {
+            await OpenChannelAsync(item, channelId, generation);
+            return;
+        }
+
+        // Meeting / missed call / other — detail card only.
+        OnPropertyChanged(nameof(ShowDetailCard));
+        OnPropertyChanged(nameof(ShowEmptyDetail));
+        OnPropertyChanged(nameof(ShowThread));
+    }
+
+    private async Task OpenConversationAsync(ActivityItemViewModel item, Guid conversationId, int generation)
+    {
+        var known = ConversationLookup?.Invoke(conversationId);
+        var title = known?.Title ?? item.Actor.DisplayName;
+        var subtitle = known?.Subtitle ?? item.KindLabel;
+        var thread = new MessageThreadViewModel(_context, conversationId, null, title, subtitle,
+            known is { IsGroup: true } ? known.Members.Where(m => !m.IsMe).ToList() : null);
+
+        if (generation != _openGeneration) return;
+        DetailTitle = title;
+        DetailSubtitle = subtitle;
+        Thread = thread;
+
+        try
+        {
+            if (known is not null)
+                thread.ConfigureSeenBy(known.Members, known.ReadCursors.Values);
+            await thread.LoadAsync();
+            if (generation != _openGeneration) return;
+            await _context.Api.MarkConversationReadAsync(conversationId);
+            thread.ApplyReadReceipt(_context.People.MyId, DateTimeOffset.UtcNow, _context.People.Me.DisplayName);
+        }
+        catch (Exception ex)
+        {
+            if (generation == _openGeneration)
+                ErrorMessage = Describe.Error(ex);
+        }
+    }
+
+    private async Task OpenChannelAsync(ActivityItemViewModel item, Guid channelId, int generation)
+    {
+        var known = ChannelLookup?.Invoke(channelId);
+        var title = known?.Name ?? "Channel";
+        var subtitle = known?.Subtitle ?? item.KindLabel;
+        var thread = new MessageThreadViewModel(_context, null, channelId, title, subtitle);
+
+        if (generation != _openGeneration) return;
+        DetailTitle = title;
+        DetailSubtitle = subtitle;
+        Thread = thread;
+
+        try
+        {
+            await thread.LoadAsync();
+            if (generation != _openGeneration) return;
+            await _context.Api.MarkChannelReadAsync(channelId);
+            thread.ApplyReadReceipt(_context.People.MyId, DateTimeOffset.UtcNow, _context.People.Me.DisplayName);
+        }
+        catch (Exception ex)
+        {
+            if (generation == _openGeneration)
+                ErrorMessage = Describe.Error(ex);
+        }
+    }
+
+    [RelayCommand]
+    private void OpenCalendar() => OpenCalendarHandler?.Invoke();
+
+    [RelayCommand]
+    private void OpenCalls() => OpenCallsHandler?.Invoke();
+
+    [RelayCommand]
+    private async Task JoinMeetingAsync()
+    {
+        if (Selected?.MeetingId is not { } meetingId || JoinMeetingHandler is null) return;
+        await JoinMeetingHandler(meetingId);
+    }
+
+    public bool CanJoinMeeting => Selected?.Kind == ActivityKind.MeetingInvite && Selected.MeetingId is not null;
+    public bool CanOpenCalls => Selected?.Kind == ActivityKind.MissedCall;
+
+    partial void OnSelectedChanged(ActivityItemViewModel? value)
+    {
+        OnPropertyChanged(nameof(CanJoinMeeting));
+        OnPropertyChanged(nameof(CanOpenCalls));
     }
 
     private void OnActivityChanged() => _ = LoadAsync();

@@ -397,6 +397,12 @@
     <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
     <Setter Property="BorderThickness" Value="0,0,1,0" />
   </Style>
+  <!-- Activity feed column — glass over theme wallpaper -->
+  <Style Selector="Border.activitylistpane">
+    <Setter Property="Background" Value="{DynamicResource Brush.Glass}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.GlassBorder}" />
+    <Setter Property="BorderThickness" Value="0,0,1,0" />
+  </Style>
   <!-- The optional context panel on the right -->
   <Style Selector="Border.contextpane">
     <Setter Property="Background" Value="{DynamicResource Brush.Panel}" />
@@ -445,6 +451,11 @@
   <Style Selector="Button.activityrow.unread /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="BorderBrush" Value="{DynamicResource Brush.GlassBorder}" />
     <Setter Property="Background" Value="{DynamicResource Brush.GlassRaised}" />
+  </Style>
+  <Style Selector="Button.activityrow.selected /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="BorderBrush" Value="#CCE8F1F5" />
+    <Setter Property="Background" Value="{DynamicResource Brush.GlassRaised}" />
+    <Setter Property="BorderThickness" Value="1" />
   </Style>
   <Style Selector="Border.separator">
     <Setter Property="Height" Value="1" />
