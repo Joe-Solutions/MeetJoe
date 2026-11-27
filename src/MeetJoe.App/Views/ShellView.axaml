@@ -93,6 +93,42 @@
         </TransitioningContentControl>
       </Grid>
 
+      <!-- Spotify mini player while browsing other sections -->
+      <Border VerticalAlignment="Bottom" Margin="16,0,16,16" Padding="12,10" CornerRadius="12" ZIndex="18"
+              Background="{StaticResource Brush.PanelRaised}" BoxShadow="0 8 28 0 #66000000"
+              BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
+              IsVisible="{Binding ShowMusicMiniPlayer}">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+            <Button Classes="ghost square" ToolTip.Tip="Previous"
+                    Command="{Binding Music.PreviousCommand}">
+              <c:Icon Data="{StaticResource Icon.SkipBack}" Size="16" />
+            </Button>
+            <Button Classes="secondary square" ToolTip.Tip="Play / Pause"
+                    Command="{Binding Music.TogglePlayPauseCommand}">
+              <Panel>
+                <c:Icon Data="{StaticResource Icon.Pause}" Size="16" IsVisible="{Binding Music.IsPlaying}" />
+                <c:Icon Data="{StaticResource Icon.Play}" Size="16" IsVisible="{Binding !Music.IsPlaying}" />
+              </Panel>
+            </Button>
+            <Button Classes="ghost square" ToolTip.Tip="Next"
+                    Command="{Binding Music.NextCommand}">
+              <c:Icon Data="{StaticResource Icon.SkipForward}" Size="16" />
+            </Button>
+            <Button Classes="ghost tint" Content="Music" Command="{Binding OpenMusicCommand}" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+            <c:Icon Data="{StaticResource Icon.Music}" Size="18"
+                    TextElement.Foreground="{StaticResource Brush.Accent}" />
+            <StackPanel Spacing="1" VerticalAlignment="Center">
+              <TextBlock FontWeight="SemiBold" FontSize="13" MaxLines="1" TextTrimming="CharacterEllipsis"
+                         Text="{Binding MusicMiniPlayerLine}" />
+              <TextBlock Classes="muted small" Text="Playing on Spotify" />
+            </StackPanel>
+          </StackPanel>
+        </DockPanel>
+      </Border>
+
       <!-- Recovered call without LiveKit media (rare) -->
       <Border VerticalAlignment="Top" Margin="16,12,16,0" Padding="12,10" CornerRadius="12" ZIndex="20"
               Background="{StaticResource Brush.PanelRaised}" BoxShadow="0 8 28 0 #66000000"

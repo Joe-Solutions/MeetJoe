@@ -5,6 +5,13 @@ namespace MeetJoe.App.Services;
 public sealed class AppConfig
 {
     public const string ApiUrlVariable = "MEETJOE_API_URL";
+    public const string SpotifyClientIdVariable = "MEETJOE_SPOTIFY_CLIENT_ID";
+
+    /// <summary>
+    /// MeetJoe Spotify app Client ID (public for PKCE desktop clients — not a secret).
+    /// Override with <see cref="SpotifyClientIdVariable"/> if needed. Never ship a Client Secret.
+    /// </summary>
+    public const string DefaultSpotifyClientId = "beba5aebc4004b36be98cbc5a0de40b2";
 #if DEBUG
     public const string DefaultApiUrl = "http://localhost:5080";
 #else
@@ -13,15 +20,28 @@ public sealed class AppConfig
 
     public Uri ApiBaseUri { get; init; } = new(DefaultApiUrl);
 
+    /// <summary>
+    /// Public Spotify app Client ID (PKCE — no secret).
+    /// </summary>
+    public string SpotifyClientId { get; init; } = DefaultSpotifyClientId;
+
+    public bool HasSpotifyClientId => !string.IsNullOrWhiteSpace(SpotifyClientId);
+
     public static AppConfig FromEnvironment()
     {
         var configured = Environment.GetEnvironmentVariable(ApiUrlVariable);
-        if (!Uri.TryCreate(configured, UriKind.Absolute, out var uri)) return new AppConfig();
+        var fromEnv = Environment.GetEnvironmentVariable(SpotifyClientIdVariable)?.Trim();
+        var spotifyClientId = string.IsNullOrWhiteSpace(fromEnv) ? DefaultSpotifyClientId : fromEnv;
+        if (!Uri.TryCreate(configured, UriKind.Absolute, out var uri))
+        {
+            return new AppConfig { SpotifyClientId = spotifyClientId };
+        }
 
         // Relative request paths resolve against the base, which only works when it ends in a slash.
         return new AppConfig
         {
             ApiBaseUri = uri.AbsoluteUri.EndsWith('/') ? uri : new Uri(uri.AbsoluteUri + '/'),
+            SpotifyClientId = spotifyClientId,
         };
     }
 }

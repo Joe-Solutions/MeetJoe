@@ -6,6 +6,6 @@
     <LangVersion>latest</LangVersion>
     <Company>JoeSolutions</Company>
     <Product>MeetJoe</Product>
-    <Version>0.1.30</Version>
+    <Version>0.1.31</Version>
   </PropertyGroup>
 </Project>

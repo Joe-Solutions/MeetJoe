@@ -494,7 +494,7 @@ public class ShellViewModelTests
         var shell = await ShellAsync();
 
         Assert.Equal(
-            ["Activity", "Chat", "Workspaces", "Calendar", "Calls", "Files"],
+            ["Activity", "Chat", "Workspaces", "Calendar", "Calls", "Files", "Music"],
             shell.RailItems.Select(i => i.Label));
         Assert.Equal("Settings", shell.SettingsItem.Label);
     }

@@ -1,0 +1,218 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeetJoe.App.ViewModels"
+             xmlns:c="using:MeetJoe.App.Controls"
+             x:Class="MeetJoe.App.Views.MusicView"
+             x:DataType="vm:MusicViewModel"
+             Background="{StaticResource Brush.Canvas}">
+  <UserControl.Resources>
+    <DataTemplate x:Key="TrackRowTemplate" x:DataType="vm:MusicTrackItemViewModel">
+      <Border BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,0,1" Padding="0,10">
+        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+          <StackPanel Spacing="2" VerticalAlignment="Center">
+            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" MaxLines="1" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="muted small" MaxLines="1" TextTrimming="CharacterEllipsis">
+              <Run Text="{Binding Artists}" />
+              <Run Text="  ·  " />
+              <Run Text="{Binding AlbumName}" />
+            </TextBlock>
+          </StackPanel>
+          <TextBlock Grid.Column="1" Classes="muted small" VerticalAlignment="Center"
+                     Text="{Binding DurationText}" />
+          <Button Grid.Column="2" Classes="ghost square" ToolTip.Tip="Play on Spotify"
+                  Command="{Binding $parent[UserControl].((vm:MusicViewModel)DataContext).PlayTrackCommand}"
+                  CommandParameter="{Binding}">
+            <c:Icon Data="{StaticResource Icon.Play}" Size="16" />
+          </Button>
+        </Grid>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate x:Key="PlaylistRowTemplate" x:DataType="vm:MusicPlaylistItemViewModel">
+      <Border BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,0,1" Padding="0,8">
+        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+          <Button Classes="ghost" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                  Padding="4,6"
+                  Command="{Binding $parent[UserControl].((vm:MusicViewModel)DataContext).OpenPlaylistCommand}"
+                  CommandParameter="{Binding}">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{Binding Name}" FontWeight="SemiBold" MaxLines="1" TextTrimming="CharacterEllipsis" />
+              <TextBlock Classes="muted small" Text="{Binding Subtitle}" />
+            </StackPanel>
+          </Button>
+          <Button Grid.Column="2" Classes="ghost square" ToolTip.Tip="Play playlist"
+                  Command="{Binding $parent[UserControl].((vm:MusicViewModel)DataContext).PlayPlaylistCommand}"
+                  CommandParameter="{Binding}">
+            <c:Icon Data="{StaticResource Icon.Play}" Size="16" />
+          </Button>
+        </Grid>
+      </Border>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <Grid RowDefinitions="*,Auto">
+    <!-- Connect prompt -->
+    <StackPanel MaxWidth="440" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12"
+                Margin="24" IsVisible="{Binding ShowConnectPrompt}">
+      <Border Width="64" Height="64" CornerRadius="32" Background="{StaticResource Brush.AccentSoft}"
+              HorizontalAlignment="Center">
+        <c:Icon Data="{StaticResource Icon.Music}" Size="28" HorizontalAlignment="Center"
+                VerticalAlignment="Center" TextElement.Foreground="{StaticResource Brush.Accent}" />
+      </Border>
+      <TextBlock Classes="h1" HorizontalAlignment="Center" Text="Music" />
+      <TextBlock Classes="muted" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                 Text="Connect your Spotify account to browse playlists, liked songs, and play on your Spotify devices. MeetJoe does not pay for streams — playback uses your Spotify subscription (Premium for full control)." />
+      <TextBlock Classes="error" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                 Text="{Binding ErrorMessage}"
+                 IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+      <TextBlock Classes="muted small" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                 Text="{Binding StatusMessage}"
+                 IsVisible="{Binding StatusMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+      <Button Classes="primary" HorizontalAlignment="Center" MinWidth="200" Padding="20,10"
+              Content="Connect Spotify" Command="{Binding ConnectCommand}"
+              IsEnabled="{Binding !IsBusy}" />
+      <TextBlock Classes="muted small" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                 IsVisible="{Binding NeedsClientId}"
+                 Text="Developer setup: create a Spotify app, set redirect http://127.0.0.1/callback, export MEETJOE_SPOTIFY_CLIENT_ID. See docs/SPOTIFY_SETUP.md." />
+    </StackPanel>
+
+    <!-- Connected library -->
+    <Grid ColumnDefinitions="200,*" IsVisible="{Binding ShowLibrary}">
+      <Border Classes="listpane" Background="{StaticResource Brush.Panel}">
+        <DockPanel Margin="12,16,12,16">
+          <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="8,0,8,16">
+            <TextBlock Classes="h2" Text="Music" />
+            <TextBlock Classes="muted small" Text="{Binding SpotifyDisplayName}"
+                       IsVisible="{Binding SpotifyDisplayName, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          </StackPanel>
+
+          <Button DockPanel.Dock="Bottom" Classes="ghost" HorizontalAlignment="Stretch"
+                  Content="Disconnect Spotify" Command="{Binding DisconnectCommand}" Margin="0,16,0,0" />
+
+          <StackPanel Spacing="4">
+            <Button Classes="row" Classes.selected="{Binding IsHomeSelected}"
+                    Content="Home" Command="{Binding ShowHomePaneCommand}" />
+            <Button Classes="row" Classes.selected="{Binding IsSearchSelected}"
+                    Content="Search" Command="{Binding ShowSearchPaneCommand}" />
+            <Button Classes="row" Classes.selected="{Binding IsLibrarySelected}"
+                    Content="Liked songs" Command="{Binding ShowLibraryNavCommand}" />
+            <Button Classes="row" Classes.selected="{Binding IsPlaylistsSelected}"
+                    Content="Playlists" Command="{Binding ShowPlaylistsNavCommand}" />
+          </StackPanel>
+        </DockPanel>
+      </Border>
+
+      <Grid Grid.Column="1" RowDefinitions="Auto,*">
+        <Border Classes="stageheader">
+          <DockPanel>
+            <Button DockPanel.Dock="Right" Classes="ghost square" ToolTip.Tip="Refresh"
+                    Command="{Binding RefreshPlaybackCommandCommand}">
+              <c:Icon Data="{StaticResource Icon.Refresh}" Size="17" />
+            </Button>
+            <StackPanel Spacing="2" VerticalAlignment="Center">
+              <TextBlock Classes="h1" Text="Your Spotify" />
+              <TextBlock Classes="muted small"
+                         Text="Play on Spotify — open the Spotify app on a device first." />
+            </StackPanel>
+          </DockPanel>
+        </Border>
+
+        <ScrollViewer Grid.Row="1">
+          <StackPanel Margin="24,12,24,32" Spacing="8">
+            <TextBlock Classes="error" Text="{Binding ErrorMessage}"
+                       IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            <TextBlock Classes="muted" Text="{Binding StatusMessage}"
+                       IsVisible="{Binding StatusMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+            <!-- Detail (playlist tracks) -->
+            <StackPanel Spacing="8" IsVisible="{Binding ShowDetail}">
+              <DockPanel>
+                <Button DockPanel.Dock="Left" Classes="ghost" Content="← Back"
+                        Command="{Binding CloseDetailCommand}" />
+                <TextBlock Classes="h2" VerticalAlignment="Center" Margin="12,0,0,0"
+                           Text="{Binding DetailTitle}" />
+              </DockPanel>
+              <ItemsControl ItemsSource="{Binding DetailTracks}"
+                            ItemTemplate="{StaticResource TrackRowTemplate}" />
+            </StackPanel>
+
+            <!-- Home -->
+            <StackPanel Spacing="16" IsVisible="{Binding ShowHome}">
+              <TextBlock Classes="h2" Text="Recently played" />
+              <ItemsControl ItemsSource="{Binding RecentTracks}"
+                            ItemTemplate="{StaticResource TrackRowTemplate}" />
+              <TextBlock Classes="h2" Margin="0,12,0,0" Text="Playlists" />
+              <ItemsControl ItemsSource="{Binding Playlists}"
+                            ItemTemplate="{StaticResource PlaylistRowTemplate}" />
+            </StackPanel>
+
+            <!-- Search -->
+            <StackPanel Spacing="12" IsVisible="{Binding ShowSearch}">
+              <DockPanel>
+                <Button DockPanel.Dock="Right" Classes="secondary" Content="Search"
+                        Command="{Binding SearchCommand}" Margin="8,0,0,0" />
+                <TextBox Watermark="Search songs or playlists"
+                         Text="{Binding SearchQuery}"
+                         KeyDown="OnSearchKeyDown" />
+              </DockPanel>
+              <TextBlock Classes="h2" Text="Tracks"
+                         IsVisible="{Binding SearchTracks.Count}" />
+              <ItemsControl ItemsSource="{Binding SearchTracks}"
+                            ItemTemplate="{StaticResource TrackRowTemplate}" />
+              <TextBlock Classes="h2" Margin="0,12,0,0" Text="Playlists"
+                         IsVisible="{Binding SearchPlaylists.Count}" />
+              <ItemsControl ItemsSource="{Binding SearchPlaylists}"
+                            ItemTemplate="{StaticResource PlaylistRowTemplate}" />
+            </StackPanel>
+
+            <!-- Liked -->
+            <StackPanel Spacing="8" IsVisible="{Binding ShowLibraryPane}">
+              <TextBlock Classes="h2" Text="Liked songs" />
+              <ItemsControl ItemsSource="{Binding LikedTracks}"
+                            ItemTemplate="{StaticResource TrackRowTemplate}" />
+            </StackPanel>
+
+            <!-- Playlists -->
+            <StackPanel Spacing="8" IsVisible="{Binding ShowPlaylistsPane}">
+              <TextBlock Classes="h2" Text="Your playlists" />
+              <ItemsControl ItemsSource="{Binding Playlists}"
+                            ItemTemplate="{StaticResource PlaylistRowTemplate}" />
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
+    </Grid>
+
+    <!-- Now playing bar (inside Music) -->
+    <Border Grid.Row="1" Background="{StaticResource Brush.PanelRaised}"
+            BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,1,0,0"
+            Padding="16,10" IsVisible="{Binding HasNowPlaying}">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+        <StackPanel Spacing="2" VerticalAlignment="Center">
+          <TextBlock FontWeight="SemiBold" MaxLines="1" TextTrimming="CharacterEllipsis"
+                     Text="{Binding NowPlayingTitle}" />
+          <TextBlock Classes="muted small" MaxLines="1" TextTrimming="CharacterEllipsis">
+            <Run Text="{Binding NowPlayingArtist}" />
+            <Run Text="  ·  " />
+            <Run Text="{Binding NowPlayingDevice}" />
+          </TextBlock>
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <Button Classes="ghost square" ToolTip.Tip="Previous" Command="{Binding PreviousCommand}">
+            <c:Icon Data="{StaticResource Icon.SkipBack}" Size="18" />
+          </Button>
+          <Button Classes="secondary square" ToolTip.Tip="Play / Pause"
+                  Command="{Binding TogglePlayPauseCommand}">
+            <Panel>
+              <c:Icon Data="{StaticResource Icon.Pause}" Size="18" IsVisible="{Binding IsPlaying}" />
+              <c:Icon Data="{StaticResource Icon.Play}" Size="18" IsVisible="{Binding !IsPlaying}" />
+            </Panel>
+          </Button>
+          <Button Classes="ghost square" ToolTip.Tip="Next" Command="{Binding NextCommand}">
+            <c:Icon Data="{StaticResource Icon.SkipForward}" Size="18" />
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>
