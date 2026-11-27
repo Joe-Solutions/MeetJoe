@@ -9,20 +9,31 @@ public interface IOsNotificationService
 {
     /// <summary>Shows a system notification. Safe to call from any thread; failures are ignored.</summary>
     void Show(string title, string body);
+
+    /// <summary>
+    /// Shows a system notification with an optional action (e.g. Show → open a chat).
+    /// <paramref name="actionUri"/> should be a meetjoe:// deep link when provided.
+    /// </summary>
+    void Show(string title, string body, Uri? actionUri, string actionLabel = "Show");
 }
 
 /// <summary>No-op for headless tests.</summary>
 public sealed class NullOsNotificationService : IOsNotificationService
 {
     public void Show(string title, string body) { }
+    public void Show(string title, string body, Uri? actionUri, string actionLabel = "Show") { }
 }
 
 /// <summary>Records notifications for view-model tests.</summary>
 public sealed class RecordingOsNotificationService : IOsNotificationService
 {
-    public List<(string Title, string Body)> Items { get; } = [];
+    public List<(string Title, string Body, Uri? ActionUri, string? ActionLabel)> Items { get; } = [];
 
-    public void Show(string title, string body) => Items.Add((title, body));
+    public void Show(string title, string body) =>
+        Show(title, body, null, "Show");
+
+    public void Show(string title, string body, Uri? actionUri, string actionLabel = "Show") =>
+        Items.Add((title, body, actionUri, actionLabel));
 }
 
 /// <summary>
@@ -31,20 +42,24 @@ public sealed class RecordingOsNotificationService : IOsNotificationService
 /// </summary>
 public sealed class OsNotificationService : IOsNotificationService
 {
-    public void Show(string title, string body)
+    public void Show(string title, string body) =>
+        Show(title, body, null, "Show");
+
+    public void Show(string title, string body, Uri? actionUri, string actionLabel = "Show")
     {
         if (string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(body)) return;
         title = string.IsNullOrWhiteSpace(title) ? "MeetJoe" : title.Trim();
         body = (body ?? string.Empty).Trim();
+        actionLabel = string.IsNullOrWhiteSpace(actionLabel) ? "Show" : actionLabel.Trim();
 
         _ = Task.Run(() =>
         {
             try
             {
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                    ShowMac(title, body);
+                    ShowMac(title, body, actionUri);
                 else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                    ShowWindows(title, body);
+                    ShowWindows(title, body, actionUri, actionLabel);
                 else
                     ShowLinux(title, body);
             }
@@ -55,32 +70,41 @@ public sealed class OsNotificationService : IOsNotificationService
         });
     }
 
-    private static void ShowMac(string title, string body)
+    private static void ShowMac(string title, string body, Uri? actionUri)
     {
-        // display notification appears in Notification Center (same family as the system Alert banner).
+        // Notification Center banner. Clicking it focuses MeetJoe when the pending chat is consumed on Activated.
+        var subtitle = actionUri is null ? "MeetJoe" : "Click MeetJoe or this alert to open";
         var script =
             $"display notification {AppleScriptString(body)} with title {AppleScriptString(title)} " +
-            $"subtitle {AppleScriptString("Scheduled meeting")} sound name \"Glass\"";
+            $"subtitle {AppleScriptString(subtitle)} sound name \"Glass\"";
         Run("osascript", ["-e", script]);
     }
 
-    private static void ShowWindows(string title, string body)
+    private static void ShowWindows(string title, string body, Uri? actionUri, string actionLabel)
     {
-        // Write a small script so quotes/newlines in the meeting title cannot break -Command.
         var scriptPath = Path.Combine(Path.GetTempPath(), $"meetjoe-toast-{Guid.NewGuid():N}.ps1");
         var xmlTitle = XmlEscape(title);
         var xmlBody = XmlEscape(body);
+        var xmlAction = XmlEscape(actionLabel);
         var psTitle = EscapePs(title);
         var psBody = EscapePs(body);
+        var launchAttr = actionUri is null
+            ? ""
+            : $" launch=\"{XmlEscape(actionUri.AbsoluteUri)}\"";
+        var actionXml = actionUri is null
+            ? ""
+            : "<actions>"
+              + $"<action content=\"{xmlAction}\" arguments=\"{XmlEscape(actionUri.AbsoluteUri)}\" activationType=\"protocol\"/>"
+              + "</actions>";
         var script =
             "$ErrorActionPreference = 'Stop'\n" +
             "try {\n" +
             "  [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null\n" +
             "  [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null\n" +
             "  $xml = New-Object Windows.Data.Xml.Dom.XmlDocument\n" +
-            "  $xml.LoadXml('<toast><visual><binding template=\"ToastGeneric\">" +
+            "  $xml.LoadXml('<toast" + launchAttr + "><visual><binding template=\"ToastGeneric\">" +
             $"<text>{xmlTitle}</text><text>{xmlBody}</text>" +
-            "</binding></visual></toast>')\n" +
+            "</binding></visual>" + actionXml + "</toast>')\n" +
             "  $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)\n" +
             "  [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('MeetJoe').Show($toast)\n" +
             "} catch {\n" +
@@ -115,7 +139,6 @@ public sealed class OsNotificationService : IOsNotificationService
 
     private static string AppleScriptString(string value)
     {
-        // AppleScript quoted string with backslash/quote escaping.
         var escaped = value
             .Replace("\\", "\\\\")
             .Replace("\"", "\\\"");

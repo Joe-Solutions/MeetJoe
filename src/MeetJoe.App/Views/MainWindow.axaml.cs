@@ -11,7 +11,16 @@ public partial class MainWindow : Window
     private bool _exitFlowRunning;
     private bool _exitCleanupDone;
 
-    public MainWindow() => InitializeComponent();
+    public MainWindow()
+    {
+        InitializeComponent();
+        // Avalonia exposes Activated as an event (no OnActivated override).
+        Activated += (_, _) =>
+        {
+            if (DataContext is MainViewModel main)
+                _ = main.HandleWindowActivatedAsync();
+        };
+    }
 
     protected override void OnClosing(WindowClosingEventArgs e)
     {

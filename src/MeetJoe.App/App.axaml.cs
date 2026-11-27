@@ -21,6 +21,13 @@ public partial class App : Application
     /// <summary>Invite token from a meetjoe://join?token=… deep link, if the process was launched that way.</summary>
     public static string? PendingDeepLink { get; set; }
 
+    /// <summary>Conversation to open from meetjoe://chat?id=… (mention Show / protocol activation).</summary>
+    public static Guid? PendingChatDeepLink { get; set; }
+
+    /// <summary>Temp file used when a second process (toast Show) forwards a deep link to the running app.</summary>
+    public static string DeepLinkDropPath { get; } =
+        Path.Combine(Path.GetTempPath(), "meetjoe-pending-deeplink.txt");
+
     public override void RegisterServices()
     {
         base.RegisterServices();
