@@ -70,6 +70,7 @@ public partial class App : Application
         services.AddSingleton(config);
         services.AddSingleton(platform);
         services.AddSingleton<ICallTonePlayer, CallTonePlayer>();
+        services.AddSingleton<IOsNotificationService, OsNotificationService>();
         services.AddSingleton<IAppUpdateService>(sp =>
             UpdateServiceFactory?.Invoke(sp.GetRequiredService<AppConfig>())
             ?? new NullAppUpdateService());

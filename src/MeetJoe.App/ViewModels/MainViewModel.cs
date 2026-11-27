@@ -115,6 +115,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly IRealtimeClient _realtime;
     private readonly IPlatformServices _platform;
     private readonly ICallTonePlayer _callTones;
+    private readonly IOsNotificationService _osNotifications;
     private readonly IAppUpdateService _updates;
     private ShellViewModel? _shell;
 
@@ -125,6 +126,7 @@ public partial class MainViewModel : ViewModelBase
         IRealtimeClient realtime,
         IPlatformServices platform,
         ICallTonePlayer? callTones = null,
+        IOsNotificationService? osNotifications = null,
         IAppUpdateService? updates = null)
     {
         _config = config;
@@ -133,6 +135,7 @@ public partial class MainViewModel : ViewModelBase
         _realtime = realtime;
         _platform = platform;
         _callTones = callTones ?? new NullCallTonePlayer();
+        _osNotifications = osNotifications ?? new NullOsNotificationService();
         _updates = updates ?? new NullAppUpdateService();
         _current = NewLogin();
 
@@ -184,7 +187,8 @@ public partial class MainViewModel : ViewModelBase
         people.Get(me.Id, me.DisplayName).ApplyAvatar(me.AvatarUrl);
 
         var shell = new ShellViewModel(
-            new SessionContext(_api, _realtime, _platform, _config, organization, people, _callTones),
+            new SessionContext(
+                _api, _realtime, _platform, _config, organization, people, _callTones, _osNotifications),
             me, _config, () => SignOutAsync(), LeftOrganizationAsync, _updates);
         _shell = shell;
         Current = shell;
