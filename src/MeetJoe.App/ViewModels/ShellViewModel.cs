@@ -44,6 +44,7 @@ public partial class ShellViewModel : ViewModelBase
         Workspaces = new WorkspacesViewModel(context);
         Calendar = new CalendarViewModel(context);
         Files = new FilesViewModel(context);
+        Music = new MusicViewModel(context);
         Settings = new SettingsViewModel(context, me, config, signOut, onLeftOrganization, updates);
 
         Calls = new CallsViewModel(context);
@@ -53,6 +54,7 @@ public partial class ShellViewModel : ViewModelBase
         _calendarItem = new RailItemViewModel("Calendar", "Icon.Calendar", Calendar);
         _callsItem = new RailItemViewModel("Calls", "Icon.Calls", Calls);
         _filesItem = new RailItemViewModel("Files", "Icon.Files", Files);
+        _musicItem = new RailItemViewModel("Music", "Icon.Music", Music);
         RailItems =
         [
             _activityItem,
@@ -61,6 +63,7 @@ public partial class ShellViewModel : ViewModelBase
             _calendarItem,
             _callsItem,
             _filesItem,
+            _musicItem,
         ];
         SettingsItem = new RailItemViewModel("Settings", "Icon.Settings", Settings);
 
@@ -104,6 +107,18 @@ public partial class ShellViewModel : ViewModelBase
             Navigate(_chatItem);
             await Chat.OpenConversationAsync(conversationId);
         };
+        Music.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(MusicViewModel.HasNowPlaying)
+                or nameof(MusicViewModel.NowPlayingLine)
+                or nameof(MusicViewModel.IsPlaying)
+                or nameof(MusicViewModel.NowPlayingTitle)
+                or nameof(MusicViewModel.ActiveUrl))
+            {
+                OnPropertyChanged(nameof(ShowMusicMiniPlayer));
+                OnPropertyChanged(nameof(MusicMiniPlayerLine));
+            }
+        };
         Calendar.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(CalendarViewModel.IsInMeeting)
@@ -111,6 +126,7 @@ public partial class ShellViewModel : ViewModelBase
             {
                 OnPropertyChanged(nameof(ShowMeetingBanner));
                 OnPropertyChanged(nameof(ShowMeetingPip));
+                if (Calendar.IsInMeeting) _ = Music.PauseForCallAsync();
             }
         };
 
@@ -124,6 +140,7 @@ public partial class ShellViewModel : ViewModelBase
     private readonly RailItemViewModel _calendarItem;
     private readonly RailItemViewModel _callsItem;
     private readonly RailItemViewModel _filesItem;
+    private readonly RailItemViewModel _musicItem;
 
     public IReadOnlyList<RailItemViewModel> RailItems { get; }
     public RailItemViewModel SettingsItem { get; }
@@ -134,13 +151,14 @@ public partial class ShellViewModel : ViewModelBase
     public CalendarViewModel Calendar { get; }
     public CallsViewModel Calls { get; }
     public FilesViewModel Files { get; }
+    public MusicViewModel Music { get; }
     public SettingsViewModel Settings { get; }
 
     public PersonViewModel Me => _context.People.Me;
     public string OrganizationName => _context.Organization.Name;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowMeetingBanner), nameof(ShowMeetingPip), nameof(ShowCallStage), nameof(ShowCallBar))]
+    [NotifyPropertyChangedFor(nameof(ShowMeetingBanner), nameof(ShowMeetingPip), nameof(ShowCallStage), nameof(ShowCallBar), nameof(ShowMusicMiniPlayer))]
     private ViewModelBase _current;
 
     [ObservableProperty] private bool _isConnected;
@@ -178,6 +196,12 @@ public partial class ShellViewModel : ViewModelBase
     /// </summary>
     public bool ShowCallBar => Calls.IsInCall && !ShowCallStage && !Calls.HasMedia;
 
+    /// <summary>Compact YouTube now-playing reminder while browsing other rail sections.</summary>
+    public bool ShowMusicMiniPlayer =>
+        Music.HasNowPlaying && !ReferenceEquals(Current, Music);
+
+    public string MusicMiniPlayerLine => Music.NowPlayingLine;
+
     public async Task InitializeAsync()
     {
         await LoadPeopleAsync();
@@ -209,6 +233,7 @@ public partial class ShellViewModel : ViewModelBase
         Workspaces.Detach();
         Calendar.Detach();
         Calls.Detach();
+        Music.Detach();
         await _context.Realtime.StopAsync();
     }
 
@@ -230,9 +255,13 @@ public partial class ShellViewModel : ViewModelBase
             if (Calls.HasMedia) Calls.ExpandStageCommand.Execute(null);
         }
         if (ReferenceEquals(item, _filesItem)) _ = Files.LoadAsync();
+        if (ReferenceEquals(item, _musicItem)) _ = Music.LoadAsync();
     }
 
     public void OpenCalls() => Navigate(_callsItem);
+
+    [RelayCommand]
+    private void OpenMusic() => Navigate(_musicItem);
 
     [RelayCommand]
     private void ReturnToMeeting() => Navigate(_calendarItem);
@@ -342,6 +371,8 @@ public partial class ShellViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowIncomingCall));
         OnPropertyChanged(nameof(ShowCallStage));
         OnPropertyChanged(nameof(ShowCallBar));
+        if (Calls.HasIncoming || Calls.IsInCall || Calls.HasMedia)
+            _ = Music.PauseForCallAsync();
     }
 
     private async Task LoadPeopleAsync()

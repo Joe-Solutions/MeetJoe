@@ -99,6 +99,7 @@
     <DataTemplate DataType="vm:MessageThreadViewModel"><v:MessageThreadView /></DataTemplate>
     <DataTemplate DataType="vm:CalendarViewModel"><v:CalendarView /></DataTemplate>
     <DataTemplate DataType="vm:FilesViewModel"><v:FilesView /></DataTemplate>
+    <DataTemplate DataType="vm:MusicViewModel"><v:MusicView /></DataTemplate>
     <DataTemplate DataType="vm:SettingsViewModel"><v:SettingsView /></DataTemplate>
     <DataTemplate DataType="vm:PlaceholderViewModel"><v:PlaceholderView /></DataTemplate>
     <DataTemplate DataType="vm:ActivityViewModel"><v:ActivityView /></DataTemplate>

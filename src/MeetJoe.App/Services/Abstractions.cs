@@ -16,7 +16,8 @@ public sealed class AppConfig
     public static AppConfig FromEnvironment()
     {
         var configured = Environment.GetEnvironmentVariable(ApiUrlVariable);
-        if (!Uri.TryCreate(configured, UriKind.Absolute, out var uri)) return new AppConfig();
+        if (!Uri.TryCreate(configured, UriKind.Absolute, out var uri))
+            return new AppConfig();
 
         // Relative request paths resolve against the base, which only works when it ends in a slash.
         return new AppConfig

@@ -18,6 +18,10 @@ public partial class ShellView : UserControl
     private bool _callPipActive;
     private FloatingPipDrag? _meetingPipDrag;
     private FloatingPipDrag? _callPipDrag;
+    private FloatingPipDrag? _musicPipDrag;
+    private bool _musicPipLaidOut;
+    private YouTubePlayerHost? _musicHost;
+    private Panel? _musicPlayerSlot;
 
     public ShellView()
     {
@@ -29,8 +33,15 @@ public partial class ShellView : UserControl
 
         _meetingPipDrag = new FloatingPipDrag(MeetingPipRoot, MeetingPipHeader);
         _callPipDrag = new FloatingPipDrag(CallStageRoot, CallStageHeader);
+        _musicPipDrag = new FloatingPipDrag(MusicMiniPlayerRoot, MusicMiniPlayerHandle);
         // Place default PiP once the shell has a real size.
         LayoutUpdated += OnShellLayoutUpdated;
+        MusicView.PlayerSlotChanged += OnMusicPlayerSlotChanged;
+        DetachedFromVisualTree += (_, _) =>
+        {
+            MusicView.PlayerSlotChanged -= OnMusicPlayerSlotChanged;
+            _ = ShutdownMusicHostAsync();
+        };
     }
 
     private Size _lastShellContentSize;
@@ -46,6 +57,8 @@ public partial class ShellView : UserControl
             _meetingPipDrag?.ApplyFloatingLayout(300, 248);
         if (_callPipActive)
             _callPipDrag?.ApplyFloatingLayout(300, 248);
+        if (_vm?.ShowMusicMiniPlayer == true)
+            ApplyMusicMiniPlayerLayout();
     }
 
     private void OnCallChatKeyDown(object? sender, KeyEventArgs e)
@@ -66,6 +79,7 @@ public partial class ShellView : UserControl
             _vm.Calls.ChatFollowRequested -= OnCallChatFollowRequested;
             _vm.Calendar.PropertyChanged -= OnCalendarPropertyChanged;
             MeetingMediaParking.Changed -= OnMeetingMediaParkingChanged;
+            UnbindMusic(_vm.Music);
         }
 
         _vm = vm;
@@ -77,10 +91,134 @@ public partial class ShellView : UserControl
             _vm.Calls.ChatFollowRequested += OnCallChatFollowRequested;
             _vm.Calendar.PropertyChanged += OnCalendarPropertyChanged;
             MeetingMediaParking.Changed += OnMeetingMediaParkingChanged;
+            BindMusic(_vm.Music);
         }
 
         SyncCallStage();
         SyncMeetingPip();
+        SyncMusicPlayerSurface();
+        SyncMusicMiniPlayer();
+    }
+
+    private void BindMusic(MusicViewModel music)
+    {
+        music.NavigateRequested += OnMusicNavigate;
+        music.PauseRequested += OnMusicPause;
+        music.ResumeRequested += OnMusicResume;
+        music.StopRequested += OnMusicStop;
+        music.PropertyChanged += OnMusicPropertyChanged;
+    }
+
+    private void UnbindMusic(MusicViewModel music)
+    {
+        music.NavigateRequested -= OnMusicNavigate;
+        music.PauseRequested -= OnMusicPause;
+        music.ResumeRequested -= OnMusicResume;
+        music.StopRequested -= OnMusicStop;
+        music.PropertyChanged -= OnMusicPropertyChanged;
+    }
+
+    private void OnMusicPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(MusicViewModel.HasPlayer)
+            or nameof(MusicViewModel.ActiveUrl))
+            SyncMusicPlayerSurface();
+    }
+
+    private void OnMusicPlayerSlotChanged(Panel? slot)
+    {
+        _musicPlayerSlot = slot;
+        Dispatcher.UIThread.Post(() =>
+        {
+            // Returning to Music: dock the keep-alive host back into the page slot.
+            // First open after process start with a restored URL: re-fire navigation.
+            if (_vm?.Music.HasPlayer == true && _musicHost is null)
+                _vm.Music.RequestCurrentNavigation();
+            else
+                SyncMusicPlayerSurface();
+        }, DispatcherPriority.Loaded);
+    }
+
+    private void OnMusicNavigate(Uri url)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            EnsureMusicHost();
+            _musicHost?.Show(url);
+            SyncMusicPlayerSurface();
+        }, DispatcherPriority.Loaded);
+    }
+
+    private void OnMusicPause() => _ = _musicHost?.PauseAsync();
+
+    private void OnMusicResume() => _ = _musicHost?.PlayAsync();
+
+    private void OnMusicStop() => _ = ShutdownMusicHostAsync();
+
+    private void EnsureMusicHost()
+    {
+        if (_musicHost is not null) return;
+        _musicHost = new YouTubePlayerHost();
+    }
+
+    private void SyncMusicPlayerSurface()
+    {
+        if (_vm?.Music.HasPlayer != true || _musicHost is null)
+        {
+            // Keep host only while a session is active.
+            if (_vm?.Music.HasPlayer != true && _musicHost is not null)
+                _ = ShutdownMusicHostAsync();
+            return;
+        }
+
+        var keepAlive = _musicPlayerSlot is null;
+        var target = _musicPlayerSlot ?? MusicPlayerKeepAlive;
+        if (!ReferenceEquals(_musicHost.Parent, target))
+        {
+            if (_musicHost.Parent is Panel previous)
+                previous.Children.Remove(_musicHost);
+            target.Children.Clear();
+            target.Children.Add(_musicHost);
+        }
+
+        // Native WKWebView ignores Avalonia Opacity — park it off-screen while browsing.
+        // Also drop MinWidth/MinHeight so the host cannot force a 160×120 logo leak.
+        if (keepAlive)
+        {
+            _musicHost.MinWidth = 1;
+            _musicHost.MinHeight = 1;
+            _musicHost.Width = 1;
+            _musicHost.Height = 1;
+            _musicHost.HorizontalAlignment = HorizontalAlignment.Left;
+            _musicHost.VerticalAlignment = VerticalAlignment.Top;
+            MusicPlayerKeepAlive.Width = 1;
+            MusicPlayerKeepAlive.Height = 1;
+            MusicPlayerKeepAlive.Margin = new Thickness(-4000, -4000, 0, 0);
+        }
+        else
+        {
+            _musicHost.ClearValue(WidthProperty);
+            _musicHost.ClearValue(HeightProperty);
+            _musicHost.MinWidth = 160;
+            _musicHost.MinHeight = 120;
+            _musicHost.HorizontalAlignment = HorizontalAlignment.Stretch;
+            _musicHost.VerticalAlignment = VerticalAlignment.Stretch;
+        }
+    }
+
+    private async Task ShutdownMusicHostAsync()
+    {
+        var host = _musicHost;
+        _musicHost = null;
+        if (host is null) return;
+
+        if (host.Parent is Panel parent)
+            parent.Children.Remove(host);
+        MusicPlayerKeepAlive.Children.Clear();
+        _musicPlayerSlot?.Children.Clear();
+
+        try { await host.ShutdownAsync(); }
+        catch { /* ignore */ }
     }
 
     private void OnCalendarPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -105,11 +243,44 @@ public partial class ShellView : UserControl
         if (e.PropertyName is nameof(ShellViewModel.ShowCallStage)
             or nameof(ShellViewModel.ShowCallBar)
             or nameof(ShellViewModel.Current)
-            or nameof(ShellViewModel.ShowMeetingPip))
+            or nameof(ShellViewModel.ShowMeetingPip)
+            or nameof(ShellViewModel.ShowMusicMiniPlayer))
         {
             SyncCallStage();
             SyncMeetingPip();
+            SyncMusicPlayerSurface();
+            SyncMusicMiniPlayer();
         }
+    }
+
+    private void SyncMusicMiniPlayer()
+    {
+        if (_musicPipDrag is null) return;
+
+        if (_vm?.ShowMusicMiniPlayer != true)
+        {
+            _musicPipDrag.IsEnabled = false;
+            return;
+        }
+
+        _musicPipDrag.IsEnabled = true;
+        ApplyMusicMiniPlayerLayout();
+    }
+
+    private void ApplyMusicMiniPlayerLayout()
+    {
+        if (_musicPipDrag is null) return;
+
+        // First show: top-right (clear of the chat composer). After that, keep wherever the user dragged.
+        if (!_musicPipLaidOut && MusicMiniPlayerRoot.Parent is Control parent && parent.Bounds.Width > 0)
+        {
+            var left = Math.Max(8, parent.Bounds.Width - 320 - 16);
+            _musicPipDrag.ApplyFloatingLayout(320, 56, new Thickness(left, 12, 0, 0));
+            _musicPipLaidOut = true;
+            return;
+        }
+
+        _musicPipDrag.ApplyFloatingLayout(320, 56);
     }
 
     private void OnCallsPropertyChanged(object? sender, PropertyChangedEventArgs e)

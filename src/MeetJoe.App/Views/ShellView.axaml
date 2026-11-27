@@ -33,6 +33,14 @@
     <!-- Wallpaper shows through the glass rail / Activity feed (Teams-style themes). -->
     <v:ThemeBackdrop />
 
+    <!--
+      Off-screen YouTube keep-alive while Music is not on screen (WKWebView ignores Opacity).
+      Shell docks the same host into MusicView.PlayerHost when that page is open.
+    -->
+    <Panel x:Name="MusicPlayerKeepAlive" Width="1" Height="1"
+           HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-4000,-4000,0,0"
+           IsHitTestVisible="False" ZIndex="0" ClipToBounds="True" />
+
     <Grid ColumnDefinitions="80,*">
     <!-- Left rail -->
     <Border Background="{StaticResource Brush.RailGlass}" BorderBrush="#33E8F1F5" BorderThickness="0,0,1,0">
@@ -92,6 +100,38 @@
           </TransitioningContentControl.PageTransition>
         </TransitioningContentControl>
       </Grid>
+
+      <!-- Draggable YouTube mini player (same FloatingPipDrag as call/meeting PiP). -->
+      <Border x:Name="MusicMiniPlayerRoot" Width="320" Height="56" Margin="16,12,0,0"
+              HorizontalAlignment="Left" VerticalAlignment="Top" CornerRadius="12" ZIndex="18"
+              Background="{StaticResource Brush.PanelRaised}" BoxShadow="0 8 28 0 #66000000"
+              BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
+              IsVisible="{Binding ShowMusicMiniPlayer}"
+              ToolTip.Tip="Drag to move">
+        <DockPanel Margin="12,0">
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                      Margin="10,0,0,0">
+            <Button Classes="secondary square" ToolTip.Tip="Play / Pause"
+                    Command="{Binding Music.TogglePlayPauseCommand}">
+              <Panel>
+                <c:Icon Data="{StaticResource Icon.Pause}" Size="16" IsVisible="{Binding Music.IsPlaying}" />
+                <c:Icon Data="{StaticResource Icon.Play}" Size="16" IsVisible="{Binding !Music.IsPlaying}" />
+              </Panel>
+            </Button>
+            <Button Classes="ghost tint" Content="Music" Command="{Binding OpenMusicCommand}" />
+          </StackPanel>
+          <StackPanel x:Name="MusicMiniPlayerHandle" Orientation="Horizontal" Spacing="10"
+                      VerticalAlignment="Center" Background="Transparent">
+            <c:Icon Data="{StaticResource Icon.Music}" Size="18"
+                    TextElement.Foreground="{StaticResource Brush.Accent}" />
+            <StackPanel Spacing="1" VerticalAlignment="Center">
+              <TextBlock FontWeight="SemiBold" FontSize="13" MaxLines="1" TextTrimming="CharacterEllipsis"
+                         Text="{Binding MusicMiniPlayerLine}" />
+              <TextBlock Classes="muted small" Text="Playing on YouTube · drag to move" />
+            </StackPanel>
+          </StackPanel>
+        </DockPanel>
+      </Border>
 
       <!-- Recovered call without LiveKit media (rare) -->
       <Border VerticalAlignment="Top" Margin="16,12,16,0" Padding="12,10" CornerRadius="12" ZIndex="20"

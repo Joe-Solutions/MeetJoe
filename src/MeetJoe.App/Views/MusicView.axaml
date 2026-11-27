@@ -1,0 +1,103 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeetJoe.App.ViewModels"
+             xmlns:c="using:MeetJoe.App.Controls"
+             x:Class="MeetJoe.App.Views.MusicView"
+             x:DataType="vm:MusicViewModel"
+             Background="{StaticResource Brush.Canvas}">
+  <Grid RowDefinitions="Auto,*,Auto">
+    <Border Classes="stageheader">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Button Classes="ghost" Content="Browse YouTube" Command="{Binding OpenYouTubeHomeCommand}" />
+          <Button Classes="secondary" Content="Open" Command="{Binding OpenUrlCommand}" MinWidth="88" />
+        </StackPanel>
+        <StackPanel Spacing="2" VerticalAlignment="Center" Margin="0,0,16,0">
+          <TextBlock Classes="h1" Text="Music" />
+          <TextBlock Classes="muted small" Text="Paste a YouTube link or browse YouTube in MeetJoe." />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <Grid Grid.Row="1" ColumnDefinitions="240,*">
+      <Border Classes="listpane" Background="{StaticResource Brush.Panel}">
+        <DockPanel Margin="12,16,12,16">
+          <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+            <Button DockPanel.Dock="Right" Classes="ghost" Content="Clear"
+                    Command="{Binding ClearRecentCommand}"
+                    IsVisible="{Binding HasRecent}" />
+            <TextBlock Classes="h2" VerticalAlignment="Center" Text="Recent" />
+          </DockPanel>
+          <TextBlock Classes="muted small" Text="No recent links yet."
+                     IsVisible="{Binding !HasRecent}" />
+          <ListBox ItemsSource="{Binding RecentUrls}"
+                   DoubleTapped="OnRecentDoubleTapped">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:MusicRecentItemViewModel">
+                <StackPanel Spacing="2" Margin="4,6">
+                  <TextBlock Text="{Binding Title}" FontWeight="SemiBold" MaxLines="1"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Classes="muted small" Text="{Binding Url}" MaxLines="1"
+                             TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </Border>
+
+      <Grid Grid.Column="1" RowDefinitions="Auto,*">
+        <StackPanel Margin="16,12,16,8" Spacing="8">
+          <TextBox Watermark="https://www.youtube.com/watch?v="
+                   Text="{Binding UrlInput}"
+                   KeyDown="OnUrlKeyDown" />
+          <TextBlock Classes="error" Text="{Binding ErrorMessage}" TextWrapping="Wrap"
+                     IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          <TextBlock Classes="muted small" Text="{Binding StatusMessage}" TextWrapping="Wrap"
+                     IsVisible="{Binding StatusMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+        </StackPanel>
+
+        <Border Grid.Row="1" Margin="16,0,16,16" Background="{StaticResource Brush.Panel}"
+                BorderBrush="{StaticResource Brush.Border}" BorderThickness="1" CornerRadius="8"
+                ClipToBounds="True">
+          <Panel>
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8"
+                        IsVisible="{Binding !HasPlayer}" Margin="24">
+              <Border Width="56" Height="56" CornerRadius="28" Background="{StaticResource Brush.AccentSoft}"
+                      HorizontalAlignment="Center">
+                <c:Icon Data="{StaticResource Icon.Music}" Size="24" HorizontalAlignment="Center"
+                        VerticalAlignment="Center" TextElement.Foreground="{StaticResource Brush.Accent}" />
+              </Border>
+              <TextBlock Classes="muted" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                         Text="Open a YouTube URL to watch or listen here." />
+            </StackPanel>
+            <Panel x:Name="PlayerHost" IsVisible="{Binding HasPlayer}" />
+          </Panel>
+        </Border>
+      </Grid>
+    </Grid>
+
+    <Border Grid.Row="2" Background="{StaticResource Brush.PanelRaised}"
+            BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,0,0,0"
+            Padding="16,10" IsVisible="{Binding HasNowPlaying}">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+        <StackPanel Spacing="2" VerticalAlignment="Center">
+          <TextBlock FontWeight="SemiBold" MaxLines="1" TextTrimming="CharacterEllipsis"
+                     Text="{Binding NowPlayingTitle}" />
+          <TextBlock Classes="muted small" MaxLines="1" TextTrimming="CharacterEllipsis"
+                     Text="{Binding NowPlayingLine}" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <Button Classes="secondary square" ToolTip.Tip="Play / Pause"
+                  Command="{Binding TogglePlayPauseCommand}">
+            <Panel>
+              <c:Icon Data="{StaticResource Icon.Pause}" Size="18" IsVisible="{Binding IsPlaying}" />
+              <c:Icon Data="{StaticResource Icon.Play}" Size="18" IsVisible="{Binding !IsPlaying}" />
+            </Panel>
+          </Button>
+          <Button Classes="ghost" Content="Stop" Command="{Binding StopCommand}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>
