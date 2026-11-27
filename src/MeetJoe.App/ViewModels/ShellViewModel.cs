@@ -134,15 +134,12 @@ public partial class ShellViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowMeetingInviteToast))]
     private MeetingInvitePrompt? _pendingMeetingInvite;
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowMentionToast))]
-    private MentionPrompt? _pendingMention;
+    /// <summary>Latest mention waiting for OS notification click / app activation → open chat.</summary>
+    private MentionPrompt? _pendingOsMention;
+    private DateTimeOffset _pendingOsMentionAt;
 
     /// <summary>Bottom-right toast when someone invites the user into a meeting.</summary>
     public bool ShowMeetingInviteToast => PendingMeetingInvite is not null;
-
-    /// <summary>Bottom-right toast when the user is @mentioned in a group chat.</summary>
-    public bool ShowMentionToast => PendingMention is not null;
 
     /// <summary>Text banner only when the meeting PiP cannot be shown yet.</summary>
     public bool ShowMeetingBanner =>
@@ -264,33 +261,55 @@ public partial class ShellViewModel : ViewModelBase
 
     private void OnIncomingMention(MentionPrompt prompt)
     {
-        PendingMention = prompt;
         if (prompt.ConversationId is { } conversationId)
             Chat.ApplyIncomingMention(conversationId);
+
+        _pendingOsMention = prompt;
+        _pendingOsMentionAt = DateTimeOffset.UtcNow;
+        var action = prompt.ConversationId is { } id
+            ? new Uri($"meetjoe://chat?id={id:D}")
+            : null;
+        // Native macOS / Windows banner with Show (Windows) / click-to-open (macOS).
+        _context.Notifications.Show(
+            "Mentioned",
+            prompt.Summary,
+            action,
+            "Show");
     }
 
-    [RelayCommand]
-    private void DismissMention()
+    /// <summary>Opens a group chat from meetjoe://chat?id=… (notification Show / activation).</summary>
+    public Task OpenChatFromDeepLinkAsync(Guid conversationId) =>
+        OpenConversationFromMentionAsync(conversationId, markActivityId: null);
+
+    /// <summary>
+    /// When the user focuses MeetJoe after a mention OS alert (macOS click / dock),
+    /// open the pending group chat once.
+    /// </summary>
+    public Task TryOpenPendingMentionAsync()
     {
-        var prompt = PendingMention;
-        PendingMention = null;
-        if (prompt is null) return;
-        var item = Activity.Items.FirstOrDefault(i => i.Id == prompt.ActivityId);
-        if (item is not null && item.IsUnread && Activity.MarkReadCommand.CanExecute(item))
-            Activity.MarkReadCommand.Execute(item);
+        var prompt = _pendingOsMention;
+        if (prompt?.ConversationId is not { } conversationId) return Task.CompletedTask;
+        // Ignore stale alerts so ordinary app focus does not jump chats long after the banner.
+        if (DateTimeOffset.UtcNow - _pendingOsMentionAt > TimeSpan.FromMinutes(2))
+        {
+            _pendingOsMention = null;
+            return Task.CompletedTask;
+        }
+
+        _pendingOsMention = null;
+        return OpenConversationFromMentionAsync(conversationId, prompt.ActivityId);
     }
 
-    [RelayCommand]
-    private async Task OpenMentionAsync()
+    private async Task OpenConversationFromMentionAsync(Guid conversationId, Guid? markActivityId)
     {
-        var prompt = PendingMention;
-        if (prompt?.ConversationId is not { } conversationId) return;
+        if (markActivityId is { } activityId)
+        {
+            var item = Activity.Items.FirstOrDefault(i => i.Id == activityId);
+            if (item is not null && item.IsUnread && Activity.MarkReadCommand.CanExecute(item))
+                Activity.MarkReadCommand.Execute(item);
+        }
 
-        PendingMention = null;
-        var item = Activity.Items.FirstOrDefault(i => i.Id == prompt.ActivityId);
-        if (item is not null && item.IsUnread && Activity.MarkReadCommand.CanExecute(item))
-            Activity.MarkReadCommand.Execute(item);
-
+        _pendingOsMention = null;
         Navigate(_chatItem);
         await Chat.OpenConversationAsync(conversationId);
     }

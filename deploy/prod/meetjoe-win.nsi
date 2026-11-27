@@ -35,6 +35,13 @@ Section "Install"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "Publisher" "${APP_PUBLISHER}"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "URLInfoAbout" "${APP_URL}"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "UninstallString" "$\"$INSTDIR\Uninstall.exe$\""
+
+  ; meetjoe:// deep links (invite join + mention Show toast)
+  WriteRegStr HKLM "Software\Classes\meetjoe" "" "URL:MeetJoe"
+  WriteRegStr HKLM "Software\Classes\meetjoe" "URL Protocol" ""
+  WriteRegStr HKLM "Software\Classes\meetjoe\DefaultIcon" "" "$INSTDIR\${APP_EXE},0"
+  WriteRegStr HKLM "Software\Classes\meetjoe\shell\open\command" "" "$\"$INSTDIR\${APP_EXE}$\" $\"%1$\""
+
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 SectionEnd
 
@@ -46,4 +53,5 @@ Section "Uninstall"
   RMDir /r "$INSTDIR"
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}"
   DeleteRegKey HKLM "Software\${APP_PUBLISHER}\${APP_NAME}"
+  DeleteRegKey HKLM "Software\Classes\meetjoe"
 SectionEnd

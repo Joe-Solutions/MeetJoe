@@ -193,6 +193,7 @@ public partial class MainViewModel : ViewModelBase
         _shell = shell;
         Current = shell;
         await shell.InitializeAsync();
+        StartDeepLinkWatch();
 
         if (App.PendingDeepLink is { Length: > 0 } token)
         {
@@ -200,11 +201,97 @@ public partial class MainViewModel : ViewModelBase
             shell.ShowCalendar();
             _ = shell.Calendar.JoinFromInviteTokenAsync(token);
         }
+
+        if (App.PendingChatDeepLink is { } chatId)
+        {
+            App.PendingChatDeepLink = null;
+            _ = shell.OpenChatFromDeepLinkAsync(chatId);
+        }
+    }
+
+    /// <summary>Focus / notification click — open a pending @mention chat when present.</summary>
+    public Task HandleWindowActivatedAsync()
+    {
+        ConsumeDeepLinkDrop();
+        return _shell?.TryOpenPendingMentionAsync() ?? Task.CompletedTask;
+    }
+
+    private CancellationTokenSource? _deepLinkWatch;
+
+    private void StartDeepLinkWatch()
+    {
+        _deepLinkWatch?.Cancel();
+        _deepLinkWatch?.Dispose();
+        var cts = new CancellationTokenSource();
+        _deepLinkWatch = cts;
+        _ = WatchDeepLinkDropAsync(cts.Token);
+    }
+
+    private async Task WatchDeepLinkDropAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try { await Task.Delay(750, ct); }
+            catch (OperationCanceledException) { return; }
+            ConsumeDeepLinkDrop();
+        }
+    }
+
+    private void ConsumeDeepLinkDrop()
+    {
+        try
+        {
+            if (!File.Exists(App.DeepLinkDropPath)) return;
+            var text = File.ReadAllText(App.DeepLinkDropPath).Trim();
+            File.Delete(App.DeepLinkDropPath);
+            if (string.IsNullOrWhiteSpace(text) || _shell is not { } shell) return;
+
+            if (Uri.TryCreate(text, UriKind.Absolute, out var uri)
+                && uri.Scheme.Equals("meetjoe", StringComparison.OrdinalIgnoreCase))
+            {
+                // join?token=
+                foreach (var part in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var pair = part.Split('=', 2);
+                    if (pair.Length == 2
+                        && pair[0].Equals("token", StringComparison.OrdinalIgnoreCase)
+                        && pair[1].Length > 0)
+                    {
+                        shell.ShowCalendar();
+                        _ = shell.Calendar.JoinFromInviteTokenAsync(Uri.UnescapeDataString(pair[1]));
+                        return;
+                    }
+                }
+
+                // chat?id=
+                foreach (var part in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var pair = part.Split('=', 2);
+                    if (pair.Length != 2) continue;
+                    if (!pair[0].Equals("id", StringComparison.OrdinalIgnoreCase)
+                        && !pair[0].Equals("conversationId", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (Guid.TryParse(Uri.UnescapeDataString(pair[1]), out var chatId))
+                    {
+                        _ = shell.OpenChatFromDeepLinkAsync(chatId);
+                        return;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Deep-link handoff is best-effort.
+        }
     }
 
     /// <summary>After leaving the only organization, return to create/join setup while staying signed in.</summary>
     private async Task LeftOrganizationAsync()
     {
+        _deepLinkWatch?.Cancel();
+        _deepLinkWatch?.Dispose();
+        _deepLinkWatch = null;
+
         if (_shell is { } shell)
         {
             _shell = null;
@@ -216,6 +303,10 @@ public partial class MainViewModel : ViewModelBase
 
     public async Task SignOutAsync(string? message = null)
     {
+        _deepLinkWatch?.Cancel();
+        _deepLinkWatch?.Dispose();
+        _deepLinkWatch = null;
+
         if (_shell is { } shell)
         {
             _shell = null;
