@@ -71,6 +71,21 @@ public partial class ShellViewModel : ViewModelBase
         Activity.UnreadChanged += () => _activityItem.Badge = Activity.UnreadCount;
         Activity.IncomingMeetingInvite += OnIncomingMeetingInvite;
         Activity.IncomingMention += OnIncomingMention;
+        Activity.ConversationLookup = id => Chat.Conversations.FirstOrDefault(c => c.Id == id);
+        Activity.ChannelLookup = id =>
+        {
+            var channel = Workspaces.Workspaces.SelectMany(w => w.Channels).FirstOrDefault(c => c.Id == id);
+            return channel is null
+                ? null
+                : (channel.Name, $"{channel.Workspace.Name} · {channel.Workspace.MemberCount} members");
+        };
+        Activity.OpenCalendarHandler = () => ShowCalendar();
+        Activity.OpenCallsHandler = () => OpenCalls();
+        Activity.JoinMeetingHandler = async meetingId =>
+        {
+            Navigate(_calendarItem);
+            await Calendar.JoinFromInviteAsync(meetingId);
+        };
         Chat.UnreadChanged += () => _chatItem.Badge = Chat.UnreadTotal;
         Calls.IncomingChanged += () =>
         {

@@ -5,76 +5,141 @@
              x:Class="MeetJoe.App.Views.ActivityView"
              x:DataType="vm:ActivityViewModel"
              Background="Transparent">
-  <Grid RowDefinitions="Auto,*">
-    <Border Classes="stageheader glassheader">
-      <Grid ColumnDefinitions="*,Auto">
-        <StackPanel VerticalAlignment="Center" Spacing="2">
-          <TextBlock Classes="h1" Text="Activity" />
-          <TextBlock Classes="muted small" Text="Mentions, reactions, replies, and calls" />
-        </StackPanel>
-        <Button Grid.Column="1" Classes="ghost tint" Content="Mark all read"
-                Command="{Binding MarkAllReadCommand}" IsVisible="{Binding HasUnread}" />
+  <Grid ColumnDefinitions="360,*">
+    <!-- Left: glass Activity feed (Teams-style) -->
+    <Border Classes="activitylistpane">
+      <Grid RowDefinitions="Auto,*">
+        <Border Classes="stageheader glassheader">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel VerticalAlignment="Center" Spacing="2">
+              <TextBlock Classes="h1" Text="Activity" />
+              <TextBlock Classes="muted small" Text="Mentions, reactions, replies, and calls" />
+            </StackPanel>
+            <Button Grid.Column="1" Classes="ghost tint" Content="Mark all read"
+                    Command="{Binding MarkAllReadCommand}" IsVisible="{Binding HasUnread}" />
+          </Grid>
+        </Border>
+
+        <ScrollViewer Grid.Row="1" Background="Transparent">
+          <StackPanel Margin="12,12,12,24" Spacing="4">
+            <TextBlock Classes="error" Text="{Binding ErrorMessage}" Margin="4,0,4,8"
+                       IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+            <StackPanel Spacing="8" HorizontalAlignment="Center" Margin="0,72,0,0" IsVisible="{Binding IsEmpty}">
+              <Border Width="56" Height="56" CornerRadius="28" Background="{StaticResource Brush.Glass}"
+                      BorderBrush="{StaticResource Brush.GlassBorder}" BorderThickness="1"
+                      HorizontalAlignment="Center">
+                <c:Icon Data="{StaticResource Icon.Activity}" Size="24" HorizontalAlignment="Center"
+                        VerticalAlignment="Center" TextElement.Foreground="{StaticResource Brush.Accent}" />
+              </Border>
+              <TextBlock Classes="h2" HorizontalAlignment="Center" Text="You're all caught up" />
+              <TextBlock Classes="muted" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                         Text="Replies, reactions, and @mentions will show up here." />
+            </StackPanel>
+
+            <ItemsControl ItemsSource="{Binding Items}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:ActivityItemViewModel">
+                  <Button Classes="activityrow"
+                          Classes.unread="{Binding IsUnread}"
+                          Classes.selected="{Binding IsSelected}"
+                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                          Command="{Binding $parent[UserControl].((vm:ActivityViewModel)DataContext).SelectCommand}"
+                          CommandParameter="{Binding}">
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                      <Panel Width="44" Height="44" VerticalAlignment="Top">
+                        <c:Avatar Width="40" Height="40" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                  DisplayName="{Binding Actor.DisplayName}" Photo="{Binding Actor.Photo}"
+                                  Surface="{StaticResource Brush.GlassRaised}" />
+                        <Border Width="22" Height="22" CornerRadius="11"
+                                HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                Background="{StaticResource Brush.GlassRaised}"
+                                BorderBrush="{StaticResource Brush.Accent}" BorderThickness="1">
+                          <c:Icon Data="{Binding KindIconKey, Converter={x:Static c:IconConverter.Instance}}"
+                                  Size="12" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  TextElement.Foreground="{StaticResource Brush.Accent}" />
+                        </Border>
+                      </Panel>
+
+                      <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Headline}" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{StaticResource Brush.TextPrimary}" TextWrapping="Wrap"
+                                   MaxLines="2" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Summary}" FontSize="12.5" LineHeight="18" TextWrapping="Wrap"
+                                   Foreground="{StaticResource Brush.TextMuted}" MaxLines="2"
+                                   TextTrimming="CharacterEllipsis"
+                                   IsVisible="{Binding ShowSummaryDetail}" />
+                      </StackPanel>
+
+                      <StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Top" Margin="4,2,0,0">
+                        <TextBlock Classes="muted small" HorizontalAlignment="Right" Text="{Binding TimeText}" />
+                        <Border Width="8" Height="8" CornerRadius="4" HorizontalAlignment="Right"
+                                Background="{StaticResource Brush.Accent}" IsVisible="{Binding IsUnread}" />
+                      </StackPanel>
+                    </Grid>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
       </Grid>
     </Border>
 
-    <ScrollViewer Grid.Row="1" Background="Transparent">
-      <StackPanel Margin="24,16,24,28" Spacing="6" MaxWidth="760" HorizontalAlignment="Stretch">
-        <TextBlock Classes="error" Text="{Binding ErrorMessage}" Margin="0,0,0,8"
-                   IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
-
-        <StackPanel Spacing="8" HorizontalAlignment="Center" Margin="0,96,0,0" IsVisible="{Binding IsEmpty}">
-          <Border Width="56" Height="56" CornerRadius="28" Background="{StaticResource Brush.Glass}"
-                  BorderBrush="{StaticResource Brush.GlassBorder}" BorderThickness="1"
-                  HorizontalAlignment="Center">
-            <c:Icon Data="{StaticResource Icon.Activity}" Size="24" HorizontalAlignment="Center"
-                    VerticalAlignment="Center" TextElement.Foreground="{StaticResource Brush.Accent}" />
-          </Border>
-          <TextBlock Classes="h2" HorizontalAlignment="Center" Text="You're all caught up" />
-          <TextBlock Classes="muted" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
-                     Text="Replies, reactions, and @mentions will show up here." />
-        </StackPanel>
-
-        <ItemsControl ItemsSource="{Binding Items}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:ActivityItemViewModel">
-              <Button Classes="activityrow" Classes.unread="{Binding IsUnread}"
-                      HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
-                      Command="{Binding $parent[UserControl].((vm:ActivityViewModel)DataContext).MarkReadCommand}"
-                      CommandParameter="{Binding}">
-                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                  <Panel Width="44" Height="44" VerticalAlignment="Top">
-                    <c:Avatar Width="40" Height="40" HorizontalAlignment="Left" VerticalAlignment="Top"
-                              DisplayName="{Binding Actor.DisplayName}" Photo="{Binding Actor.Photo}"
-                              Surface="{StaticResource Brush.GlassRaised}" />
-                    <Border Width="22" Height="22" CornerRadius="11"
-                            HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                            Background="{StaticResource Brush.GlassRaised}"
-                            BorderBrush="{StaticResource Brush.Accent}" BorderThickness="1">
-                      <c:Icon Data="{Binding KindIconKey, Converter={x:Static c:IconConverter.Instance}}"
-                              Size="12" HorizontalAlignment="Center" VerticalAlignment="Center"
-                              TextElement.Foreground="{StaticResource Brush.Accent}" />
-                    </Border>
-                  </Panel>
-
-                  <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding Headline}" FontSize="13" FontWeight="SemiBold"
-                               Foreground="{StaticResource Brush.TextPrimary}" TextWrapping="Wrap" />
-                    <TextBlock Text="{Binding Summary}" FontSize="13" LineHeight="19" TextWrapping="Wrap"
-                               Foreground="{StaticResource Brush.TextMuted}"
-                               IsVisible="{Binding ShowSummaryDetail}" />
-                  </StackPanel>
-
-                  <StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Top" Margin="8,2,0,0">
-                    <TextBlock Classes="muted small" HorizontalAlignment="Right" Text="{Binding TimeText}" />
-                    <Border Width="8" Height="8" CornerRadius="4" HorizontalAlignment="Right"
-                            Background="{StaticResource Brush.Accent}" IsVisible="{Binding IsUnread}" />
-                  </StackPanel>
-                </Grid>
-              </Button>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
+    <!-- Right: opaque chat / detail stage -->
+    <Panel Grid.Column="1" Background="{StaticResource Brush.Canvas}">
+      <!-- Empty: nothing selected -->
+      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8"
+                  IsVisible="{Binding ShowEmptyDetail}">
+        <TextBlock Classes="h1" HorizontalAlignment="Center" Text="Select an activity" />
+        <TextBlock Classes="muted" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                   MaxWidth="320"
+                   Text="Open a mention, reply, or reaction to jump into the conversation here." />
       </StackPanel>
-    </ScrollViewer>
+
+      <!-- Non-chat detail (meeting invite / missed call) -->
+      <Border MaxWidth="480" HorizontalAlignment="Center" VerticalAlignment="Center"
+              Margin="32" Padding="28" CornerRadius="14"
+              Background="{StaticResource Brush.Panel}" BorderBrush="{StaticResource Brush.Border}"
+              BorderThickness="1" IsVisible="{Binding ShowDetailCard}">
+        <StackPanel Spacing="14">
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <c:Avatar Width="48" Height="48"
+                      DisplayName="{Binding Selected.Actor.DisplayName}"
+                      Photo="{Binding Selected.Actor.Photo}"
+                      Surface="{StaticResource Brush.Canvas}" />
+            <StackPanel VerticalAlignment="Center" Spacing="2">
+              <TextBlock Classes="h2" Text="{Binding DetailTitle}" TextWrapping="Wrap" />
+              <TextBlock Classes="muted small" Text="{Binding DetailSubtitle}" />
+            </StackPanel>
+          </StackPanel>
+          <TextBlock Text="{Binding Selected.Summary}" TextWrapping="Wrap"
+                     Foreground="{StaticResource Brush.TextMuted}" />
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+            <Button Classes="primary" Content="Join meeting"
+                    Command="{Binding JoinMeetingCommand}"
+                    IsVisible="{Binding CanJoinMeeting}" />
+            <Button Classes="secondary" Content="Open calendar"
+                    Command="{Binding OpenCalendarCommand}"
+                    IsVisible="{Binding CanJoinMeeting}" />
+            <Button Classes="primary" Content="Open calls"
+                    Command="{Binding OpenCallsCommand}"
+                    IsVisible="{Binding CanOpenCalls}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- Chat thread -->
+      <Grid RowDefinitions="Auto,*" IsVisible="{Binding ShowThread}">
+        <Border Classes="stageheader">
+          <StackPanel VerticalAlignment="Center" Spacing="2">
+            <TextBlock Classes="h2" Text="{Binding DetailTitle}" MaxLines="1" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="muted small" Text="{Binding DetailSubtitle}" MaxLines="1"
+                       TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+        </Border>
+        <ContentControl Grid.Row="1" Content="{Binding Thread}" />
+      </Grid>
+    </Panel>
   </Grid>
 </UserControl>
