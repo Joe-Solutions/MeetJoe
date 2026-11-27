@@ -35,6 +35,18 @@ Restart MeetJoe after changing the variable. Never set or ship `client_secret` i
 - Full play/pause control usually requires **Spotify Premium**.
 - Tokens stay on the desktop (`LocalApplicationData/MeetJoe/spotify-refresh.bin`). Disconnect clears them.
 
+## 4. Shared test account (org-wide, testing only)
+
+Development Mode only allows ~5 allowlisted Spotify users. For MeetJoe testing you can publish **one** Premium account so every signed-in MeetJoe user uses that library:
+
+1. Deploy an API build that includes `/api/music/spotify/*`.
+2. On a machine, Connect the allowlisted Premium Spotify account.
+3. Music → **Share with MeetJoe (testing)**.
+4. Other MeetJoe users open Music — no personal Connect needed; they search/play the shared account.
+5. Keep the Premium account’s Spotify app open on a device for playback.
+
+Clear with `DELETE /api/music/spotify/shared` or remove `/var/meetjoe/keys/spotify-shared.json` on the API host.
+
 ## 4. Scopes requested
 
 `user-read-private`, `user-read-email`, playlist + library read, recently played, playback state / modify / currently playing.

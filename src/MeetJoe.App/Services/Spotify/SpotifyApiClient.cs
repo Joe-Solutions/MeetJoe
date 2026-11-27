@@ -5,10 +5,22 @@ using System.Text.Json;
 namespace MeetJoe.App.Services.Spotify;
 
 /// <summary>Thin Spotify Web API client for Music v1 (library + Connect control).</summary>
-public sealed class SpotifyApiClient(SpotifyAuthService auth, HttpClient? http = null) : IDisposable
+public sealed class SpotifyApiClient : IDisposable
 {
     private static readonly Uri ApiRoot = new("https://api.spotify.com/v1/");
-    private readonly HttpClient _http = http ?? new HttpClient { BaseAddress = ApiRoot };
+    private readonly Func<CancellationToken, Task<string?>> _getAccessToken;
+    private readonly HttpClient _http;
+
+    public SpotifyApiClient(SpotifyAuthService auth, HttpClient? http = null)
+        : this(ct => auth.GetAccessTokenAsync(ct), http)
+    {
+    }
+
+    public SpotifyApiClient(Func<CancellationToken, Task<string?>> getAccessToken, HttpClient? http = null)
+    {
+        _getAccessToken = getAccessToken;
+        _http = http ?? new HttpClient { BaseAddress = ApiRoot };
+    }
 
     public void Dispose() => _http.Dispose();
 
@@ -214,7 +226,7 @@ public sealed class SpotifyApiClient(SpotifyAuthService auth, HttpClient? http =
     private async Task<HttpResponseMessage> SendAsync(
         HttpMethod method, string relativePath, HttpContent? content, CancellationToken ct)
     {
-        var token = await auth.GetAccessTokenAsync(ct)
+        var token = await _getAccessToken(ct)
                     ?? throw new InvalidOperationException("Connect Spotify first.");
 
         // Absolute Spotify next URLs come back from paging; strip the host.

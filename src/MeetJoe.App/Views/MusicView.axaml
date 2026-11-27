@@ -86,8 +86,16 @@
                        IsVisible="{Binding SpotifyDisplayName, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
           </StackPanel>
 
-          <Button DockPanel.Dock="Bottom" Classes="ghost" HorizontalAlignment="Stretch"
-                  Content="Disconnect Spotify" Command="{Binding DisconnectCommand}" Margin="0,16,0,0" />
+          <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,16,0,0">
+            <Button Classes="secondary" HorizontalAlignment="Stretch"
+                    Content="Share with MeetJoe (testing)"
+                    Command="{Binding ShareWithOrgCommand}"
+                    IsVisible="{Binding CanShareWithOrg}"
+                    ToolTip.Tip="Publishes this Premium Spotify session so every signed-in MeetJoe user can search and play it." />
+            <Button Classes="ghost" HorizontalAlignment="Stretch"
+                    Content="Disconnect Spotify" Command="{Binding DisconnectCommand}"
+                    IsVisible="{Binding CanShareWithOrg}" />
+          </StackPanel>
 
           <StackPanel Spacing="4">
             <Button Classes="row" Classes.selected="{Binding IsHomeSelected}"
@@ -111,8 +119,7 @@
             </Button>
             <StackPanel Spacing="2" VerticalAlignment="Center">
               <TextBlock Classes="h1" Text="Your Spotify" />
-              <TextBlock Classes="muted small"
-                         Text="Play on Spotify — open the Spotify app on a device first." />
+              <TextBlock Classes="muted small" Text="{Binding ConnectionBanner}" TextWrapping="Wrap" />
             </StackPanel>
           </DockPanel>
         </Border>

@@ -179,6 +179,13 @@ public interface IMeetJoeApi
     Task HangUpCallAsync(Guid callId, CancellationToken ct = default);
     Task EndCallAsync(Guid callId, CancellationToken ct = default);
     Task<CallDto> InviteToCallAsync(Guid callId, IReadOnlyList<Guid> userIds, CancellationToken ct = default);
+
+    /// <summary>Org shared Spotify access (testing). Null/unavailable when not published.</summary>
+    Task<SharedSpotifySessionDto> GetSharedSpotifySessionAsync(CancellationToken ct = default);
+
+    Task<SharedSpotifySessionDto> PublishSharedSpotifyAsync(string refreshToken, CancellationToken ct = default);
+
+    Task ClearSharedSpotifyAsync(CancellationToken ct = default);
 }
 
 /// <summary>Live connection to the server. Every event is raised on the UI thread.</summary>

@@ -334,3 +334,18 @@ public record MeetingChatMessageDto(MessageDto Message);
 
 /// <summary>Subset of RFC 9457 problem details that the API returns for every failure.</summary>
 public record ApiProblem(string? Title, string? Detail, int? Status, string? Code);
+
+// ---- Music / Spotify (testing shared account) -----------------------------
+
+/// <summary>
+/// Short-lived Spotify access token for the org's shared Premium test account.
+/// Desktop clients call Spotify Web API with this token when no personal Connect exists.
+/// </summary>
+public record SharedSpotifySessionDto(
+    bool Available,
+    string? AccessToken,
+    int ExpiresInSeconds,
+    string? DisplayName,
+    string Mode);
+
+public record PublishSharedSpotifyRequest(string RefreshToken);

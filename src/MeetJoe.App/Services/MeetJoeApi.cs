@@ -321,6 +321,16 @@ public sealed class MeetJoeApi(HttpClient http, IAuthService auth) : IMeetJoeApi
     public Task<CallDto> InviteToCallAsync(Guid callId, IReadOnlyList<Guid> userIds, CancellationToken ct = default) =>
         SendAsync<CallDto>(HttpMethod.Post, $"api/calls/{callId}/invite", new InviteToCallRequest(userIds), ct);
 
+    public Task<SharedSpotifySessionDto> GetSharedSpotifySessionAsync(CancellationToken ct = default) =>
+        GetAsync<SharedSpotifySessionDto>("api/music/spotify/session", ct);
+
+    public Task<SharedSpotifySessionDto> PublishSharedSpotifyAsync(string refreshToken, CancellationToken ct = default) =>
+        SendAsync<SharedSpotifySessionDto>(
+            HttpMethod.Put, "api/music/spotify/shared", new PublishSharedSpotifyRequest(refreshToken), ct);
+
+    public Task ClearSharedSpotifyAsync(CancellationToken ct = default) =>
+        SendAsync(HttpMethod.Delete, "api/music/spotify/shared", null, ct);
+
     private async Task<T> GetAsync<T>(string path, CancellationToken ct)
     {
         using var response = await http.GetAsync(path, ct);

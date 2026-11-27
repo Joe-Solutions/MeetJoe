@@ -55,6 +55,8 @@ public partial class MusicViewModel : ViewModelBase
     private readonly DispatcherTimer _playbackTimer;
     private CancellationTokenSource? _loadCts;
     private bool _pausedForCall;
+    private string? _sharedAccessToken;
+    private DateTimeOffset _sharedExpiresAt;
 
     public MusicViewModel(SessionContext context, ISpotifyTokenStore? tokenStore = null)
     {
@@ -64,15 +66,16 @@ public partial class MusicViewModel : ViewModelBase
             context.Config.SpotifyClientId,
             store,
             uri => context.Platform.OpenUriAsync(uri));
-        _api = new SpotifyApiClient(_auth);
+        _api = new SpotifyApiClient(ResolveAccessTokenAsync);
 
         _playbackTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
         _playbackTimer.Tick += (_, _) => _ = RefreshPlaybackAsync(silent: true);
 
-        IsConnected = _auth.IsConnected;
         NeedsClientId = !_auth.HasClientId;
-        if (IsConnected)
-            _ = LoadConnectedAsync();
+        CanShareWithOrg = _auth.IsConnected;
+        IsConnected = _auth.IsConnected;
+        // Personal token or org shared session — LoadAsync resolves which.
+        _ = LoadAsync();
     }
 
     public ObservableCollection<MusicPlaylistItemViewModel> Playlists { get; } = [];
@@ -119,8 +122,17 @@ public partial class MusicViewModel : ViewModelBase
     [ObservableProperty] private bool _isPlaying;
     [ObservableProperty] private string? _nowPlayingImageUrl;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ConnectionBanner))]
+    private bool _isSharedMode;
+
+    [ObservableProperty] private bool _canShareWithOrg;
+
     public bool ShowConnectPrompt => !IsConnected;
     public bool ShowLibrary => IsConnected;
+    public string ConnectionBanner => IsSharedMode
+        ? "Using shared test Spotify — open the Spotify app on the Premium account’s device to play."
+        : "Play on Spotify — open the Spotify app on a device first.";
     public bool ShowHome => Pane == MusicPane.Home && !ShowDetail;
     public bool ShowSearch => Pane == MusicPane.Search && !ShowDetail;
     public bool ShowLibraryPane => Pane == MusicPane.Library && !ShowDetail;
@@ -138,8 +150,19 @@ public partial class MusicViewModel : ViewModelBase
 
     public async Task LoadAsync()
     {
-        if (!IsConnected) return;
-        await LoadConnectedAsync();
+        ErrorMessage = null;
+        try
+        {
+            var token = await ResolveAccessTokenAsync();
+            IsConnected = !string.IsNullOrWhiteSpace(token);
+            CanShareWithOrg = _auth.IsConnected;
+            if (!IsConnected) return;
+            await LoadConnectedAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = Describe.Error(ex);
+        }
     }
 
     public void Detach()
@@ -225,6 +248,8 @@ public partial class MusicViewModel : ViewModelBase
         try
         {
             await _auth.ConnectAsync();
+            IsSharedMode = false;
+            CanShareWithOrg = true;
             IsConnected = true;
             StatusMessage = null;
             await LoadConnectedAsync();
@@ -244,11 +269,50 @@ public partial class MusicViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Test-only: publish this machine’s Spotify refresh token so every MeetJoe user
+    /// can search/play that Premium account via the API.
+    /// </summary>
+    [RelayCommand]
+    private async Task ShareWithOrgAsync()
+    {
+        ErrorMessage = null;
+        StatusMessage = null;
+        var refresh = _auth.RefreshToken;
+        if (string.IsNullOrWhiteSpace(refresh))
+        {
+            ErrorMessage = "Connect Spotify on this machine first, then share.";
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var session = await _context.Api.PublishSharedSpotifyAsync(refresh);
+            IsSharedMode = session.Available;
+            if (session.DisplayName is { Length: > 0 } name)
+                SpotifyDisplayName = name + " (shared)";
+            StatusMessage = "Shared with MeetJoe — other signed-in users can use Music now.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = Describe.Error(ex);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
     [RelayCommand]
     private void Disconnect()
     {
         _playbackTimer.Stop();
         _auth.Disconnect();
+        _sharedAccessToken = null;
+        _sharedExpiresAt = default;
+        IsSharedMode = false;
+        CanShareWithOrg = false;
         IsConnected = false;
         SpotifyDisplayName = string.Empty;
         Playlists.Clear();
@@ -261,6 +325,48 @@ public partial class MusicViewModel : ViewModelBase
         ShowDetail = false;
         StatusMessage = null;
         ErrorMessage = null;
+        // Re-try org shared session so other users (and this one) keep Music without personal Connect.
+        _ = LoadAsync();
+    }
+
+    private async Task<string?> ResolveAccessTokenAsync(CancellationToken ct = default)
+    {
+        if (_auth.IsConnected)
+        {
+            var personal = await _auth.GetAccessTokenAsync(ct);
+            if (!string.IsNullOrWhiteSpace(personal))
+            {
+                IsSharedMode = false;
+                return personal;
+            }
+        }
+
+        if (_sharedAccessToken is not null && DateTimeOffset.UtcNow < _sharedExpiresAt.AddMinutes(-1))
+        {
+            IsSharedMode = true;
+            return _sharedAccessToken;
+        }
+
+        try
+        {
+            var session = await _context.Api.GetSharedSpotifySessionAsync(ct);
+            if (session.Available && !string.IsNullOrWhiteSpace(session.AccessToken))
+            {
+                _sharedAccessToken = session.AccessToken;
+                _sharedExpiresAt = DateTimeOffset.UtcNow.AddSeconds(Math.Max(60, session.ExpiresInSeconds));
+                IsSharedMode = true;
+                if (!string.IsNullOrWhiteSpace(session.DisplayName))
+                    SpotifyDisplayName = session.DisplayName + " (shared)";
+                return _sharedAccessToken;
+            }
+        }
+        catch
+        {
+            // Shared endpoint may be unavailable on older API builds.
+        }
+
+        IsSharedMode = false;
+        return null;
     }
 
     [RelayCommand]

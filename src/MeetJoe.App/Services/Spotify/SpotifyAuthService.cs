@@ -44,6 +44,12 @@ public sealed class SpotifyAuthService : IDisposable
     public bool HasRefreshToken => !string.IsNullOrWhiteSpace(_refreshToken);
     public bool IsConnected => HasRefreshToken;
 
+    /// <summary>Current refresh token for publishing to MeetJoe shared testing mode.</summary>
+    public string? RefreshToken
+    {
+        get { lock (_gate) return _refreshToken; }
+    }
+
     public void Dispose() => _http.Dispose();
 
     public async Task ConnectAsync(CancellationToken ct = default)
