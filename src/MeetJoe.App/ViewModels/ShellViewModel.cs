@@ -138,18 +138,11 @@ public partial class ShellViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowMentionToast))]
     private MentionPrompt? _pendingMention;
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowCallDeclinedToast))]
-    private CallDeclinedNotice? _pendingCallDeclined;
-
     /// <summary>Bottom-right toast when someone invites the user into a meeting.</summary>
     public bool ShowMeetingInviteToast => PendingMeetingInvite is not null;
 
     /// <summary>Bottom-right toast when the user is @mentioned in a group chat.</summary>
     public bool ShowMentionToast => PendingMention is not null;
-
-    /// <summary>Bottom-right toast when a callee declines an outgoing ring.</summary>
-    public bool ShowCallDeclinedToast => PendingCallDeclined is not null;
 
     /// <summary>Text banner only when the meeting PiP cannot be shown yet.</summary>
     public bool ShowMeetingBanner =>
@@ -302,12 +295,12 @@ public partial class ShellViewModel : ViewModelBase
         await Chat.OpenConversationAsync(conversationId);
     }
 
-    [RelayCommand]
-    private void DismissCallDeclined() => PendingCallDeclined = null;
-
     private void OnCallDeclined(CallDeclinedNotice notice)
     {
-        PendingCallDeclined = notice;
+        // Native macOS / Windows banner — not an in-app toast.
+        _context.Notifications.Show(
+            "Call declined",
+            $"{notice.Message} They declined the incoming call.");
     }
 
     private void OnCallChromeChanged()
