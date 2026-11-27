@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Avalonia.Platform;
 
 namespace MeetJoe.App.Services;
 
@@ -11,9 +12,14 @@ public interface ICallTonePlayer : IDisposable
     void Stop();
 }
 
-/// <summary>Synthesizes short WAV loops and plays them with the OS audio helper.</summary>
+/// <summary>
+/// Plays the bundled incoming-call MP3 on a loop, and a synthesized ringback for outbound calls.
+/// </summary>
 public sealed class CallTonePlayer : ICallTonePlayer
 {
+    private static readonly Uri IncomingAsset =
+        new("avares://MeetJoe.App/Assets/Sounds/incoming-call.mp3");
+
     private readonly object _gate = new();
     private CancellationTokenSource? _loop;
     private string? _incomingPath;
@@ -66,8 +72,17 @@ public sealed class CallTonePlayer : ICallTonePlayer
         _loop = null;
     }
 
-    private string EnsureIncoming() =>
-        _incomingPath ??= WriteTempWav("meetjoe-ring-in", CallToneWav.BuildIncoming());
+    private string EnsureIncoming()
+    {
+        if (_incomingPath is not null) return _incomingPath;
+
+        var path = Path.Combine(Path.GetTempPath(), $"meetjoe-ring-in-{Guid.NewGuid():N}.mp3");
+        using (var src = AssetLoader.Open(IncomingAsset))
+        using (var dst = File.Create(path))
+            src.CopyTo(dst);
+
+        return _incomingPath = path;
+    }
 
     private string EnsureOutgoing() =>
         _outgoingPath ??= WriteTempWav("meetjoe-ring-out", CallToneWav.BuildOutgoing());
@@ -110,6 +125,12 @@ public sealed class CallTonePlayer : ICallTonePlayer
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
+            if (path.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
+            {
+                await PlayWindowsMp3Async(path, ct);
+                return;
+            }
+
             // Avoid System.Media (Windows-only assembly) so this project builds on macOS CI too.
             var escaped = path.Replace("'", "''");
             await RunAsync("powershell",
@@ -120,10 +141,38 @@ public sealed class CallTonePlayer : ICallTonePlayer
             return;
         }
 
-        // Linux: PulseAudio / ALSA helpers when present.
+        // Linux: prefer helpers that understand MP3, then WAV-capable players.
+        if (path.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
+        {
+            if (await TryRunAsync("ffplay", ["-nodisp", "-autoexit", "-loglevel", "quiet", path], ct)) return;
+            if (await TryRunAsync("mpg123", ["-q", path], ct)) return;
+        }
+
         if (await TryRunAsync("paplay", [path], ct)) return;
         if (await TryRunAsync("aplay", ["-q", path], ct)) return;
         await Task.Delay(2000, ct);
+    }
+
+    /// <summary>WPF MediaPlayer via PowerShell — SoundPlayer cannot decode MP3.</summary>
+    private static Task PlayWindowsMp3Async(string path, CancellationToken ct)
+    {
+        var escaped = path.Replace("'", "''");
+        var script =
+            "Add-Type -AssemblyName PresentationCore; " +
+            "$m = New-Object System.Windows.Media.MediaPlayer; " +
+            $"$m.Open([Uri]::new('{escaped}')); " +
+            "$m.Play(); " +
+            "$sw = [Diagnostics.Stopwatch]::StartNew(); " +
+            "while (-not $m.NaturalDuration.HasTimeSpan) { " +
+            "  if ($sw.ElapsedMilliseconds -gt 8000) { break }; " +
+            "  Start-Sleep -Milliseconds 40 " +
+            "}; " +
+            "if ($m.NaturalDuration.HasTimeSpan) { " +
+            "  $remain = [int]($m.NaturalDuration.TimeSpan.TotalMilliseconds - $sw.ElapsedMilliseconds); " +
+            "  if ($remain -gt 0) { Start-Sleep -Milliseconds $remain } " +
+            "}; " +
+            "$m.Stop(); $m.Close()";
+        return RunAsync("powershell", ["-NoProfile", "-Command", script], ct);
     }
 
     private static async Task<bool> TryRunAsync(string fileName, IReadOnlyList<string> args, CancellationToken ct)
@@ -193,27 +242,10 @@ public sealed class NullCallTonePlayer : ICallTonePlayer
     public void Dispose() { }
 }
 
-/// <summary>Builds compact PCM WAV loops that feel like Teams ring / ringback.</summary>
+/// <summary>Builds a compact PCM WAV loop for outbound ringback.</summary>
 internal static class CallToneWav
 {
     private const int SampleRate = 44_100;
-
-    /// <summary>Incoming: bright two-burst chime, then a short pause (loops).</summary>
-    public static byte[] BuildIncoming()
-    {
-        var samples = new List<float>(SampleRate * 4);
-        // Burst 1 — ascending pair
-        AddTone(samples, 784f, 0.14, 0.42f); // G5
-        AddSilence(samples, 0.06);
-        AddTone(samples, 988f, 0.18, 0.38f); // B5
-        AddSilence(samples, 0.28);
-        // Burst 2 — echo softer
-        AddTone(samples, 784f, 0.12, 0.28f);
-        AddSilence(samples, 0.05);
-        AddTone(samples, 988f, 0.16, 0.24f);
-        AddSilence(samples, 1.55);
-        return ToWav(samples);
-    }
 
     /// <summary>Outgoing: classic dual-tone ringback (~2s on, ~4s off).</summary>
     public static byte[] BuildOutgoing()
@@ -222,17 +254,6 @@ internal static class CallToneWav
         AddDualTone(samples, 440f, 480f, 2.0, 0.32f);
         AddSilence(samples, 4.0);
         return ToWav(samples);
-    }
-
-    private static void AddTone(List<float> samples, float hz, double seconds, float gain)
-    {
-        var count = (int)(SampleRate * seconds);
-        for (var i = 0; i < count; i++)
-        {
-            var t = i / (double)SampleRate;
-            var env = Envelope(i, count, 0.012, 0.04);
-            samples.Add((float)(Math.Sin(2 * Math.PI * hz * t) * gain * env));
-        }
     }
 
     private static void AddDualTone(List<float> samples, float a, float b, double seconds, float gain)
