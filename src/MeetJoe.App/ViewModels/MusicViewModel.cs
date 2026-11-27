@@ -157,7 +157,7 @@ public partial class MusicViewModel : ViewModelBase
         ActiveUrl = url;
         NowPlayingTitle = title;
         IsPlaying = true;
-        StatusMessage = "Playing in MeetJoe — leave Music and audio may stop until you return.";
+        StatusMessage = "Playing in MeetJoe — keeps playing while you browse other sections.";
         Remember(url.AbsoluteUri, title);
         NavigateRequested?.Invoke(url);
     }

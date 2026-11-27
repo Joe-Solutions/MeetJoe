@@ -14,13 +14,13 @@ Rail **Music** (between Files and Settings): paste a YouTube link or browse yout
 3. In-app WebView (same native stack as LiveKit: WKWebView / WebView2)
 4. Recent links (local JSON)
 5. Pause HTML5 / YouTube player when a call or meeting starts
-6. Mini bar while on other rails → Open Music (WebView lives on the Music page)
+6. Mini bar while on other rails → play/pause + Open Music
+7. WebView keep-alive in Shell so audio continues off the Music page
 
 ## Out of scope
 
 - Spotify OAuth / Connect / shared Premium token
 - MeetJoe-paid streaming catalog
-- Background audio when Music view is torn down (return to Music to continue)
 
 ## Done
 

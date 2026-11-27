@@ -33,6 +33,14 @@
     <!-- Wallpaper shows through the glass rail / Activity feed (Teams-style themes). -->
     <v:ThemeBackdrop />
 
+    <!--
+      1×1 YouTube keep-alive while Music is not on screen. Shell docks the same host into
+      MusicView.PlayerHost when that page is open — audio must not stop on rail navigate.
+    -->
+    <Panel x:Name="MusicPlayerKeepAlive" Width="2" Height="2" Opacity="0"
+           HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="0"
+           IsHitTestVisible="False" ZIndex="1" ClipToBounds="True" />
+
     <Grid ColumnDefinitions="80,*">
     <!-- Left rail -->
     <Border Background="{StaticResource Brush.RailGlass}" BorderBrush="#33E8F1F5" BorderThickness="0,0,1,0">
@@ -93,21 +101,29 @@
         </TransitioningContentControl>
       </Grid>
 
-      <!-- YouTube Music reminder while browsing other sections (WebView lives on Music) -->
+      <!-- YouTube keeps playing off Music; mini bar for transport + return -->
       <Border VerticalAlignment="Bottom" Margin="16,0,16,16" Padding="12,10" CornerRadius="12" ZIndex="18"
               Background="{StaticResource Brush.PanelRaised}" BoxShadow="0 8 28 0 #66000000"
               BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
               IsVisible="{Binding ShowMusicMiniPlayer}">
         <DockPanel>
-          <Button DockPanel.Dock="Right" Classes="ghost tint" Content="Open Music"
-                  Command="{Binding OpenMusicCommand}" VerticalAlignment="Center" />
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+            <Button Classes="secondary square" ToolTip.Tip="Play / Pause"
+                    Command="{Binding Music.TogglePlayPauseCommand}">
+              <Panel>
+                <c:Icon Data="{StaticResource Icon.Pause}" Size="16" IsVisible="{Binding Music.IsPlaying}" />
+                <c:Icon Data="{StaticResource Icon.Play}" Size="16" IsVisible="{Binding !Music.IsPlaying}" />
+              </Panel>
+            </Button>
+            <Button Classes="ghost tint" Content="Music" Command="{Binding OpenMusicCommand}" />
+          </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
             <c:Icon Data="{StaticResource Icon.Music}" Size="18"
                     TextElement.Foreground="{StaticResource Brush.Accent}" />
             <StackPanel Spacing="1" VerticalAlignment="Center">
               <TextBlock FontWeight="SemiBold" FontSize="13" MaxLines="1" TextTrimming="CharacterEllipsis"
                          Text="{Binding MusicMiniPlayerLine}" />
-              <TextBlock Classes="muted small" Text="YouTube in Music" />
+              <TextBlock Classes="muted small" Text="Playing on YouTube" />
             </StackPanel>
           </StackPanel>
         </DockPanel>

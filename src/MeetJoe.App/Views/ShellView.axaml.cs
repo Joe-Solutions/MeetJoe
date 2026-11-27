@@ -18,6 +18,8 @@ public partial class ShellView : UserControl
     private bool _callPipActive;
     private FloatingPipDrag? _meetingPipDrag;
     private FloatingPipDrag? _callPipDrag;
+    private YouTubePlayerHost? _musicHost;
+    private Panel? _musicPlayerSlot;
 
     public ShellView()
     {
@@ -31,6 +33,12 @@ public partial class ShellView : UserControl
         _callPipDrag = new FloatingPipDrag(CallStageRoot, CallStageHeader);
         // Place default PiP once the shell has a real size.
         LayoutUpdated += OnShellLayoutUpdated;
+        MusicView.PlayerSlotChanged += OnMusicPlayerSlotChanged;
+        DetachedFromVisualTree += (_, _) =>
+        {
+            MusicView.PlayerSlotChanged -= OnMusicPlayerSlotChanged;
+            _ = ShutdownMusicHostAsync();
+        };
     }
 
     private Size _lastShellContentSize;
@@ -66,6 +74,7 @@ public partial class ShellView : UserControl
             _vm.Calls.ChatFollowRequested -= OnCallChatFollowRequested;
             _vm.Calendar.PropertyChanged -= OnCalendarPropertyChanged;
             MeetingMediaParking.Changed -= OnMeetingMediaParkingChanged;
+            UnbindMusic(_vm.Music);
         }
 
         _vm = vm;
@@ -77,10 +86,107 @@ public partial class ShellView : UserControl
             _vm.Calls.ChatFollowRequested += OnCallChatFollowRequested;
             _vm.Calendar.PropertyChanged += OnCalendarPropertyChanged;
             MeetingMediaParking.Changed += OnMeetingMediaParkingChanged;
+            BindMusic(_vm.Music);
         }
 
         SyncCallStage();
         SyncMeetingPip();
+        SyncMusicPlayerSurface();
+    }
+
+    private void BindMusic(MusicViewModel music)
+    {
+        music.NavigateRequested += OnMusicNavigate;
+        music.PauseRequested += OnMusicPause;
+        music.ResumeRequested += OnMusicResume;
+        music.StopRequested += OnMusicStop;
+        music.PropertyChanged += OnMusicPropertyChanged;
+    }
+
+    private void UnbindMusic(MusicViewModel music)
+    {
+        music.NavigateRequested -= OnMusicNavigate;
+        music.PauseRequested -= OnMusicPause;
+        music.ResumeRequested -= OnMusicResume;
+        music.StopRequested -= OnMusicStop;
+        music.PropertyChanged -= OnMusicPropertyChanged;
+    }
+
+    private void OnMusicPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(MusicViewModel.HasPlayer)
+            or nameof(MusicViewModel.ActiveUrl))
+            SyncMusicPlayerSurface();
+    }
+
+    private void OnMusicPlayerSlotChanged(Panel? slot)
+    {
+        _musicPlayerSlot = slot;
+        Dispatcher.UIThread.Post(() =>
+        {
+            // Returning to Music: dock the keep-alive host back into the page slot.
+            // First open after process start with a restored URL: re-fire navigation.
+            if (_vm?.Music.HasPlayer == true && _musicHost is null)
+                _vm.Music.RequestCurrentNavigation();
+            else
+                SyncMusicPlayerSurface();
+        }, DispatcherPriority.Loaded);
+    }
+
+    private void OnMusicNavigate(Uri url)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            EnsureMusicHost();
+            _musicHost?.Show(url);
+            SyncMusicPlayerSurface();
+        }, DispatcherPriority.Loaded);
+    }
+
+    private void OnMusicPause() => _ = _musicHost?.PauseAsync();
+
+    private void OnMusicResume() => _ = _musicHost?.PlayAsync();
+
+    private void OnMusicStop() => _ = ShutdownMusicHostAsync();
+
+    private void EnsureMusicHost()
+    {
+        if (_musicHost is not null) return;
+        _musicHost = new YouTubePlayerHost();
+    }
+
+    private void SyncMusicPlayerSurface()
+    {
+        if (_vm?.Music.HasPlayer != true || _musicHost is null)
+        {
+            // Keep host only while a session is active.
+            if (_vm?.Music.HasPlayer != true && _musicHost is not null)
+                _ = ShutdownMusicHostAsync();
+            return;
+        }
+
+        var target = _musicPlayerSlot ?? MusicPlayerKeepAlive;
+        if (ReferenceEquals(_musicHost.Parent, target)) return;
+
+        if (_musicHost.Parent is Panel previous)
+            previous.Children.Remove(_musicHost);
+        target.Children.Clear();
+        target.Children.Add(_musicHost);
+    }
+
+    private async Task ShutdownMusicHostAsync()
+    {
+        var host = _musicHost;
+        _musicHost = null;
+        if (host is null) return;
+
+        if (host.Parent is Panel parent)
+            parent.Children.Remove(host);
+        MusicPlayerKeepAlive.Children.Clear();
+        _musicPlayerSlot?.Children.Clear();
+
+        try { await host.ShutdownAsync(); }
+        catch { /* ignore */ }
     }
 
     private void OnCalendarPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -105,10 +211,12 @@ public partial class ShellView : UserControl
         if (e.PropertyName is nameof(ShellViewModel.ShowCallStage)
             or nameof(ShellViewModel.ShowCallBar)
             or nameof(ShellViewModel.Current)
-            or nameof(ShellViewModel.ShowMeetingPip))
+            or nameof(ShellViewModel.ShowMeetingPip)
+            or nameof(ShellViewModel.ShowMusicMiniPlayer))
         {
             SyncCallStage();
             SyncMeetingPip();
+            SyncMusicPlayerSurface();
         }
     }
 
