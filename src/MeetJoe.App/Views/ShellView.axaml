@@ -101,15 +101,14 @@
         </TransitioningContentControl>
       </Grid>
 
-      <!--
-        YouTube mini player — top-right so it never covers Chat/Calls composers at the bottom.
-      -->
-      <Border VerticalAlignment="Top" HorizontalAlignment="Right"
-              Margin="16,12,16,0" MaxWidth="340" MinWidth="220" Padding="12,10" CornerRadius="12" ZIndex="18"
+      <!-- Draggable YouTube mini player (same FloatingPipDrag as call/meeting PiP). -->
+      <Border x:Name="MusicMiniPlayerRoot" Width="320" Height="56" Margin="16,12,0,0"
+              HorizontalAlignment="Left" VerticalAlignment="Top" CornerRadius="12" ZIndex="18"
               Background="{StaticResource Brush.PanelRaised}" BoxShadow="0 8 28 0 #66000000"
               BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
-              IsVisible="{Binding ShowMusicMiniPlayer}">
-        <DockPanel>
+              IsVisible="{Binding ShowMusicMiniPlayer}"
+              ToolTip.Tip="Drag to move">
+        <DockPanel Margin="12,0">
           <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
                       Margin="10,0,0,0">
             <Button Classes="secondary square" ToolTip.Tip="Play / Pause"
@@ -121,13 +120,14 @@
             </Button>
             <Button Classes="ghost tint" Content="Music" Command="{Binding OpenMusicCommand}" />
           </StackPanel>
-          <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <StackPanel x:Name="MusicMiniPlayerHandle" Orientation="Horizontal" Spacing="10"
+                      VerticalAlignment="Center" Background="Transparent">
             <c:Icon Data="{StaticResource Icon.Music}" Size="18"
                     TextElement.Foreground="{StaticResource Brush.Accent}" />
             <StackPanel Spacing="1" VerticalAlignment="Center">
               <TextBlock FontWeight="SemiBold" FontSize="13" MaxLines="1" TextTrimming="CharacterEllipsis"
                          Text="{Binding MusicMiniPlayerLine}" />
-              <TextBlock Classes="muted small" Text="Playing on YouTube" />
+              <TextBlock Classes="muted small" Text="Playing on YouTube · drag to move" />
             </StackPanel>
           </StackPanel>
         </DockPanel>

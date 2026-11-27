@@ -18,6 +18,8 @@ public partial class ShellView : UserControl
     private bool _callPipActive;
     private FloatingPipDrag? _meetingPipDrag;
     private FloatingPipDrag? _callPipDrag;
+    private FloatingPipDrag? _musicPipDrag;
+    private bool _musicPipLaidOut;
     private YouTubePlayerHost? _musicHost;
     private Panel? _musicPlayerSlot;
 
@@ -31,6 +33,7 @@ public partial class ShellView : UserControl
 
         _meetingPipDrag = new FloatingPipDrag(MeetingPipRoot, MeetingPipHeader);
         _callPipDrag = new FloatingPipDrag(CallStageRoot, CallStageHeader);
+        _musicPipDrag = new FloatingPipDrag(MusicMiniPlayerRoot, MusicMiniPlayerHandle);
         // Place default PiP once the shell has a real size.
         LayoutUpdated += OnShellLayoutUpdated;
         MusicView.PlayerSlotChanged += OnMusicPlayerSlotChanged;
@@ -54,6 +57,8 @@ public partial class ShellView : UserControl
             _meetingPipDrag?.ApplyFloatingLayout(300, 248);
         if (_callPipActive)
             _callPipDrag?.ApplyFloatingLayout(300, 248);
+        if (_vm?.ShowMusicMiniPlayer == true)
+            ApplyMusicMiniPlayerLayout();
     }
 
     private void OnCallChatKeyDown(object? sender, KeyEventArgs e)
@@ -92,6 +97,7 @@ public partial class ShellView : UserControl
         SyncCallStage();
         SyncMeetingPip();
         SyncMusicPlayerSurface();
+        SyncMusicMiniPlayer();
     }
 
     private void BindMusic(MusicViewModel music)
@@ -243,7 +249,38 @@ public partial class ShellView : UserControl
             SyncCallStage();
             SyncMeetingPip();
             SyncMusicPlayerSurface();
+            SyncMusicMiniPlayer();
         }
+    }
+
+    private void SyncMusicMiniPlayer()
+    {
+        if (_musicPipDrag is null) return;
+
+        if (_vm?.ShowMusicMiniPlayer != true)
+        {
+            _musicPipDrag.IsEnabled = false;
+            return;
+        }
+
+        _musicPipDrag.IsEnabled = true;
+        ApplyMusicMiniPlayerLayout();
+    }
+
+    private void ApplyMusicMiniPlayerLayout()
+    {
+        if (_musicPipDrag is null) return;
+
+        // First show: top-right (clear of the chat composer). After that, keep wherever the user dragged.
+        if (!_musicPipLaidOut && MusicMiniPlayerRoot.Parent is Control parent && parent.Bounds.Width > 0)
+        {
+            var left = Math.Max(8, parent.Bounds.Width - 320 - 16);
+            _musicPipDrag.ApplyFloatingLayout(320, 56, new Thickness(left, 12, 0, 0));
+            _musicPipLaidOut = true;
+            return;
+        }
+
+        _musicPipDrag.ApplyFloatingLayout(320, 56);
     }
 
     private void OnCallsPropertyChanged(object? sender, PropertyChangedEventArgs e)
