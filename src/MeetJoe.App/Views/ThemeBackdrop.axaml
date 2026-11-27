@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="MeetJoe.App.Views.ThemeBackdrop"
+             IsHitTestVisible="False">
+  <!-- Soft “Teams theme” wallpaper for the shell: vivid teal/amber pools on deep navy. -->
+  <Panel>
+    <Border Background="#07101C" />
+    <Border>
+      <Border.Background>
+        <RadialGradientBrush Center="18%,22%" GradientOrigin="18%,22%" RadiusX="72%" RadiusY="72%">
+          <GradientStop Color="#A028B8A8" Offset="0" />
+          <GradientStop Color="#5520A090" Offset="0.35" />
+          <GradientStop Color="#00071018" Offset="1" />
+        </RadialGradientBrush>
+      </Border.Background>
+    </Border>
+    <Border>
+      <Border.Background>
+        <RadialGradientBrush Center="88%,18%" GradientOrigin="88%,18%" RadiusX="55%" RadiusY="55%">
+          <GradientStop Color="#88C47840" Offset="0" />
+          <GradientStop Color="#44A06030" Offset="0.4" />
+          <GradientStop Color="#00071018" Offset="1" />
+        </RadialGradientBrush>
+      </Border.Background>
+    </Border>
+    <Border>
+      <Border.Background>
+        <RadialGradientBrush Center="72%,88%" GradientOrigin="72%,88%" RadiusX="68%" RadiusY="68%">
+          <GradientStop Color="#772A6FB5" Offset="0" />
+          <GradientStop Color="#331EC8C8" Offset="0.45" />
+          <GradientStop Color="#00071018" Offset="1" />
+        </RadialGradientBrush>
+      </Border.Background>
+    </Border>
+    <Border>
+      <Border.Background>
+        <RadialGradientBrush Center="8%,78%" GradientOrigin="8%,78%" RadiusX="48%" RadiusY="48%">
+          <GradientStop Color="#66E08A4A" Offset="0" />
+          <GradientStop Color="#00071018" Offset="1" />
+        </RadialGradientBrush>
+      </Border.Background>
+    </Border>
+    <!-- Soft vignette so edges stay readable under glass panes -->
+    <Border Opacity="0.55">
+      <Border.Background>
+        <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+          <GradientStop Color="#CC07101C" Offset="0" />
+          <GradientStop Color="#0007101C" Offset="0.18" />
+          <GradientStop Color="#0007101C" Offset="0.82" />
+          <GradientStop Color="#9907101C" Offset="1" />
+        </LinearGradientBrush>
+      </Border.Background>
+    </Border>
+    <Border x:Name="Grain" Opacity="0.55" />
+  </Panel>
+</UserControl>

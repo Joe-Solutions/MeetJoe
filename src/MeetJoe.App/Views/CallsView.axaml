@@ -3,7 +3,8 @@
              xmlns:vm="using:MeetJoe.App.ViewModels"
              xmlns:c="using:MeetJoe.App.Controls"
              x:Class="MeetJoe.App.Views.CallsView"
-             x:DataType="vm:CallsViewModel">
+             x:DataType="vm:CallsViewModel"
+             Background="{StaticResource Brush.Canvas}">
   <!-- History only — active call chrome lives on the shell so it stays in-app across sections. -->
   <Grid RowDefinitions="Auto,*">
     <Border Classes="stageheader">

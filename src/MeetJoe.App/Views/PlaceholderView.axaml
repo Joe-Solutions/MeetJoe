@@ -2,7 +2,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:MeetJoe.App.ViewModels"
              x:Class="MeetJoe.App.Views.PlaceholderView"
-             x:DataType="vm:PlaceholderViewModel">
+             x:DataType="vm:PlaceholderViewModel"
+             Background="{StaticResource Brush.Canvas}">
   <Grid RowDefinitions="Auto,*">
     <Border Classes="stageheader">
       <TextBlock Classes="h1" VerticalAlignment="Center" Text="{Binding Title}" />

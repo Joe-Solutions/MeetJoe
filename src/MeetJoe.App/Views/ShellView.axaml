@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:MeetJoe.App.ViewModels"
              xmlns:c="using:MeetJoe.App.Controls"
+             xmlns:v="using:MeetJoe.App.Views"
              xmlns:contracts="using:MeetJoe.Contracts"
              x:Class="MeetJoe.App.Views.ShellView"
              x:DataType="vm:ShellViewModel">
@@ -28,9 +29,13 @@
     </DataTemplate>
   </UserControl.Resources>
 
-  <Grid ColumnDefinitions="80,*">
+  <Panel>
+    <!-- Wallpaper shows through the glass rail / Activity feed (Teams-style themes). -->
+    <v:ThemeBackdrop />
+
+    <Grid ColumnDefinitions="80,*">
     <!-- Left rail -->
-    <Border Background="{StaticResource Brush.Rail}">
+    <Border Background="{StaticResource Brush.RailGlass}" BorderBrush="#33E8F1F5" BorderThickness="0,0,1,0">
       <DockPanel Margin="0,14,0,12">
         <Border DockPanel.Dock="Top" Width="36" Height="36" CornerRadius="10" Margin="0,0,0,16"
                 Background="{StaticResource Brush.Accent}" ToolTip.Tip="{Binding OrganizationName}">
@@ -44,7 +49,7 @@
           <c:Avatar Width="34" Height="34" HorizontalAlignment="Center"
                     DisplayName="{Binding Me.DisplayName}" Photo="{Binding Me.Photo}"
                     Status="{Binding Me.Status}" ShowStatus="True"
-                    Surface="{StaticResource Brush.Rail}" ToolTip.Tip="{Binding Me.DisplayName}" />
+                    Surface="{StaticResource Brush.RailGlass}" ToolTip.Tip="{Binding Me.DisplayName}" />
         </StackPanel>
 
         <ItemsControl ItemsSource="{Binding RailItems}" ItemTemplate="{StaticResource RailItemTemplate}">
@@ -670,4 +675,5 @@
       </Border>
     </Panel>
   </Grid>
+  </Panel>
 </UserControl>

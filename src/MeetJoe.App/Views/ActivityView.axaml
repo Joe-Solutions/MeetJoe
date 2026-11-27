@@ -1,23 +1,34 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:MeetJoe.App.ViewModels"
+             xmlns:c="using:MeetJoe.App.Controls"
              x:Class="MeetJoe.App.Views.ActivityView"
-             x:DataType="vm:ActivityViewModel">
+             x:DataType="vm:ActivityViewModel"
+             Background="Transparent">
   <Grid RowDefinitions="Auto,*">
-    <Border Classes="stageheader">
+    <Border Classes="stageheader glassheader">
       <Grid ColumnDefinitions="*,Auto">
-        <TextBlock Classes="h1" VerticalAlignment="Center" Text="Activity" />
+        <StackPanel VerticalAlignment="Center" Spacing="2">
+          <TextBlock Classes="h1" Text="Activity" />
+          <TextBlock Classes="muted small" Text="Mentions, reactions, replies, and calls" />
+        </StackPanel>
         <Button Grid.Column="1" Classes="ghost tint" Content="Mark all read"
                 Command="{Binding MarkAllReadCommand}" IsVisible="{Binding HasUnread}" />
       </Grid>
     </Border>
 
-    <ScrollViewer Grid.Row="1">
-      <StackPanel Margin="28,18" Spacing="4" MaxWidth="720" HorizontalAlignment="Stretch">
+    <ScrollViewer Grid.Row="1" Background="Transparent">
+      <StackPanel Margin="24,16,24,28" Spacing="6" MaxWidth="760" HorizontalAlignment="Stretch">
         <TextBlock Classes="error" Text="{Binding ErrorMessage}" Margin="0,0,0,8"
                    IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
 
-        <StackPanel Spacing="8" HorizontalAlignment="Center" Margin="0,80,0,0" IsVisible="{Binding IsEmpty}">
+        <StackPanel Spacing="8" HorizontalAlignment="Center" Margin="0,96,0,0" IsVisible="{Binding IsEmpty}">
+          <Border Width="56" Height="56" CornerRadius="28" Background="{StaticResource Brush.Glass}"
+                  BorderBrush="{StaticResource Brush.GlassBorder}" BorderThickness="1"
+                  HorizontalAlignment="Center">
+            <c:Icon Data="{StaticResource Icon.Activity}" Size="24" HorizontalAlignment="Center"
+                    VerticalAlignment="Center" TextElement.Foreground="{StaticResource Brush.Accent}" />
+          </Border>
           <TextBlock Classes="h2" HorizontalAlignment="Center" Text="You're all caught up" />
           <TextBlock Classes="muted" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
                      Text="Replies, reactions, and @mentions will show up here." />
@@ -26,20 +37,37 @@
         <ItemsControl ItemsSource="{Binding Items}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:ActivityItemViewModel">
-              <Button Classes="row" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+              <Button Classes="activityrow" Classes.unread="{Binding IsUnread}"
+                      HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                       Command="{Binding $parent[UserControl].((vm:ActivityViewModel)DataContext).MarkReadCommand}"
-                      CommandParameter="{Binding}" Padding="14,12" Margin="0,0,0,2">
-                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
-                  <Border Width="8" Height="8" CornerRadius="4" VerticalAlignment="Top" Margin="0,6,0,0"
-                          Background="{StaticResource Brush.Accent}" IsVisible="{Binding IsUnread}" />
-                  <StackPanel Grid.Column="1" Spacing="3">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                      <TextBlock Text="{Binding KindLabel}" FontSize="12" FontWeight="SemiBold"
-                                 Foreground="{StaticResource Brush.Accent}" />
-                      <TextBlock Classes="muted small" Text="{Binding TimeText}" />
-                    </StackPanel>
-                    <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" LineHeight="20" />
-                    <TextBlock Classes="muted small" Text="{Binding Actor.DisplayName}" />
+                      CommandParameter="{Binding}">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                  <Panel Width="44" Height="44" VerticalAlignment="Top">
+                    <c:Avatar Width="40" Height="40" HorizontalAlignment="Left" VerticalAlignment="Top"
+                              DisplayName="{Binding Actor.DisplayName}" Photo="{Binding Actor.Photo}"
+                              Surface="{StaticResource Brush.GlassRaised}" />
+                    <Border Width="22" Height="22" CornerRadius="11"
+                            HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                            Background="{StaticResource Brush.GlassRaised}"
+                            BorderBrush="{StaticResource Brush.Accent}" BorderThickness="1">
+                      <c:Icon Data="{Binding KindIconKey, Converter={x:Static c:IconConverter.Instance}}"
+                              Size="12" HorizontalAlignment="Center" VerticalAlignment="Center"
+                              TextElement.Foreground="{StaticResource Brush.Accent}" />
+                    </Border>
+                  </Panel>
+
+                  <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Headline}" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{StaticResource Brush.TextPrimary}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Summary}" FontSize="13" LineHeight="19" TextWrapping="Wrap"
+                               Foreground="{StaticResource Brush.TextMuted}"
+                               IsVisible="{Binding ShowSummaryDetail}" />
+                  </StackPanel>
+
+                  <StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Top" Margin="8,2,0,0">
+                    <TextBlock Classes="muted small" HorizontalAlignment="Right" Text="{Binding TimeText}" />
+                    <Border Width="8" Height="8" CornerRadius="4" HorizontalAlignment="Right"
+                            Background="{StaticResource Brush.Accent}" IsVisible="{Binding IsUnread}" />
                   </StackPanel>
                 </Grid>
               </Button>

@@ -3,7 +3,8 @@
              xmlns:vm="using:MeetJoe.App.ViewModels"
              xmlns:c="using:MeetJoe.App.Controls"
              x:Class="MeetJoe.App.Views.FilesView"
-             x:DataType="vm:FilesViewModel">
+             x:DataType="vm:FilesViewModel"
+             Background="{StaticResource Brush.Canvas}">
   <Grid RowDefinitions="Auto,*">
     <Border Classes="stageheader">
       <DockPanel>

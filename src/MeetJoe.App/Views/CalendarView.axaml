@@ -3,7 +3,8 @@
              xmlns:vm="using:MeetJoe.App.ViewModels"
              xmlns:c="using:MeetJoe.App.Controls"
              x:Class="MeetJoe.App.Views.CalendarView"
-             x:DataType="vm:CalendarViewModel">
+             x:DataType="vm:CalendarViewModel"
+             Background="{StaticResource Brush.Canvas}">
   <Panel>
     <Grid RowDefinitions="Auto,*" IsVisible="{Binding !IsInMeeting}">
       <Border Classes="stageheader">
