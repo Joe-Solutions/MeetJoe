@@ -352,8 +352,7 @@ public partial class WorkspacesViewModel : ViewModelBase
         if (message.ChannelId is null) return;
         if (Thread is not { } thread || !thread.Matches(message)) return;
         thread.Append(message);
-        if (message.Sender.Id != _context.People.MyId && message.ParentMessageId is null
-            && SelectedChannel?.Id == message.ChannelId)
+        if (message.Sender.Id != _context.People.MyId && SelectedChannel?.Id == message.ChannelId)
         {
             _ = MarkChannelReadQuietAsync(message.ChannelId.Value);
         }

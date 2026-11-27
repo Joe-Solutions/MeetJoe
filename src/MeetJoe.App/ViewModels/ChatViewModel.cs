@@ -121,8 +121,6 @@ public partial class ConversationViewModel : ObservableObject
 
     public void RecordMessage(MessageDto message, bool countAsUnread)
     {
-        if (message.ParentMessageId is not null) return;
-
         Preview = message.IsDeleted
             ? "Message deleted"
             : message.Body.Length > 0
@@ -605,17 +603,14 @@ public partial class ChatViewModel : ViewModelBase
 
         var isOpen = ReferenceEquals(conversation, Selected);
         var fromMe = message.Sender.Id == _context.People.MyId;
-        if (message.ParentMessageId is null)
-        {
-            conversation.RecordMessage(message, countAsUnread: !isOpen && !fromMe);
-            var index = Conversations.IndexOf(conversation);
-            if (index > 0) Conversations.Move(index, 0);
-        }
+        conversation.RecordMessage(message, countAsUnread: !isOpen && !fromMe);
+        var index = Conversations.IndexOf(conversation);
+        if (index > 0) Conversations.Move(index, 0);
 
         if (isOpen)
         {
             Thread?.Append(message);
-            if (!fromMe && message.ParentMessageId is null) _ = MarkReadAsync(conversation);
+            if (!fromMe) _ = MarkReadAsync(conversation);
         }
 
         RaiseUnreadChanged();
@@ -626,8 +621,7 @@ public partial class ChatViewModel : ViewModelBase
         if (message.ConversationId is not { } conversationId) return;
 
         var conversation = Conversations.FirstOrDefault(c => c.Id == conversationId);
-        if (conversation is not null && message.ParentMessageId is null
-            && conversation.LastMessageAt == message.CreatedAt)
+        if (conversation is not null && conversation.LastMessageAt == message.CreatedAt)
         {
             conversation.RecordMessage(message, countAsUnread: false);
         }

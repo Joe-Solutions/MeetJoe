@@ -397,7 +397,13 @@ public class ChatTests(ApiFactory api)
         var reply = await ben.PostAsync<MessageDto>(
             "/api/messages", new SendMessageRequest(conversation.Id, null, "Looks good", null, root.Id));
         Assert.Equal(root.Id, reply.ParentMessageId);
-        Assert.Equal(1, Assert.Single(await ana.GetAsync<List<MessageDto>>($"/api/conversations/{conversation.Id}/messages")).ReplyCount);
+        Assert.Equal("Ana", reply.ParentSender?.DisplayName);
+        Assert.Equal("Ship it", reply.ParentBody);
+
+        var history = await ana.GetAsync<List<MessageDto>>($"/api/conversations/{conversation.Id}/messages");
+        Assert.Equal(2, history.Count);
+        Assert.Equal(1, history.Single(m => m.Id == root.Id).ReplyCount);
+        Assert.Contains(history, m => m.Id == reply.Id && m.ParentMessageId == root.Id);
         Assert.Equal("Looks good", Assert.Single(await ana.GetAsync<List<MessageDto>>($"/api/messages/{root.Id}/replies")).Body);
 
         var reacted = await ben.PostAsync<MessageDto>($"/api/messages/{root.Id}/reactions", new ToggleReactionRequest("👍"));

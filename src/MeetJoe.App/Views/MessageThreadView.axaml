@@ -4,9 +4,9 @@
              xmlns:c="using:MeetJoe.App.Controls"
              x:Class="MeetJoe.App.Views.MessageThreadView"
              x:DataType="vm:MessageThreadViewModel">
-  <Grid ColumnDefinitions="*,Auto" RowDefinitions="*,Auto">
+  <Grid RowDefinitions="*,Auto">
     <!-- Full conversation (history + composer) accepts file drops. -->
-    <Border x:Name="ThreadDropZone" Grid.Row="0" Grid.Column="0" Grid.RowSpan="2"
+    <Border x:Name="ThreadDropZone" Grid.Row="0" Grid.RowSpan="2"
             Classes="chatdrop">
       <Grid RowDefinitions="*,Auto">
     <!-- Messages -->
@@ -21,7 +21,8 @@
             <DataTemplate x:DataType="vm:MessageViewModel">
               <DockPanel Classes="message" Classes.first="{Binding StartsGroup}"
                          Classes.mine="{Binding IsMine}" Classes.continuation="{Binding IsContinuation}"
-                         Classes.picking="{Binding ShowReactionPicker}">
+                         Classes.picking="{Binding ShowReactionPicker}"
+                         c:StickyMessageHover.Enable="True">
                 <!-- Fixed gutter so consecutive other-user bubbles share one left edge. Own messages omit this. -->
                 <Panel DockPanel.Dock="Left" Width="44" IsVisible="{Binding !IsMine}">
                   <c:Avatar Width="34" Height="34" VerticalAlignment="Top" Margin="0,2,0,0"
@@ -52,7 +53,8 @@
                                 Orientation="Horizontal" Spacing="2"
                                 IsVisible="{Binding ShowActions}"
                                 VerticalAlignment="Center" ZIndex="20">
-                      <Button Classes="hovericon" ToolTip.Tip="Add reaction" ToolTip.Placement="Top">
+                      <!-- No ToolTips here: popup tips steal pointerover and flicker these icons. -->
+                      <Button Classes="hovericon">
                         <Button.Flyout>
                           <Flyout Placement="Top" ShowMode="Standard">
                             <Border Classes="message-reactionpicker">
@@ -66,8 +68,6 @@
                                   <DataTemplate x:DataType="x:String">
                                     <Button Classes="hoverreact"
                                             Content="{Binding}"
-                                            ToolTip.Tip="{Binding}"
-                                            ToolTip.Placement="Top"
                                             Command="{Binding $parent[ItemsControl].((vm:MessageViewModel)DataContext).ReactCommand}"
                                             CommandParameter="{Binding}" />
                                   </DataTemplate>
@@ -78,17 +78,14 @@
                         </Button.Flyout>
                         <c:Icon Data="{StaticResource Icon.Smile}" Size="14" />
                       </Button>
-                      <Button Classes="hovericon" ToolTip.Tip="Reply" ToolTip.Placement="Top"
-                              Command="{Binding BeginReplyCommand}">
+                      <Button Classes="hovericon" Command="{Binding BeginReplyCommand}">
                         <c:Icon Data="{StaticResource Icon.Reply}" Size="14" />
                       </Button>
-                      <Button Classes="hovericon" ToolTip.Tip="Edit" ToolTip.Placement="Top"
-                              Command="{Binding BeginEditCommand}"
+                      <Button Classes="hovericon" Command="{Binding BeginEditCommand}"
                               IsVisible="{Binding CanMutate}">
                         <c:Icon Data="{StaticResource Icon.Edit}" Size="14" />
                       </Button>
-                      <Button Classes="hovericon danger" ToolTip.Tip="Delete" ToolTip.Placement="Top"
-                              Command="{Binding DeleteCommand}"
+                      <Button Classes="hovericon danger" Command="{Binding DeleteCommand}"
                               IsVisible="{Binding CanMutate}">
                         <c:Icon Data="{StaticResource Icon.Trash}" Size="14" />
                       </Button>
@@ -99,6 +96,29 @@
                               Classes.continuation="{Binding IsContinuation}"
                               IsVisible="{Binding !IsEditing}">
                         <StackPanel Spacing="6">
+                          <!-- Messenger-style quote of the message this reply references -->
+                          <Border Classes="replyquote" Classes.mine="{Binding IsMine}"
+                                  IsVisible="{Binding HasQuote}">
+                            <Grid ColumnDefinitions="Auto,*">
+                              <Border Classes="replyquote-bar" Width="3" Margin="0,0,8,0"
+                                      VerticalAlignment="Stretch" />
+                              <StackPanel Grid.Column="1" Spacing="2" MinWidth="0">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                  <TextBlock Classes="replyquote-meta" FontWeight="SemiBold"
+                                             Text="{Binding QuotedSenderName}"
+                                             MaxLines="1" TextTrimming="CharacterEllipsis" />
+                                  <TextBlock Classes="replyquote-meta"
+                                             Text="{Binding QuotedTimeText}"
+                                             IsVisible="{Binding QuotedTimeText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                </StackPanel>
+                                <TextBlock Classes="replyquote-body"
+                                           Text="{Binding QuotedDisplayBody}"
+                                           TextWrapping="Wrap" MaxLines="3"
+                                           TextTrimming="CharacterEllipsis" />
+                              </StackPanel>
+                            </Grid>
+                          </Border>
+
                           <c:MarkdownText Markdown="{Binding DisplayBody}" TextWrapping="Wrap" LineHeight="21"
                                           Classes.muted="{Binding IsDeleted}" />
 
@@ -158,17 +178,6 @@
                         </StackPanel>
                       </Border>
 
-                      <Button Classes="replychip" Classes.mine="{Binding IsMine}"
-                              Command="{Binding OpenRepliesCommand}"
-                              IsVisible="{Binding HasReplies}"
-                              ToolTip.Tip="Open thread">
-                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                          <c:Icon Data="{StaticResource Icon.ChatBubble}" Size="13"
-                                  VerticalAlignment="Center" />
-                          <TextBlock Text="{Binding RepliesLabel}" FontSize="12" FontWeight="SemiBold"
-                                     VerticalAlignment="Center" />
-                        </StackPanel>
-                      </Button>
                     </StackPanel>
                   </DockPanel>
 
@@ -236,12 +245,18 @@
       <TextBlock Classes="error" Text="{Binding ErrorMessage}"
                  IsVisible="{Binding ErrorMessage, Converter={x:Static ObjectConverters.IsNotNull}}" />
 
-      <Border Background="{StaticResource Brush.PanelRaised}" CornerRadius="8" Padding="10,6"
-              IsVisible="{Binding IsReplying}">
-        <Grid ColumnDefinitions="*,Auto">
-          <TextBlock Classes="muted small" VerticalAlignment="Center"
-                     Text="{Binding ReplyTarget.Sender.DisplayName, StringFormat=Replying to {0}}" />
-          <Button Grid.Column="1" Classes="ghost square" Width="24" Height="24" MinHeight="24"
+      <Border Classes="replycomposer" IsVisible="{Binding IsReplying}">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <Border Classes="replyquote-bar" Width="3" Margin="0,0,10,0" VerticalAlignment="Stretch" />
+          <StackPanel Grid.Column="1" Spacing="2" MinWidth="0" VerticalAlignment="Center">
+            <TextBlock Classes="replyquote-meta" FontWeight="SemiBold"
+                       Text="{Binding ReplyTarget.Sender.DisplayName, StringFormat=Replying to {0}}"
+                       MaxLines="1" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="muted small"
+                       Text="{Binding ReplyTarget.DisplayBody}"
+                       MaxLines="2" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" />
+          </StackPanel>
+          <Button Grid.Column="2" Classes="ghost square" Width="24" Height="24" MinHeight="24"
                   Command="{Binding CancelReplyCommand}" ToolTip.Tip="Cancel reply">
             <c:Icon Data="{StaticResource Icon.Close}" Size="14" />
           </Button>
@@ -382,48 +397,5 @@
       </Grid>
     </Border>
 
-    <!-- Thread side panel -->
-    <Border Grid.Row="0" Grid.Column="1" Grid.RowSpan="2" Width="320" Classes="panel"
-            BorderBrush="{StaticResource Brush.Border}" BorderThickness="1,0,0,0"
-            IsVisible="{Binding ShowThreadPanel}" Background="{StaticResource Brush.Panel}">
-      <Grid RowDefinitions="Auto,*,Auto">
-        <Border Classes="stageheader" Padding="16,12">
-          <Grid ColumnDefinitions="*,Auto">
-            <StackPanel Spacing="2">
-              <TextBlock Classes="h2" Text="Thread" />
-              <TextBlock Classes="muted small" Text="{Binding OpenThread.Sender.DisplayName}"
-                         TextTrimming="CharacterEllipsis" />
-            </StackPanel>
-            <Button Grid.Column="1" Classes="ghost square" Command="{Binding CloseThreadCommand}" ToolTip.Tip="Close">
-              <c:Icon Data="{StaticResource Icon.Close}" Size="16" />
-            </Button>
-          </Grid>
-        </Border>
-
-        <ScrollViewer Grid.Row="1">
-          <StackPanel Margin="16,12" Spacing="10">
-            <c:MarkdownText Markdown="{Binding OpenThread.DisplayBody}" TextWrapping="Wrap" LineHeight="21"
-                            Opacity="0.85" />
-            <TextBlock Classes="muted small" Text="Loading replies…" IsVisible="{Binding IsLoadingReplies}" />
-            <ItemsControl ItemsSource="{Binding ThreadReplies}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:MessageViewModel">
-                  <StackPanel Spacing="2" Margin="0,0,0,10">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                      <TextBlock Text="{Binding Sender.DisplayName}" FontWeight="SemiBold" FontSize="13" />
-                      <TextBlock Classes="muted" FontSize="12" Text="{Binding TimeText}" />
-                    </StackPanel>
-                    <c:MarkdownText Markdown="{Binding DisplayBody}" TextWrapping="Wrap" LineHeight="20" FontSize="13.5" />
-                  </StackPanel>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </StackPanel>
-        </ScrollViewer>
-
-        <TextBlock Grid.Row="2" Classes="muted small" Margin="16,0,16,14"
-                   Text="Replies use the composer below." />
-      </Grid>
-    </Border>
   </Grid>
 </UserControl>

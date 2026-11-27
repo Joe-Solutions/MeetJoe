@@ -124,7 +124,12 @@ public record MessageDto(
     int ReplyCount = 0,
     IReadOnlyList<ReactionSummaryDto>? Reactions = null,
     Guid? MeetingId = null,
-    LinkPreviewDto? LinkPreview = null);
+    LinkPreviewDto? LinkPreview = null,
+    /// <summary>Quoted parent snapshot for Messenger-style inline replies.</summary>
+    UserSummaryDto? ParentSender = null,
+    string? ParentBody = null,
+    DateTimeOffset? ParentCreatedAt = null,
+    bool ParentIsDeleted = false);
 
 /// <summary>Exactly one of conversation, channel, or meeting is set.</summary>
 public record SendMessageRequest(

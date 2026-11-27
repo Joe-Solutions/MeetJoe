@@ -417,23 +417,13 @@
   </Style>
 
   <!-- ===== Motion ===== -->
-  <!-- Message insert: fade in while rising a few pixels -->
+  <!-- Stable message chrome (no Style.Animations — those re-fire on class changes and flicker icons). -->
   <Style Selector="DockPanel.message">
     <Setter Property="Margin" Value="0,2,0,0" />
     <Setter Property="MaxWidth" Value="640" />
     <Setter Property="HorizontalAlignment" Value="Left" />
-    <Style.Animations>
-      <Animation Duration="0:0:0.18" Easing="CubicEaseOut">
-        <KeyFrame Cue="0%">
-          <Setter Property="Opacity" Value="0" />
-          <Setter Property="TranslateTransform.Y" Value="8" />
-        </KeyFrame>
-        <KeyFrame Cue="100%">
-          <Setter Property="Opacity" Value="1" />
-          <Setter Property="TranslateTransform.Y" Value="0" />
-        </KeyFrame>
-      </Animation>
-    </Style.Animations>
+    <Setter Property="ClipToBounds" Value="False" />
+    <Setter Property="Background" Value="Transparent" />
   </Style>
 
   <!-- After the base rule: later styles win. -->
@@ -460,18 +450,14 @@
   <Style Selector="DockPanel.messagechrome.mine">
     <Setter Property="HorizontalAlignment" Value="Right" />
   </Style>
-  <Style Selector="DockPanel.message">
-    <Setter Property="ClipToBounds" Value="False" />
-    <Setter Property="Background" Value="Transparent" />
-  </Style>
   <Style Selector="StackPanel.messagebody">
     <Setter Property="Background" Value="Transparent" />
   </Style>
 
   <!--
     Side actions stay in-layout beside the bubble and ALWAYS hit-test (even when Opacity=0).
-    That closes the dead zone: moving from bubble → icons no longer falls through to the
-    scroll surface and clears :pointerover.
+    Visibility uses sticky .hovering (StickyMessageHover) so ToolTip/Flyout popups do not
+    clear :pointerover and flicker the emoji/reply icons while the cursor is still.
   -->
   <Style Selector="StackPanel.message-sideactions">
     <Setter Property="DockPanel.Dock" Value="Right" />
@@ -484,6 +470,9 @@
   <Style Selector="DockPanel.messagechrome.mine > StackPanel.message-sideactions">
     <Setter Property="DockPanel.Dock" Value="Left" />
     <Setter Property="Margin" Value="0,0,4,0" />
+  </Style>
+  <Style Selector="DockPanel.message.hovering StackPanel.message-sideactions">
+    <Setter Property="Opacity" Value="1" />
   </Style>
   <Style Selector="DockPanel.message:pointerover StackPanel.message-sideactions">
     <Setter Property="Opacity" Value="1" />
@@ -616,28 +605,36 @@
     <Setter Property="Background" Value="{DynamicResource Brush.AccentPressed}" />
   </Style>
 
-  <!-- Soft reply chip under the bubble (Slack/Teams-style thread affordance) -->
-  <Style Selector="Button.replychip">
-    <Setter Property="Background" Value="{DynamicResource Brush.AccentSoft}" />
-    <Setter Property="BorderBrush" Value="Transparent" />
-    <Setter Property="BorderThickness" Value="0" />
-    <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
-    <Setter Property="CornerRadius" Value="999" />
-    <Setter Property="Padding" Value="10,5" />
-    <Setter Property="MinHeight" Value="0" />
-    <Setter Property="HorizontalAlignment" Value="Left" />
-    <Setter Property="HorizontalContentAlignment" Value="Center" />
-    <Setter Property="VerticalContentAlignment" Value="Center" />
-    <Setter Property="Cursor" Value="Hand" />
+  <!-- Nested quote inside a reply bubble (Messenger-style) -->
+  <Style Selector="Border.replyquote">
+    <Setter Property="Background" Value="#28000000" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="8,6" />
   </Style>
-  <Style Selector="Button.replychip.mine">
-    <Setter Property="HorizontalAlignment" Value="Right" />
+  <Style Selector="Border.replyquote.mine">
+    <Setter Property="Background" Value="#22000000" />
   </Style>
-  <Style Selector="Button.replychip:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-    <Setter Property="Background" Value="#401EC8C8" />
+  <Style Selector="Border.replyquote-bar">
+    <Setter Property="Background" Value="{DynamicResource Brush.TextMuted}" />
+    <Setter Property="CornerRadius" Value="2" />
   </Style>
-  <Style Selector="Button.replychip:pressed /template/ ContentPresenter#PART_ContentPresenter">
-    <Setter Property="Background" Value="#551EC8C8" />
+  <Style Selector="TextBlock.replyquote-meta">
+    <Setter Property="FontSize" Value="11.5" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+  </Style>
+  <Style Selector="TextBlock.replyquote-body">
+    <Setter Property="FontSize" Value="12.5" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    <Setter Property="Opacity" Value="0.9" />
+  </Style>
+  <Style Selector="Border.replycomposer">
+    <Setter Property="Background" Value="{DynamicResource Brush.PanelRaised}" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="10,8" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
+    <Setter Property="BorderThickness" Value="1" />
   </Style>
 
   <Style Selector="Border.messagebubble">
