@@ -269,7 +269,7 @@ public partial class ShellViewModel : ViewModelBase
         var action = prompt.ConversationId is { } id
             ? new Uri($"meetjoe://chat?id={id:D}")
             : null;
-        // Native macOS / Windows banner with Show (Windows) / click-to-open (macOS).
+        // Native MeetJoe Notification Center / Windows toast — Show opens this group chat.
         _context.Notifications.Show(
             "Mentioned",
             prompt.Summary,

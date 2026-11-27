@@ -39,6 +39,9 @@ internal static class Program
             WebViewPlatformHooks.CreateMediaWebView = () => new MacMediaWebView();
             WebViewPlatformHooks.RequestOsMediaPermissionAsync = MacOsMediaPermissions.EnsureAsync;
             MeetJoe.App.App.SessionStoreFactory = () => new MacKeychainSessionStore();
+            // Native Notification Center (not osascript/Script Editor) so Show opens MeetJoe + chat.
+            MacOsNotifications.EnsureRegistered();
+            OsNotificationHooks.ShowMac = MacOsNotifications.Show;
         }
 #endif
         if (OperatingSystem.IsWindows())
