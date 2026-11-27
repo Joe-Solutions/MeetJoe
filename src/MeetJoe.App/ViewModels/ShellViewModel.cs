@@ -27,6 +27,7 @@ public partial class RailItemViewModel(string label, string icon, ViewModelBase 
 public partial class ShellViewModel : ViewModelBase
 {
     private readonly SessionContext _context;
+    private MeetingReminderWatcher? _meetingReminders;
 
     public ShellViewModel(
         SessionContext context,
@@ -181,10 +182,20 @@ public partial class ShellViewModel : ViewModelBase
             Activity.LoadAsync(), Chat.LoadAsync(), Workspaces.LoadAsync(), Calendar.LoadAsync(), Calls.LoadAsync());
         await _context.Realtime.StartAsync();
         IsConnected = _context.Realtime.IsConnected;
+
+        // Native OS banners ~10 minutes before scheduled meetings (host + invitees with MeetJoe open).
+        _meetingReminders = new MeetingReminderWatcher(
+            _context.Api,
+            _context.Notifications,
+            () => _context.Organization.Id,
+            () => _context.People.MyId);
+        _meetingReminders.Start();
     }
 
     public async Task ShutdownAsync()
     {
+        _meetingReminders?.Dispose();
+        _meetingReminders = null;
         _context.Realtime.PresenceChanged -= OnPresenceChanged;
         _context.Realtime.MembersChanged -= OnMembersChanged;
         _context.Realtime.ConnectionChanged -= OnConnectionChanged;

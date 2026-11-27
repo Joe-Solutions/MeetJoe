@@ -170,4 +170,9 @@ public sealed record SessionContext(
     AppConfig Config,
     OrganizationDto Organization,
     PeopleStore People,
-    ICallTonePlayer CallTones);
+    ICallTonePlayer CallTones,
+    IOsNotificationService? OsNotifications = null)
+{
+    public IOsNotificationService Notifications { get; } =
+        OsNotifications ?? new NullOsNotificationService();
+}

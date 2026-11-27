@@ -684,3 +684,59 @@ public class FormattingTests
         Assert.StartsWith("Can't reach the MeetJoe server", Describe.Error(new HttpRequestException()));
     }
 }
+
+public class MeetingReminderTests
+{
+    private readonly World _world = new();
+
+    [Fact]
+    public void Reminder_fires_inside_the_ten_minute_window_for_an_invitee()
+    {
+        var now = DateTimeOffset.Parse("2026-11-27T08:00:00Z");
+        var meeting = FakeApi.FakeMeeting(
+            Guid.NewGuid(), "EOG Demo", _world.Ben, now.AddDays(-1), now.AddMinutes(10), true, [],
+            invites: [new MeetingInviteDto(_world.Ana.Id, "Ana", InviteStatus.Accepted)]);
+
+        Assert.True(MeetingReminderRules.ShouldNotify(meeting, _world.Ana.Id, now, new HashSet<Guid>()));
+        Assert.False(MeetingReminderRules.ShouldNotify(
+            meeting, _world.Ana.Id, now.AddMinutes(-1), new HashSet<Guid>())); // 11 min before
+        Assert.False(MeetingReminderRules.ShouldNotify(
+            meeting, _world.Ana.Id, now.AddMinutes(10), new HashSet<Guid>())); // at start
+    }
+
+    [Fact]
+    public void Declined_invitees_are_not_reminded()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var meeting = FakeApi.FakeMeeting(
+            Guid.NewGuid(), "Skip me", _world.Ben, now.AddDays(-1), now.AddMinutes(5), true, [],
+            invites: [new MeetingInviteDto(_world.Ana.Id, "Ana", InviteStatus.Declined)]);
+
+        Assert.False(MeetingReminderRules.ShouldNotify(meeting, _world.Ana.Id, now, new HashSet<Guid>()));
+    }
+
+    [Fact]
+    public async Task Watcher_posts_a_native_os_notification_once()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var meeting = FakeApi.FakeMeeting(
+            Guid.NewGuid(), "EOG Demo", _world.Ana, now.AddDays(-1), now.AddMinutes(8), true, [],
+            invites: [new MeetingInviteDto(_world.Ben.Id, "Ben", InviteStatus.Pending)]);
+        _world.Api.Meetings.Add(meeting);
+
+        var notifications = new RecordingOsNotificationService();
+        using var watcher = new MeetingReminderWatcher(
+            _world.Api,
+            notifications,
+            () => _world.Organization.Id,
+            () => _world.Ana.Id);
+
+        await watcher.TickAsync();
+        await watcher.TickAsync();
+
+        var alert = Assert.Single(notifications.Items);
+        Assert.Equal("MeetJoe", alert.Title);
+        Assert.Contains("EOG Demo", alert.Body);
+        Assert.Contains("minutes", alert.Body);
+    }
+}
