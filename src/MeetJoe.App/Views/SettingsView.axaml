@@ -3,7 +3,8 @@
              xmlns:vm="using:MeetJoe.App.ViewModels"
              xmlns:c="using:MeetJoe.App.Controls"
              x:Class="MeetJoe.App.Views.SettingsView"
-             x:DataType="vm:SettingsViewModel">
+             x:DataType="vm:SettingsViewModel"
+             Background="{StaticResource Brush.Canvas}">
   <Grid RowDefinitions="Auto,*">
     <Border Classes="stageheader">
       <TextBlock Classes="h1" VerticalAlignment="Center" Text="Settings" />

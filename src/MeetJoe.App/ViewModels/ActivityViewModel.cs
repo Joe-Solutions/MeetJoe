@@ -26,6 +26,32 @@ public partial class ActivityItemViewModel(ActivityDto item, PeopleStore people)
         _ => item.Kind.ToString(),
     };
 
+    /// <summary>Teams-style short line above the summary snippet.</summary>
+    public string Headline { get; } = item.Kind switch
+    {
+        ActivityKind.Reply => $"{people.Get(item.Actor).DisplayName} replied to you",
+        ActivityKind.Reaction => $"{people.Get(item.Actor).DisplayName} reacted to your message",
+        ActivityKind.Mention => $"{people.Get(item.Actor).DisplayName} mentioned you",
+        ActivityKind.MeetingInvite => $"{people.Get(item.Actor).DisplayName} invited you to a meeting",
+        ActivityKind.MissedCall => $"Missed call from {people.Get(item.Actor).DisplayName}",
+        _ => item.Summary,
+    };
+
+    public string KindIconKey { get; } = item.Kind switch
+    {
+        ActivityKind.Reply => "Icon.Reply",
+        ActivityKind.Reaction => "Icon.Smile",
+        ActivityKind.Mention => "Icon.Chat",
+        ActivityKind.MeetingInvite => "Icon.Video",
+        ActivityKind.MissedCall => "Icon.Calls",
+        _ => "Icon.Activity",
+    };
+
+    /// <summary>Hide the body when the headline already carries the whole story (e.g. missed call).</summary>
+    public bool ShowSummaryDetail =>
+        Kind is not ActivityKind.MissedCall
+        && !string.Equals(Summary, Headline, StringComparison.OrdinalIgnoreCase);
+
     [ObservableProperty] private bool _isUnread = item.IsUnread;
 }
 

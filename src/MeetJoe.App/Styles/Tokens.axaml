@@ -23,6 +23,13 @@
   <Color x:Key="Color.OnAccent">#04262B</Color>
   <Color x:Key="Color.DangerSoft">#26E85D4C</Color>
 
+  <!-- Glass / theme surfaces (Teams-style wallpaper show-through) -->
+  <Color x:Key="Color.RailGlass">#B0081828</Color>
+  <Color x:Key="Color.Glass">#99122A40</Color>
+  <Color x:Key="Color.GlassHover">#B8163149</Color>
+  <Color x:Key="Color.GlassRaised">#CC1A3852</Color>
+  <Color x:Key="Color.GlassBorder">#66E8F1F5</Color>
+
   <SolidColorBrush x:Key="Brush.Canvas" Color="{StaticResource Color.Canvas}" />
   <SolidColorBrush x:Key="Brush.Panel" Color="{StaticResource Color.Panel}" />
   <SolidColorBrush x:Key="Brush.Border" Color="{StaticResource Color.Border}" />
@@ -40,6 +47,11 @@
   <SolidColorBrush x:Key="Brush.AccentSoft" Color="{StaticResource Color.AccentSoft}" />
   <SolidColorBrush x:Key="Brush.OnAccent" Color="{StaticResource Color.OnAccent}" />
   <SolidColorBrush x:Key="Brush.DangerSoft" Color="{StaticResource Color.DangerSoft}" />
+  <SolidColorBrush x:Key="Brush.RailGlass" Color="{StaticResource Color.RailGlass}" />
+  <SolidColorBrush x:Key="Brush.Glass" Color="{StaticResource Color.Glass}" />
+  <SolidColorBrush x:Key="Brush.GlassHover" Color="{StaticResource Color.GlassHover}" />
+  <SolidColorBrush x:Key="Brush.GlassRaised" Color="{StaticResource Color.GlassRaised}" />
+  <SolidColorBrush x:Key="Brush.GlassBorder" Color="{StaticResource Color.GlassBorder}" />
 
   <FontFamily x:Key="Font.Ui">avares://MeetJoe.App/Assets/Fonts#Manrope</FontFamily>
 

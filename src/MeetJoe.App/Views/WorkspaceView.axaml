@@ -3,7 +3,8 @@
              xmlns:vm="using:MeetJoe.App.ViewModels"
              xmlns:c="using:MeetJoe.App.Controls"
              x:Class="MeetJoe.App.Views.WorkspaceView"
-             x:DataType="vm:WorkspacesViewModel">
+             x:DataType="vm:WorkspacesViewModel"
+             Background="{StaticResource Brush.Canvas}">
   <Grid ColumnDefinitions="300,*,Auto">
     <!-- List pane: workspaces and their channels -->
     <Border Classes="listpane">

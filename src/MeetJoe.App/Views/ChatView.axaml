@@ -3,7 +3,8 @@
              xmlns:vm="using:MeetJoe.App.ViewModels"
              xmlns:c="using:MeetJoe.App.Controls"
              x:Class="MeetJoe.App.Views.ChatView"
-             x:DataType="vm:ChatViewModel">
+             x:DataType="vm:ChatViewModel"
+             Background="{StaticResource Brush.Canvas}">
   <Grid ColumnDefinitions="300,*,Auto">
     <!-- List pane: conversations -->
     <Border Classes="listpane">

@@ -406,10 +406,45 @@
   </Style>
   <!-- The header strip above a main stage -->
   <Style Selector="Border.stageheader">
+    <Setter Property="Background" Value="{DynamicResource Brush.Canvas}" />
     <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
     <Setter Property="BorderThickness" Value="0,0,0,1" />
     <Setter Property="Padding" Value="24,0,16,0" />
     <Setter Property="Height" Value="64" />
+  </Style>
+  <Style Selector="Border.stageheader.glassheader">
+    <Setter Property="Background" Value="{DynamicResource Brush.Glass}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.GlassBorder}" />
+    <Setter Property="Height" Value="72" />
+    <Setter Property="Padding" Value="24,8,16,8" />
+  </Style>
+
+  <!-- Activity feed rows — glass cards over the theme wallpaper -->
+  <Style Selector="Button.activityrow">
+    <Setter Property="Background" Value="{DynamicResource Brush.Glass}" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="12" />
+    <Setter Property="Padding" Value="14,12" />
+    <Setter Property="Margin" Value="0,0,0,4" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="Button.activityrow /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Brush.Glass}" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="CornerRadius" Value="12" />
+  </Style>
+  <Style Selector="Button.activityrow:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Brush.GlassHover}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.GlassBorder}" />
+  </Style>
+  <Style Selector="Button.activityrow:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Brush.GlassRaised}" />
+  </Style>
+  <Style Selector="Button.activityrow.unread /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.GlassBorder}" />
+    <Setter Property="Background" Value="{DynamicResource Brush.GlassRaised}" />
   </Style>
   <Style Selector="Border.separator">
     <Setter Property="Height" Value="1" />
