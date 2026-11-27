@@ -34,12 +34,12 @@
     <v:ThemeBackdrop />
 
     <!--
-      1×1 YouTube keep-alive while Music is not on screen. Shell docks the same host into
-      MusicView.PlayerHost when that page is open — audio must not stop on rail navigate.
+      Off-screen YouTube keep-alive while Music is not on screen (WKWebView ignores Opacity).
+      Shell docks the same host into MusicView.PlayerHost when that page is open.
     -->
-    <Panel x:Name="MusicPlayerKeepAlive" Width="2" Height="2" Opacity="0"
-           HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="0"
-           IsHitTestVisible="False" ZIndex="1" ClipToBounds="True" />
+    <Panel x:Name="MusicPlayerKeepAlive" Width="1" Height="1"
+           HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-4000,-4000,0,0"
+           IsHitTestVisible="False" ZIndex="0" ClipToBounds="True" />
 
     <Grid ColumnDefinitions="80,*">
     <!-- Left rail -->

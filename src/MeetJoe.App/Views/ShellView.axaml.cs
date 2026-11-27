@@ -165,13 +165,39 @@ public partial class ShellView : UserControl
             return;
         }
 
+        var keepAlive = _musicPlayerSlot is null;
         var target = _musicPlayerSlot ?? MusicPlayerKeepAlive;
-        if (ReferenceEquals(_musicHost.Parent, target)) return;
+        if (!ReferenceEquals(_musicHost.Parent, target))
+        {
+            if (_musicHost.Parent is Panel previous)
+                previous.Children.Remove(_musicHost);
+            target.Children.Clear();
+            target.Children.Add(_musicHost);
+        }
 
-        if (_musicHost.Parent is Panel previous)
-            previous.Children.Remove(_musicHost);
-        target.Children.Clear();
-        target.Children.Add(_musicHost);
+        // Native WKWebView ignores Avalonia Opacity — park it off-screen while browsing.
+        // Also drop MinWidth/MinHeight so the host cannot force a 160×120 logo leak.
+        if (keepAlive)
+        {
+            _musicHost.MinWidth = 1;
+            _musicHost.MinHeight = 1;
+            _musicHost.Width = 1;
+            _musicHost.Height = 1;
+            _musicHost.HorizontalAlignment = HorizontalAlignment.Left;
+            _musicHost.VerticalAlignment = VerticalAlignment.Top;
+            MusicPlayerKeepAlive.Width = 1;
+            MusicPlayerKeepAlive.Height = 1;
+            MusicPlayerKeepAlive.Margin = new Thickness(-4000, -4000, 0, 0);
+        }
+        else
+        {
+            _musicHost.ClearValue(WidthProperty);
+            _musicHost.ClearValue(HeightProperty);
+            _musicHost.MinWidth = 160;
+            _musicHost.MinHeight = 120;
+            _musicHost.HorizontalAlignment = HorizontalAlignment.Stretch;
+            _musicHost.VerticalAlignment = VerticalAlignment.Stretch;
+        }
     }
 
     private async Task ShutdownMusicHostAsync()

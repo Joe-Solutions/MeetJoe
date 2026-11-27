@@ -20,6 +20,7 @@ public sealed class YouTubePlayerHost : Panel
         VerticalAlignment = VerticalAlignment.Stretch;
         ClipToBounds = false;
         Background = Brushes.Transparent;
+        // Defaults for the Music page. Shell drops these to 1×1 while keep-alive (off-screen).
         MinWidth = 160;
         MinHeight = 120;
     }
