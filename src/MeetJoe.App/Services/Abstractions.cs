@@ -11,7 +11,7 @@ public sealed class AppConfig
     /// MeetJoe Spotify app Client ID (public for PKCE desktop clients — not a secret).
     /// Override with <see cref="SpotifyClientIdVariable"/> if needed. Never ship a Client Secret.
     /// </summary>
-    public const string DefaultSpotifyClientId = "beba5aebc4004b36be98cbc5a0de40b2";
+    public const string DefaultSpotifyClientId = "f18ff751ee8b467d8ee11c3bb7bd15b1";
 #if DEBUG
     public const string DefaultApiUrl = "http://localhost:5080";
 #else

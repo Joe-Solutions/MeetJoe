@@ -9,7 +9,7 @@ public sealed class SharedSpotifyOptions
     public const string SectionName = "Spotify";
 
     /// <summary>Public Client ID (PKCE). Defaults to MeetJoe's Spotify app.</summary>
-    public string ClientId { get; set; } = "beba5aebc4004b36be98cbc5a0de40b2";
+    public string ClientId { get; set; } = "f18ff751ee8b467d8ee11c3bb7bd15b1";
 
     /// <summary>Optional bootstrap refresh token from env (testing).</summary>
     public string? RefreshToken { get; set; }
