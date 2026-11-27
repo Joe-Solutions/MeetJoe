@@ -354,7 +354,20 @@ public class MeetingParticipant
         InLobby = false;
     }
 
+    /// <summary>
+    /// Host dismisses a lobby waiter. This is not a ban — they may rejoin the lobby from the invite link.
+    /// </summary>
     public void Reject(DateTimeOffset now) => Leave(now);
+
+    /// <summary>Re-enter after leave/reject (e.g. guest opens the invite link again).</summary>
+    public void Rejoin(DateTimeOffset now, bool inLobby)
+    {
+        LeftAt = null;
+        JoinedAt = now;
+        InLobby = inLobby;
+        HandRaised = false;
+        LastReadAt = now.AddTicks(-1);
+    }
 
     public void SetHandRaised(bool raised)
     {

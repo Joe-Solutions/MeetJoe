@@ -592,12 +592,27 @@
     .lobby-meter-label {
       margin-top: 6px; font-size: 11px; color: var(--muted);
     }
-    .lobby-card .lobby-leave {
+    .lobby-card .lobby-leave,
+    .lobby-card .lobby-rejoin {
       appearance: none; border: 0; cursor: pointer; margin-top: 18px;
-      background: var(--danger); color: #fff;
       border-radius: 10px; padding: 12px 18px;
       font: inherit; font-size: 14px; font-weight: 700;
     }
+    .lobby-card .lobby-leave {
+      background: var(--danger); color: #fff;
+    }
+    .lobby-card .lobby-rejoin {
+      display: none;
+      background: var(--accent); color: #04262B;
+      margin-left: 8px;
+    }
+    .lobby-card.dismissed .lobby-pulse { display: none; }
+    .lobby-card.dismissed .lobby-preview,
+    .lobby-card.dismissed .lobby-controls,
+    .lobby-card.dismissed .lobby-meter,
+    .lobby-card.dismissed .lobby-meter-label,
+    .lobby-card.dismissed .lobby-prep-error { display: none !important; }
+    .lobby-card.dismissed .lobby-rejoin { display: inline-flex; }
 
     #thanks {
       display: none;
@@ -871,7 +886,10 @@
       <div class="lobby-meter" aria-hidden="true"><span id="lobby-meter-fill"></span></div>
       <div class="lobby-meter-label" id="lobby-meter-label">Speak to test your microphone</div>
       <p class="lobby-status" id="lobby-status">Waiting for the host to admit you…</p>
-      <button type="button" class="lobby-leave" id="lobby-leave">Leave</button>
+      <div>
+        <button type="button" class="lobby-leave" id="lobby-leave">Leave</button>
+        <button type="button" class="lobby-rejoin" id="lobby-rejoin">Rejoin lobby</button>
+      </div>
     </div>
   </section>
 
@@ -902,6 +920,7 @@
     const meetingId = params.get("mid") || "";
     let localGuestUserId = params.get("uid") || null;
     let waitingInLobby = isGuest && params.get("lobby") === "1";
+    let guestLeaveReported = false;
     if (isGuest) {
       document.documentElement.classList.add("guest");
       // Guests join via email link — present/share and host-only controls stay hidden.
@@ -909,6 +928,21 @@
         const el = document.getElementById(id);
         if (el) el.hidden = true;
       });
+    }
+
+    /** Tell MeetJoe the guest left so the host People list drops them. */
+    function reportGuestLeave() {
+      if (!isGuest || !inviteToken || guestLeaveReported) return;
+      guestLeaveReported = true;
+      const leaveUrl = "/api/public/meeting-invites/" + encodeURIComponent(inviteToken) + "/leave";
+      try {
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon(leaveUrl, new Blob([], { type: "application/json" }));
+        }
+      } catch (_) { /* ignore */ }
+      try {
+        fetch(leaveUrl, { method: "POST", keepalive: true, credentials: "same-origin" }).catch(() => {});
+      } catch (_) { /* ignore */ }
     }
     function mediaPermissionHint(kind) {
       if (embedded)
@@ -1061,6 +1095,7 @@
     }
 
     function showThanksScreen() {
+      reportGuestLeave();
       stopChatPolling();
       document.getElementById("toolbar")?.style.setProperty("display", "none");
       document.getElementById("stage")?.style.setProperty("display", "none");
@@ -1958,34 +1993,160 @@
       refreshLobbyPreview();
     }
 
+    async function rejoinLobbyFromInvite() {
+      if (!inviteToken) return false;
+      const displayName = (params.get("name") || "Guest").trim() || "Guest";
+      const lobbyStatus = document.getElementById("lobby-status");
+      const lobbyCard = document.querySelector(".lobby-card");
+      if (lobbyStatus) lobbyStatus.textContent = "Rejoining the lobby…";
+      try {
+        const res = await fetch(
+          "/api/public/meeting-invites/" + encodeURIComponent(inviteToken) + "/join",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ displayName }),
+          });
+        if (!res.ok) {
+          const problem = await res.json().catch(() => null);
+          if (lobbyStatus) {
+            lobbyStatus.textContent = problem?.detail || "Could not rejoin the lobby. Try your invite link again.";
+          }
+          return false;
+        }
+        const join = await res.json();
+        if (join.guestUserId) localGuestUserId = join.guestUserId;
+        waitingInLobby = join.inLobby === true;
+        lobbyCard?.classList.remove("dismissed");
+        if (!waitingInLobby) {
+          // Host already admitted (or lobby disabled) — require fresh publishable creds.
+          if (!join.serverUrl || !join.token) {
+            if (lobbyStatus) lobbyStatus.textContent = "Admitted, but join credentials were missing. Try again.";
+            return false;
+          }
+          url = join.serverUrl;
+          token = join.token;
+          const next = new URL(location.href);
+          next.searchParams.set("u", url);
+          next.searchParams.set("t", token);
+          next.searchParams.delete("lobby");
+          if (localGuestUserId) next.searchParams.set("uid", String(localGuestUserId));
+          history.replaceState(null, "", next.toString());
+          return "admitted";
+        }
+        if (join.serverUrl) url = join.serverUrl;
+        if (join.token) token = join.token;
+        const lobbyNext = new URL(location.href);
+        if (url) lobbyNext.searchParams.set("u", url);
+        if (token) lobbyNext.searchParams.set("t", token);
+        if (localGuestUserId) lobbyNext.searchParams.set("uid", String(localGuestUserId));
+        lobbyNext.searchParams.set("lobby", "1");
+        history.replaceState(null, "", lobbyNext.toString());
+        if (lobbyStatus) lobbyStatus.textContent = "Waiting for the host to admit you…";
+        bindLobbyPrepControls();
+        return "lobby";
+      } catch (_) {
+        if (lobbyStatus) lobbyStatus.textContent = "Could not rejoin the lobby. Try your invite link again.";
+        return false;
+      }
+    }
+
+    function applyAdmittedCredentials(creds) {
+      if (!creds?.serverUrl || !creds?.token) return false;
+      url = creds.serverUrl;
+      token = creds.token;
+      if (creds.guestUserId) localGuestUserId = creds.guestUserId;
+      waitingInLobby = false;
+      window.meetjoePreferredMedia = { camera: lobbyWantCam, mic: lobbyWantMic };
+      stopLobbyPreview();
+      document.getElementById("lobby")?.classList.remove("show");
+      const toolbar = document.getElementById("toolbar");
+      const stage = document.getElementById("stage");
+      if (toolbar) toolbar.style.display = "";
+      if (stage) stage.style.display = "";
+      const next = new URL(location.href);
+      next.searchParams.set("u", url);
+      next.searchParams.set("t", token);
+      next.searchParams.delete("lobby");
+      if (localGuestUserId) next.searchParams.set("uid", String(localGuestUserId));
+      history.replaceState(null, "", next.toString());
+      return true;
+    }
+
+    async function fetchGuestSession() {
+      const res = await fetch(
+        "/api/public/meeting-invites/" + encodeURIComponent(inviteToken) + "/session");
+      return { res, body: res.ok ? await res.json() : null };
+    }
+
+    /** After Admit, require a publishable LiveKit token — never reuse the lobby token. */
+    async function takeAdmittedCredentials(session) {
+      if (!session || session.isPresent === false || session.inLobby === true) return false;
+      if (session.serverUrl && session.token) return applyAdmittedCredentials(session);
+
+      // Session says admitted but credentials missing — force a join refresh.
+      const result = await rejoinLobbyFromInvite();
+      if (result === "admitted") return applyAdmittedCredentials({ serverUrl: url, token, guestUserId: localGuestUserId });
+      return false;
+    }
+
     async function waitForLobbyAdmit() {
       if (!waitingInLobby || !isGuest || !inviteToken || embedded) return true;
 
       const lobbyEl = document.getElementById("lobby");
+      const lobbyCard = document.querySelector(".lobby-card");
       const lobbyStatus = document.getElementById("lobby-status");
       const toolbar = document.getElementById("toolbar");
       const stage = document.getElementById("stage");
       lobbyEl?.classList.add("show");
+      lobbyCard?.classList.remove("dismissed");
       if (toolbar) toolbar.style.display = "none";
       if (stage) stage.style.display = "none";
       document.getElementById("banner")?.classList.remove("show");
       bindLobbyPrepControls();
 
+      let dismissed = false;
+      let enterMeeting = false;
+      let leftVoluntarily = false;
       const leaveBtn = document.getElementById("lobby-leave");
       if (leaveBtn) {
         leaveBtn.onclick = () => {
+          leftVoluntarily = true;
           waitingInLobby = false;
           stopLobbyPreview();
+          reportGuestLeave();
           showThanksScreen();
         };
       }
+      const rejoinBtn = document.getElementById("lobby-rejoin");
+      if (rejoinBtn) {
+        rejoinBtn.onclick = async () => {
+          rejoinBtn.disabled = true;
+          const result = await rejoinLobbyFromInvite();
+          rejoinBtn.disabled = false;
+          if (result === "admitted") {
+            dismissed = false;
+            enterMeeting = true;
+            waitingInLobby = false;
+            applyAdmittedCredentials({ serverUrl: url, token, guestUserId: localGuestUserId });
+          } else if (result === "lobby") {
+            dismissed = false;
+            enterMeeting = false;
+            waitingInLobby = true;
+          }
+        };
+      }
 
-      while (waitingInLobby) {
-        await new Promise((r) => setTimeout(r, 2500));
-        if (!waitingInLobby) return false;
+      // Poll immediately, then every 1.5s — Admit must move the guest into LiveKit promptly.
+      let firstPoll = true;
+      while (waitingInLobby || enterMeeting) {
+        if (enterMeeting) return !!(url && token);
+        if (!firstPoll) await new Promise((r) => setTimeout(r, 1500));
+        firstPoll = false;
+        if (enterMeeting) return !!(url && token);
+        if (!waitingInLobby) return !leftVoluntarily && !!(url && token);
         try {
-          const res = await fetch(
-            "/api/public/meeting-invites/" + encodeURIComponent(inviteToken) + "/session");
+          const { res, body: session } = await fetchGuestSession();
           if (res.status === 409) {
             if (lobbyStatus) lobbyStatus.textContent = "This meeting has ended.";
             waitingInLobby = false;
@@ -1993,43 +2154,36 @@
             setTimeout(() => showThanksScreen(), 1200);
             return false;
           }
-          if (res.status === 400 || res.status === 404) {
-            const problem = await res.json().catch(() => null);
-            if (lobbyStatus) {
-              lobbyStatus.textContent = problem?.detail
-                || "The host did not admit you, or you left the lobby.";
+          if (!res.ok || !session) continue;
+
+          if (session.isPresent === false) {
+            // Host dismissed from lobby — not a ban; offer rejoin.
+            if (!dismissed) {
+              dismissed = true;
+              stopLobbyPreview();
+              lobbyCard?.classList.add("dismissed");
+              if (lobbyStatus) {
+                lobbyStatus.textContent =
+                  "The host removed you from the lobby. You can rejoin and wait to be admitted.";
+              }
             }
-            waitingInLobby = false;
-            stopLobbyPreview();
-            setTimeout(() => showThanksScreen(), 1600);
-            return false;
+            continue;
           }
-          if (!res.ok) continue;
-          const session = await res.json();
-          if (session.inLobby) {
+          if (dismissed) {
+            dismissed = false;
+            lobbyCard?.classList.remove("dismissed");
+            bindLobbyPrepControls();
+          }
+          if (session.inLobby === true) {
             if (lobbyStatus) lobbyStatus.textContent = "Waiting for the host to admit you…";
             continue;
           }
 
-          url = session.serverUrl || url;
-          token = session.token || token;
-          if (session.guestUserId) localGuestUserId = session.guestUserId;
-          waitingInLobby = false;
-          window.meetjoePreferredMedia = { camera: lobbyWantCam, mic: lobbyWantMic };
-          stopLobbyPreview();
-          lobbyEl?.classList.remove("show");
-          if (toolbar) toolbar.style.display = "";
-          if (stage) stage.style.display = "";
-
-          const next = new URL(location.href);
-          if (url) next.searchParams.set("u", url);
-          if (token) next.searchParams.set("t", token);
-          next.searchParams.delete("lobby");
-          if (localGuestUserId) next.searchParams.set("uid", String(localGuestUserId));
-          history.replaceState(null, "", next.toString());
-          return true;
+          if (lobbyStatus) lobbyStatus.textContent = "Admitted — joining the meeting…";
+          if (await takeAdmittedCredentials(session)) return true;
+          if (lobbyStatus) lobbyStatus.textContent = "Admitted — finishing join…";
         } catch (_) {
-          if (lobbyStatus) lobbyStatus.textContent = "Still waiting for the host…";
+          if (!dismissed && lobbyStatus) lobbyStatus.textContent = "Still waiting for the host…";
         }
       }
       return false;
@@ -3044,6 +3198,7 @@
         } catch (_) { /* ignore */ }
       });
       leaveBtn.onclick = async () => {
+        reportGuestLeave();
         await window.meetjoeShutdown?.();
         signalLeave();
         if (isGuest && !embedded) {
@@ -3055,6 +3210,7 @@
 
       /** Stop tracks + disconnect so the host can tear down WKWebView without a native crash. */
       window.meetjoeShutdown = async () => {
+        reportGuestLeave();
         stopChatPolling();
         try {
           if (isRecording) await window.meetjoeStopRecording();
@@ -3086,7 +3242,9 @@
         activeRoom = null;
       };
 
+      window.addEventListener("pagehide", () => reportGuestLeave());
       window.addEventListener("beforeunload", () => {
+        reportGuestLeave();
         try { room.disconnect(); } catch (_) { /* ignore */ }
       });
     }

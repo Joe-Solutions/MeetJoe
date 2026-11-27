@@ -195,15 +195,27 @@ public sealed class MeetingService(
         var now = time.Now();
         var isHost = meeting.HostId == user.Id;
         // Guests wait in the lobby when the host enabled it; only the host Admit moves them in.
-        var inLobby = meeting.LobbyEnabled && !isHost;
-        var existing = meeting.Participants.FirstOrDefault(p => p.UserId == user.Id && p.IsPresent);
+        // Reject/leave is temporary — rejoining the invite link parks them in the lobby again.
+        var wantLobby = meeting.LobbyEnabled && !isHost;
+        var existing = meeting.Participants
+            .Where(p => p.UserId == user.Id)
+            .OrderByDescending(p => p.JoinedAt)
+            .FirstOrDefault();
+        bool inLobby;
         if (existing is null)
         {
+            inLobby = wantLobby;
             db.MeetingParticipants.Add(new Domain.MeetingParticipant(meeting.Id, user.Id, now, inLobby));
+        }
+        else if (!existing.IsPresent)
+        {
+            // Previously rejected or left — allow another lobby wait; never treat reject as a ban.
+            existing.Rejoin(now, wantLobby);
+            inLobby = existing.InLobby;
         }
         else
         {
-            // Never auto-admit on refresh — keep the host's lobby decision.
+            // Still present: never auto-admit on refresh — keep the host's lobby decision.
             inLobby = existing.InLobby;
         }
 
@@ -246,8 +258,18 @@ public sealed class MeetingService(
             displayName = await db.Users.Where(u => u.Id == userId).Select(u => u.DisplayName).FirstAsync(ct);
         }
 
-        var participant = meeting.Participants.FirstOrDefault(p => p.UserId == userId && p.IsPresent)
-                          ?? throw AppException.Validation("You are not in this meeting. Join again from your invite link.");
+        var participant = meeting.Participants
+            .Where(p => p.UserId == userId)
+            .OrderByDescending(p => p.JoinedAt)
+            .FirstOrDefault();
+        if (participant is null || !participant.IsPresent)
+        {
+            // Reject/leave is temporary — client should offer rejoin via the invite link.
+            return new GuestJoinDto(
+                meeting.Id, string.Empty, meeting.RoomName, string.Empty,
+                InLobby: false, displayName, userId, IsPresent: false);
+        }
+
         var inLobby = participant.InLobby;
         var isHost = meeting.HostId == userId;
         var connection = tokens.Issue(
@@ -255,7 +277,8 @@ public sealed class MeetingService(
             canPublish: !inLobby,
             roomAdmin: isHost);
         return new GuestJoinDto(
-            meeting.Id, connection.ServerUrl, meeting.RoomName, connection.Token, inLobby, displayName, userId);
+            meeting.Id, connection.ServerUrl, meeting.RoomName, connection.Token,
+            inLobby, displayName, userId, IsPresent: true);
     }
 
     /// <summary>Load meeting chat for a guest using their invite token (no OpenIddict session).</summary>
@@ -283,12 +306,25 @@ public sealed class MeetingService(
 
         var now = time.Now();
         var isHost = meeting.HostId == userId;
-        var inLobby = meeting.LobbyEnabled && !isHost;
-        var existing = meeting.Participants.FirstOrDefault(p => p.UserId == userId && p.IsPresent);
+        var wantLobby = meeting.LobbyEnabled && !isHost;
+        var existing = meeting.Participants
+            .Where(p => p.UserId == userId)
+            .OrderByDescending(p => p.JoinedAt)
+            .FirstOrDefault();
+        bool inLobby;
 
         if (existing is null)
         {
+            inLobby = wantLobby;
             db.MeetingParticipants.Add(new Domain.MeetingParticipant(meeting.Id, userId, now, inLobby));
+            await db.SaveChangesAsync(ct);
+            await NotifyAsync(meeting.OrganizationId, ct);
+            await PublishMeetingAsync(meeting.Id, ct);
+        }
+        else if (!existing.IsPresent)
+        {
+            existing.Rejoin(now, wantLobby);
+            inLobby = existing.InLobby;
             await db.SaveChangesAsync(ct);
             await NotifyAsync(meeting.OrganizationId, ct);
             await PublishMeetingAsync(meeting.Id, ct);
@@ -317,8 +353,22 @@ public sealed class MeetingService(
     public async Task LeaveAsync(Guid userId, Guid meetingId, CancellationToken ct = default)
     {
         var meeting = await RequireAccessibleAsync(userId, meetingId, ct);
-        var now = time.Now();
+        await LeaveParticipantAsync(meeting, userId, ct);
+    }
 
+    /// <summary>
+    /// Email/web guests are not org members, so they leave via invite token instead of /meetings/leave.
+    /// Marks them gone so the host People list drops them after MeetingUpdated.
+    /// </summary>
+    public async Task LeaveAsGuestAsync(string token, CancellationToken ct = default)
+    {
+        var (meeting, userId) = await ResolveGuestUserAsync(token, ct);
+        await LeaveParticipantAsync(meeting, userId, ct);
+    }
+
+    private async Task LeaveParticipantAsync(Domain.Meeting meeting, Guid userId, CancellationToken ct)
+    {
+        var now = time.Now();
         var mine = meeting.Participants.Where(p => p.UserId == userId && p.IsPresent).ToList();
         if (mine.Count == 0) return;
         foreach (var participant in mine) participant.Leave(now);
@@ -614,7 +664,15 @@ public sealed class MeetingService(
     private async Task PublishMeetingAsync(Guid meetingId, CancellationToken ct)
     {
         var meeting = await LoadAsync(meetingId, ct);
-        await realtime.MeetingUpdatedAsync(await OrgMemberIdsAsync(meeting.OrganizationId, ct), ToDto(meeting), ct);
+        // Org members plus anyone currently in the meeting (email guests are not org members).
+        // Guests need MeetingUpdated so desktop clients can open media right after Admit.
+        var recipients = await OrgMemberIdsAsync(meeting.OrganizationId, ct);
+        foreach (var participantId in meeting.Participants.Where(p => p.IsPresent).Select(p => p.UserId))
+        {
+            if (!recipients.Contains(participantId))
+                recipients.Add(participantId);
+        }
+        await realtime.MeetingUpdatedAsync(recipients, ToDto(meeting), ct);
     }
 
     private static MeetingDto ToDto(Domain.Meeting meeting) =>
@@ -664,21 +722,23 @@ public sealed class MeetingService(
             .Where(e => e.Length > 0 && e.Contains('@') && !e.Contains(' '))
             .ToList();
 
-    private async Task<(Domain.Meeting Meeting, Guid UserId)> RequireJoinedGuestAsync(
+    private async Task<(Domain.Meeting Meeting, Guid UserId)> ResolveGuestUserAsync(
         string token, CancellationToken ct)
     {
         var (meeting, _, _, inviteToken) = await ResolveInviteTokenAsync(token, ct);
-        Guid userId;
         var guestInvite = meeting.GuestInvites.FirstOrDefault(i => i.InviteToken == inviteToken);
         if (guestInvite?.JoinedUserId is { } joined)
-            userId = joined;
-        else
-        {
-            var memberInvite = meeting.Invites.FirstOrDefault(i => i.InviteToken == inviteToken)
-                               ?? throw AppException.Validation("Join the meeting before using chat.");
-            userId = memberInvite.UserId;
-        }
+            return (meeting, joined);
 
+        var memberInvite = meeting.Invites.FirstOrDefault(i => i.InviteToken == inviteToken)
+                           ?? throw AppException.Validation("Join the meeting before leaving.");
+        return (meeting, memberInvite.UserId);
+    }
+
+    private async Task<(Domain.Meeting Meeting, Guid UserId)> RequireJoinedGuestAsync(
+        string token, CancellationToken ct)
+    {
+        var (meeting, userId) = await ResolveGuestUserAsync(token, ct);
         if (!meeting.Participants.Any(p => p.UserId == userId && p.IsPresent && !p.InLobby))
             throw AppException.Validation("Join the meeting before using chat.");
 

@@ -5,6 +5,9 @@ using System.Text;
 using System.Text.Json;
 using MeetJoe.Application.Calls;
 using MeetJoe.Contracts;
+using MeetJoe.Infrastructure.Persistence;
+using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace MeetJoe.Api.Tests;
@@ -876,6 +879,112 @@ public class MeetingTests(ApiFactory api)
         var lobbyJoin = await ben.PostAsync<MeetingJoinDto>($"/api/meetings/{meeting.Id}/join");
         Assert.True(lobbyJoin.InLobby);
         Assert.False(DecodeJwtPayload(lobbyJoin.Token).GetProperty("video").GetProperty("canPublish").GetBoolean());
+
+        await using var hub = await ana.ConnectAsync(HubPaths.Meeting);
+        await hub.InvokeAsync(MeetingHubMethods.Admit, meeting.Id, ben.Id);
+
+        var admitted = await ben.PostAsync<MeetingJoinDto>($"/api/meetings/{meeting.Id}/join");
+        Assert.False(admitted.InLobby);
+        Assert.True(DecodeJwtPayload(admitted.Token).GetProperty("video").GetProperty("canPublish").GetBoolean());
+
+        var roster = await ana.GetAsync<List<MeetingDto>>($"/api/orgs/{org.Id}/meetings");
+        var live = Assert.Single(roster, m => m.Id == meeting.Id);
+        Assert.Contains(live.Participants, p => p.Id == ben.Id);
+        Assert.DoesNotContain(live.Lobby, p => p.Id == ben.Id);
+    }
+
+    [Fact]
+    public async Task Email_guest_session_gets_publishable_token_after_host_admits()
+    {
+        var (org, people) = await api.NewOrganizationAsync("Ana");
+        var ana = people[0];
+        var starts = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var meeting = await ana.PostAsync<MeetingDto>(
+            $"/api/orgs/{org.Id}/meetings/schedule",
+            new ScheduleMeetingRequest(
+                "EOG Demo", "Agenda", starts, starts.AddHours(1), true, null, RecurrenceKind.None, null,
+                ["paul@example.com"]));
+
+        await ana.PostAsync<MeetingJoinDto>($"/api/meetings/{meeting.Id}/join");
+
+        string inviteToken;
+        await using (var scope = api.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            inviteToken = await db.MeetingGuestInvites
+                .Where(i => i.MeetingId == meeting.Id)
+                .Select(i => i.InviteToken)
+                .SingleAsync();
+        }
+
+        var guestClient = api.CreateClient();
+        var joinResponse = await guestClient.PostAsJsonAsync(
+            $"/api/public/meeting-invites/{Uri.EscapeDataString(inviteToken)}/join",
+            new GuestJoinRequest("Paul"),
+            ApiFactory.Json);
+        joinResponse.EnsureSuccessStatusCode();
+        var lobbyJoin = (await joinResponse.Content.ReadFromJsonAsync<GuestJoinDto>(ApiFactory.Json))!;
+        Assert.True(lobbyJoin.InLobby);
+        Assert.True(lobbyJoin.IsPresent);
+        Assert.False(DecodeJwtPayload(lobbyJoin.Token).GetProperty("video").GetProperty("canPublish").GetBoolean());
+
+        await using var hub = await ana.ConnectAsync(HubPaths.Meeting);
+        await hub.InvokeAsync(MeetingHubMethods.Admit, meeting.Id, lobbyJoin.GuestUserId);
+
+        var sessionResponse = await guestClient.GetAsync(
+            $"/api/public/meeting-invites/{Uri.EscapeDataString(inviteToken)}/session");
+        sessionResponse.EnsureSuccessStatusCode();
+        var session = (await sessionResponse.Content.ReadFromJsonAsync<GuestJoinDto>(ApiFactory.Json))!;
+        Assert.True(session.IsPresent);
+        Assert.False(session.InLobby);
+        Assert.False(string.IsNullOrWhiteSpace(session.ServerUrl));
+        Assert.False(string.IsNullOrWhiteSpace(session.Token));
+        Assert.True(DecodeJwtPayload(session.Token).GetProperty("video").GetProperty("canPublish").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Email_guest_leave_removes_them_from_the_people_list()
+    {
+        var (org, people) = await api.NewOrganizationAsync("Ana");
+        var ana = people[0];
+        var starts = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var meeting = await ana.PostAsync<MeetingDto>(
+            $"/api/orgs/{org.Id}/meetings/schedule",
+            new ScheduleMeetingRequest(
+                "EOG Demo", "Agenda", starts, starts.AddHours(1), false, null, RecurrenceKind.None, null,
+                ["paul@example.com"]));
+
+        await ana.PostAsync<MeetingJoinDto>($"/api/meetings/{meeting.Id}/join");
+
+        string inviteToken;
+        await using (var scope = api.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            inviteToken = await db.MeetingGuestInvites
+                .Where(i => i.MeetingId == meeting.Id)
+                .Select(i => i.InviteToken)
+                .SingleAsync();
+        }
+
+        var guestClient = api.CreateClient();
+        var joinResponse = await guestClient.PostAsJsonAsync(
+            $"/api/public/meeting-invites/{Uri.EscapeDataString(inviteToken)}/join",
+            new GuestJoinRequest("Paul"),
+            ApiFactory.Json);
+        joinResponse.EnsureSuccessStatusCode();
+        var guestJoin = (await joinResponse.Content.ReadFromJsonAsync<GuestJoinDto>(ApiFactory.Json))!;
+        Assert.False(guestJoin.InLobby);
+
+        var withGuest = Assert.Single(await ana.GetAsync<List<MeetingDto>>($"/api/orgs/{org.Id}/meetings"));
+        Assert.Contains(withGuest.Participants, p => p.Id == guestJoin.GuestUserId);
+
+        var leaveResponse = await guestClient.PostAsync(
+            $"/api/public/meeting-invites/{Uri.EscapeDataString(inviteToken)}/leave", null);
+        Assert.Equal(HttpStatusCode.NoContent, leaveResponse.StatusCode);
+
+        var afterLeave = Assert.Single(await ana.GetAsync<List<MeetingDto>>($"/api/orgs/{org.Id}/meetings"));
+        Assert.DoesNotContain(afterLeave.Participants, p => p.Id == guestJoin.GuestUserId);
+        Assert.Contains(afterLeave.Participants, p => p.Id == ana.Id);
     }
 
     [Fact]
