@@ -5,13 +5,6 @@ namespace MeetJoe.App.Services;
 public sealed class AppConfig
 {
     public const string ApiUrlVariable = "MEETJOE_API_URL";
-    public const string SpotifyClientIdVariable = "MEETJOE_SPOTIFY_CLIENT_ID";
-
-    /// <summary>
-    /// MeetJoe Spotify app Client ID (public for PKCE desktop clients — not a secret).
-    /// Override with <see cref="SpotifyClientIdVariable"/> if needed. Never ship a Client Secret.
-    /// </summary>
-    public const string DefaultSpotifyClientId = "f18ff751ee8b467d8ee11c3bb7bd15b1";
 #if DEBUG
     public const string DefaultApiUrl = "http://localhost:5080";
 #else
@@ -20,28 +13,16 @@ public sealed class AppConfig
 
     public Uri ApiBaseUri { get; init; } = new(DefaultApiUrl);
 
-    /// <summary>
-    /// Public Spotify app Client ID (PKCE — no secret).
-    /// </summary>
-    public string SpotifyClientId { get; init; } = DefaultSpotifyClientId;
-
-    public bool HasSpotifyClientId => !string.IsNullOrWhiteSpace(SpotifyClientId);
-
     public static AppConfig FromEnvironment()
     {
         var configured = Environment.GetEnvironmentVariable(ApiUrlVariable);
-        var fromEnv = Environment.GetEnvironmentVariable(SpotifyClientIdVariable)?.Trim();
-        var spotifyClientId = string.IsNullOrWhiteSpace(fromEnv) ? DefaultSpotifyClientId : fromEnv;
         if (!Uri.TryCreate(configured, UriKind.Absolute, out var uri))
-        {
-            return new AppConfig { SpotifyClientId = spotifyClientId };
-        }
+            return new AppConfig();
 
         // Relative request paths resolve against the base, which only works when it ends in a slash.
         return new AppConfig
         {
             ApiBaseUri = uri.AbsoluteUri.EndsWith('/') ? uri : new Uri(uri.AbsoluteUri + '/'),
-            SpotifyClientId = spotifyClientId,
         };
     }
 }
@@ -179,13 +160,6 @@ public interface IMeetJoeApi
     Task HangUpCallAsync(Guid callId, CancellationToken ct = default);
     Task EndCallAsync(Guid callId, CancellationToken ct = default);
     Task<CallDto> InviteToCallAsync(Guid callId, IReadOnlyList<Guid> userIds, CancellationToken ct = default);
-
-    /// <summary>Org shared Spotify access (testing). Null/unavailable when not published.</summary>
-    Task<SharedSpotifySessionDto> GetSharedSpotifySessionAsync(CancellationToken ct = default);
-
-    Task<SharedSpotifySessionDto> PublishSharedSpotifyAsync(string refreshToken, CancellationToken ct = default);
-
-    Task ClearSharedSpotifyAsync(CancellationToken ct = default);
 }
 
 /// <summary>Live connection to the server. Every event is raised on the UI thread.</summary>

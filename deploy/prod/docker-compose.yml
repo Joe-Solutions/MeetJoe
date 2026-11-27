@@ -71,10 +71,6 @@ services:
       Email__Password: ${EMAIL_PASSWORD:-}
       Email__FromAddress: ${EMAIL_FROM_ADDRESS:-noreply@joesolutions.ph}
       Email__FromName: ${EMAIL_FROM_NAME:-MeetJoe}
-      # Test-only shared Spotify (optional bootstrap; prefer Share from desktop Music)
-      Spotify__ClientId: ${MEETJOE_SPOTIFY_CLIENT_ID:-f18ff751ee8b467d8ee11c3bb7bd15b1}
-      Spotify__RefreshToken: ${MEETJOE_SPOTIFY_REFRESH_TOKEN:-}
-      Spotify__SharedStorePath: /var/meetjoe/keys/spotify-shared.json
     volumes:
       - api-keys:/var/meetjoe/keys
       # Velopack desktop update feed (nupkgs + releases.*.json per RID)

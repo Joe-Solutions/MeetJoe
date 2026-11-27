@@ -8,7 +8,6 @@ using MeetJoe.Application;
 using MeetJoe.Application.Common;
 using MeetJoe.Contracts;
 using MeetJoe.Domain;
-using MeetJoe.Api.Music;
 using MeetJoe.Api.Updates;
 using MeetJoe.Infrastructure;
 using MeetJoe.Infrastructure.Persistence;
@@ -33,9 +32,6 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddMeetJoeAuth(builder.Configuration, builder.Environment);
 builder.Services.Configure<DesktopUpdatesOptions>(builder.Configuration.GetSection(DesktopUpdatesOptions.SectionName));
 builder.Services.AddSingleton<IDesktopUpdateFeed, DesktopUpdateFeed>();
-builder.Services.Configure<SharedSpotifyOptions>(builder.Configuration.GetSection(SharedSpotifyOptions.SectionName));
-builder.Services.AddHttpClient(nameof(SharedSpotifyService));
-builder.Services.AddSingleton<SharedSpotifyService>();
 
 builder.Services.AddScoped<IRealtimePublisher, SignalRRealtimePublisher>();
 builder.Services.AddSingleton<IUserIdProvider, SubjectUserIdProvider>();

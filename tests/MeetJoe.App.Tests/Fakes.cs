@@ -560,14 +560,6 @@ internal sealed class FakeApi : IMeetJoeApi
     public Task HangUpCallAsync(Guid callId, CancellationToken ct = default) => Task.CompletedTask;
     public Task EndCallAsync(Guid callId, CancellationToken ct = default) => Task.CompletedTask;
 
-    public Task<SharedSpotifySessionDto> GetSharedSpotifySessionAsync(CancellationToken ct = default) =>
-        Task.FromResult(new SharedSpotifySessionDto(false, null, 0, null, "none"));
-
-    public Task<SharedSpotifySessionDto> PublishSharedSpotifyAsync(string refreshToken, CancellationToken ct = default) =>
-        Task.FromResult(new SharedSpotifySessionDto(true, "fake-access", 3600, "Shared", "shared"));
-
-    public Task ClearSharedSpotifyAsync(CancellationToken ct = default) => Task.CompletedTask;
-
     public Task<CallDto> InviteToCallAsync(Guid callId, IReadOnlyList<Guid> userIds, CancellationToken ct = default)
     {
         var existing = Calls.FirstOrDefault(c => c.Id == callId)

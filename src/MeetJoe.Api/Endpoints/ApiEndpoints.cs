@@ -37,7 +37,6 @@ internal static class ApiEndpoints
         MapMeetings(api);
         MapCalls(api);
         MapSearch(api);
-        api.MapMusicEndpoints();
     }
 
     /// <summary>Unauthenticated join links from email / deep links.</summary>

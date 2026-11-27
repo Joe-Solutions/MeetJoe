@@ -113,7 +113,7 @@ public partial class ShellViewModel : ViewModelBase
                 or nameof(MusicViewModel.NowPlayingLine)
                 or nameof(MusicViewModel.IsPlaying)
                 or nameof(MusicViewModel.NowPlayingTitle)
-                or nameof(MusicViewModel.NowPlayingArtist))
+                or nameof(MusicViewModel.ActiveUrl))
             {
                 OnPropertyChanged(nameof(ShowMusicMiniPlayer));
                 OnPropertyChanged(nameof(MusicMiniPlayerLine));
@@ -196,7 +196,7 @@ public partial class ShellViewModel : ViewModelBase
     /// </summary>
     public bool ShowCallBar => Calls.IsInCall && !ShowCallStage && !Calls.HasMedia;
 
-    /// <summary>Compact Spotify now-playing while browsing other rail sections.</summary>
+    /// <summary>Compact YouTube now-playing reminder while browsing other rail sections.</summary>
     public bool ShowMusicMiniPlayer =>
         Music.HasNowPlaying && !ReferenceEquals(Current, Music);
 

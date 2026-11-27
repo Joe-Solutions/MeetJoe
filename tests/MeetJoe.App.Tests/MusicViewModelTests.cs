@@ -1,5 +1,4 @@
 using MeetJoe.App.Services;
-using MeetJoe.App.Services.Spotify;
 using MeetJoe.App.ViewModels;
 
 namespace MeetJoe.App.Tests;
@@ -9,33 +8,70 @@ public class MusicViewModelTests
     private readonly World _world = new();
 
     [Fact]
-    public void Music_starts_disconnected_with_client_id_ready()
+    public void OpenUrl_normalizes_youtube_watch_link()
     {
-        var session = _world.NewSession();
-        var music = new MusicViewModel(session, new MemorySpotifyTokenStore());
+        var path = Path.Combine(Path.GetTempPath(), "meetjoe-music-recent-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            var music = new MusicViewModel(_world.NewSession(), path);
+            music.UrlInput = "https://youtu.be/dQw4w9WgXcQ";
+            music.OpenUrlCommand.Execute(null);
 
-        Assert.False(music.IsConnected);
-        Assert.False(music.NeedsClientId);
-        Assert.True(music.ShowConnectPrompt);
-        Assert.False(music.HasNowPlaying);
+            Assert.True(music.HasNowPlaying);
+            Assert.Equal("https://www.youtube.com/watch?v=dQw4w9WgXcQ", music.ActiveUrl!.AbsoluteUri);
+            Assert.Single(music.RecentUrls);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
     }
 
     [Fact]
-    public void Disconnect_clears_now_playing()
+    public void OpenUrl_rejects_non_youtube()
     {
-        var store = new MemorySpotifyTokenStore();
-        store.SaveRefreshToken("fake-refresh");
-        var config = new AppConfig { SpotifyClientId = "test-client-id" };
-        var session = _world.NewSession() with { Config = config };
-        var music = new MusicViewModel(session, store);
+        var path = Path.Combine(Path.GetTempPath(), "meetjoe-music-recent-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            var music = new MusicViewModel(_world.NewSession(), path);
+            music.UrlInput = "https://example.com/watch";
+            music.OpenUrlCommand.Execute(null);
 
-        Assert.True(music.IsConnected);
+            Assert.False(music.HasNowPlaying);
+            Assert.NotNull(music.ErrorMessage);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
 
-        music.DisconnectCommand.Execute(null);
+    [Fact]
+    public void Stop_clears_now_playing()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "meetjoe-music-recent-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            var music = new MusicViewModel(_world.NewSession(), path);
+            music.UrlInput = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+            music.OpenUrlCommand.Execute(null);
+            music.StopCommand.Execute(null);
 
-        Assert.False(music.IsConnected);
-        Assert.Null(store.LoadRefreshToken());
-        Assert.False(music.HasNowPlaying);
+            Assert.False(music.HasNowPlaying);
+            Assert.Null(music.ActiveUrl);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void YouTubeUrl_parses_shorts()
+    {
+        Assert.True(YouTubeUrl.TryNormalize(
+            "https://www.youtube.com/shorts/dQw4w9WgXcQ", out var url, out _));
+        Assert.Equal("https://www.youtube.com/watch?v=dQw4w9WgXcQ", url.AbsoluteUri);
     }
 
     [Fact]
