@@ -1050,9 +1050,10 @@ public partial class MeetingStageViewModel : ViewModelBase
     private async Task WatchLobbyAdmitAsync()
     {
         // Guests (and members without MeetingUpdated) poll until the host admits them.
+        // Email guests are not org members, so they often never get MeetingUpdated over SignalR.
         while (InLobby)
         {
-            try { await Task.Delay(2500); }
+            try { await Task.Delay(1500); }
             catch { return; }
             if (!InLobby) return;
             try
@@ -1061,6 +1062,12 @@ public partial class MeetingStageViewModel : ViewModelBase
                 if (!string.IsNullOrWhiteSpace(GuestInviteToken))
                 {
                     var session = await _context.Api.GetGuestMeetingSessionAsync(GuestInviteToken);
+                    if (!session.IsPresent)
+                    {
+                        // Rejected from lobby — stay out of media until they rejoin via the invite.
+                        continue;
+                    }
+
                     join = new MeetingJoinDto(
                         session.MeetingId, session.ServerUrl, session.RoomName, session.Token, session.InLobby);
                 }
@@ -1070,6 +1077,8 @@ public partial class MeetingStageViewModel : ViewModelBase
                 }
 
                 if (join.InLobby) continue;
+                if (string.IsNullOrWhiteSpace(join.ServerUrl) || string.IsNullOrWhiteSpace(join.Token))
+                    continue;
                 ApplyAdmittedJoin(join);
                 return;
             }
@@ -1082,35 +1091,57 @@ public partial class MeetingStageViewModel : ViewModelBase
 
     private async Task EnterMeetingAfterAdmitAsync()
     {
-        try
+        // Never open LiveKit with the lobby (canPublish:false) token — refresh first.
+        for (var attempt = 0; attempt < 4; attempt++)
         {
-            MeetingJoinDto join;
-            if (!string.IsNullOrWhiteSpace(GuestInviteToken))
+            try
             {
-                var session = await _context.Api.GetGuestMeetingSessionAsync(GuestInviteToken);
-                join = new MeetingJoinDto(
-                    session.MeetingId, session.ServerUrl, session.RoomName, session.Token, session.InLobby);
-            }
-            else
-            {
-                join = await _context.Api.JoinMeetingAsync(Id);
-            }
+                MeetingJoinDto join;
+                if (!string.IsNullOrWhiteSpace(GuestInviteToken))
+                {
+                    var session = await _context.Api.GetGuestMeetingSessionAsync(GuestInviteToken);
+                    if (!session.IsPresent)
+                    {
+                        InLobby = false;
+                        IsMediaOpen = false;
+                        return;
+                    }
 
-            if (join.InLobby)
-            {
-                InLobby = true;
-                IsMediaOpen = false;
+                    join = new MeetingJoinDto(
+                        session.MeetingId, session.ServerUrl, session.RoomName, session.Token, session.InLobby);
+                }
+                else
+                {
+                    join = await _context.Api.JoinMeetingAsync(Id);
+                }
+
+                if (join.InLobby)
+                {
+                    InLobby = true;
+                    IsMediaOpen = false;
+                    if (attempt == 0) _ = WatchLobbyAdmitAsync();
+                    return;
+                }
+
+                if (string.IsNullOrWhiteSpace(join.ServerUrl) || string.IsNullOrWhiteSpace(join.Token))
+                {
+                    await Task.Delay(500);
+                    continue;
+                }
+
+                ApplyAdmittedJoin(join);
                 return;
             }
+            catch
+            {
+                await Task.Delay(500);
+            }
+        }
 
-            ApplyAdmittedJoin(join);
-        }
-        catch
-        {
-            // Fall back to opening media with the prior token if refresh fails.
-            InLobby = false;
-            IsMediaOpen = true;
-        }
+        // Last resort: keep waiting in lobby UI rather than joining mute/camera-locked.
+        InLobby = true;
+        IsMediaOpen = false;
+        _ = WatchLobbyAdmitAsync();
     }
 
     private void ApplyAdmittedJoin(MeetingJoinDto join)
@@ -1832,12 +1863,18 @@ public partial class CalendarViewModel : ViewModelBase
         if (Stage is not { } stage) return;
         try { await stage.FinalizeRecordingAsync(); }
         catch { /* best-effort before tear-down */ }
+        var guestToken = stage.GuestInviteToken;
+        var meetingId = stage.Id;
         stage.Detach();
         Stage = null;
         await MeetingMediaParking.ShutdownAsync();
         try
         {
-            await _context.Api.LeaveMeetingAsync(stage.Id);
+            // Email guests are not org members — leave via invite token so People updates for the host.
+            if (!string.IsNullOrWhiteSpace(guestToken))
+                await _context.Api.LeaveGuestMeetingAsync(guestToken);
+            else
+                await _context.Api.LeaveMeetingAsync(meetingId);
         }
         catch (Exception ex)
         {

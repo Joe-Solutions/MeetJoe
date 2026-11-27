@@ -55,6 +55,12 @@ internal static class ApiEndpoints
             (string token, MeetingService meetings, CancellationToken ct) =>
                 meetings.GetGuestSessionAsync(token, ct));
 
+        pub.MapPost("/meeting-invites/{token}/leave", async (string token, MeetingService meetings, CancellationToken ct) =>
+        {
+            await meetings.LeaveAsGuestAsync(token, ct);
+            return Results.NoContent();
+        });
+
         pub.MapGet("/meeting-invites/{token}/messages",
             (string token, DateTimeOffset? before, int? limit, MeetingService meetings, CancellationToken ct) =>
                 meetings.GetGuestMeetingMessagesAsync(token, before, limit, ct));

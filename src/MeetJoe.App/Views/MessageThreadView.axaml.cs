@@ -15,6 +15,7 @@ public partial class MessageThreadView : UserControl
     private const double FollowThreshold = 120;
 
     private MessageThreadViewModel? _thread;
+    private int _scrollRetries;
 
     public MessageThreadView()
     {
@@ -50,7 +51,13 @@ public partial class MessageThreadView : UserControl
 
     private void Follow(MessageThreadViewModel? thread)
     {
-        if (ReferenceEquals(thread, _thread)) return;
+        if (ReferenceEquals(thread, _thread))
+        {
+            // Same thread re-attached (e.g. visual tree) — still honor a pending stick-to-latest.
+            if (_thread?.PendingScrollToLatest == true)
+                ScheduleScrollToLatest();
+            return;
+        }
 
         if (_thread is not null)
         {
@@ -68,6 +75,10 @@ public partial class MessageThreadView : UserControl
             _thread.FocusComposerRequested += OnFocusComposerRequested;
             _thread.FocusEditRequested += OnFocusEditRequested;
             _thread.ClearNewMessagesHint();
+
+            // Cover the race where LoadAsync finished before this view subscribed.
+            if (_thread.PendingScrollToLatest || (!_thread.IsLoading && _thread.Messages.Count > 0))
+                ScheduleScrollToLatest();
         }
     }
 
@@ -100,7 +111,7 @@ public partial class MessageThreadView : UserControl
         if (distanceFromEnd <= FollowThreshold)
         {
             _thread?.ClearNewMessagesHint();
-            Dispatcher.UIThread.Post(Scroller.ScrollToEnd, DispatcherPriority.Loaded);
+            ScheduleScrollToLatest();
             return;
         }
 
@@ -108,8 +119,43 @@ public partial class MessageThreadView : UserControl
         _thread?.NotifyUnseenMessages();
     }
 
-    private void OnScrollToLatestRequested() =>
-        Dispatcher.UIThread.Post(Scroller.ScrollToEnd, DispatcherPriority.Loaded);
+    private void OnScrollToLatestRequested() => ScheduleScrollToLatest();
+
+    /// <summary>
+    /// ScrollToEnd once is often too early — ItemsControl has not measured bubbles yet,
+    /// so Extent is still short and the offset snaps back when layout catches up.
+    /// Retry across layout passes until we are truly at the bottom.
+    /// </summary>
+    private void ScheduleScrollToLatest()
+    {
+        _scrollRetries = 0;
+        Dispatcher.UIThread.Post(ScrollToLatestPass, DispatcherPriority.Loaded);
+    }
+
+    private void ScrollToLatestPass()
+    {
+        if (_thread is null) return;
+
+        Scroller.ScrollToEnd();
+        _thread.ClearNewMessagesHint();
+
+        var extent = Scroller.Extent.Height;
+        var viewport = Scroller.Viewport.Height;
+        var offset = Scroller.Offset.Y;
+        var distanceFromEnd = extent - viewport - offset;
+        var atEnd = viewport <= 0 || extent <= viewport || distanceFromEnd <= 2;
+
+        if (atEnd || _scrollRetries >= 8)
+        {
+            _thread.AcknowledgeScrollToLatest();
+            return;
+        }
+
+        _scrollRetries++;
+        // Later priorities let item templates/avatars finish measuring before the next snap.
+        var priority = _scrollRetries < 3 ? DispatcherPriority.Loaded : DispatcherPriority.Background;
+        Dispatcher.UIThread.Post(ScrollToLatestPass, priority);
+    }
 
     private void OnScrollChanged(object? sender, ScrollChangedEventArgs e)
     {

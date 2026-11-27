@@ -258,6 +258,9 @@ public sealed class MeetJoeApi(HttpClient http, IAuthService auth) : IMeetJoeApi
     public Task<GuestJoinDto> GetGuestMeetingSessionAsync(string token, CancellationToken ct = default) =>
         GetAsync<GuestJoinDto>($"api/public/meeting-invites/{Uri.EscapeDataString(token)}/session", ct);
 
+    public Task LeaveGuestMeetingAsync(string token, CancellationToken ct = default) =>
+        SendAsync(HttpMethod.Post, $"api/public/meeting-invites/{Uri.EscapeDataString(token)}/leave", null, ct);
+
     public Task<MeetingJoinDto> JoinMeetingAsync(Guid meetingId, CancellationToken ct = default) =>
         SendAsync<MeetingJoinDto>(HttpMethod.Post, $"api/meetings/{meetingId}/join", null, ct);
 

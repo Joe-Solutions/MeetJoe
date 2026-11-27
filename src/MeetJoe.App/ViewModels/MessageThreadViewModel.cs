@@ -383,6 +383,12 @@ public partial class MessageThreadViewModel : ViewModelBase
     /// <summary>Raised when the user taps the “New messages” chip — view scrolls to the latest.</summary>
     public event Action? ScrollToLatestRequested;
 
+    /// <summary>
+    /// True after open/load/send until the view scrolls to the end. Covers the race where
+    /// LoadAsync finishes before MessageThreadView subscribes to ScrollToLatestRequested.
+    /// </summary>
+    public bool PendingScrollToLatest { get; private set; }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsEmpty))]
     private bool _isLoading;
@@ -542,7 +548,8 @@ public partial class MessageThreadViewModel : ViewModelBase
             IsLoading = false;
             OnPropertyChanged(nameof(IsEmpty));
             RefreshSeenBy();
-            MessageAppended?.Invoke();
+            // Opening a conversation should always land on the newest message.
+            RequestScrollToLatest();
         }
     }
 
@@ -576,6 +583,13 @@ public partial class MessageThreadViewModel : ViewModelBase
         if (!Add(message, atEnd: true)) return;
         OnPropertyChanged(nameof(IsEmpty));
         RefreshSeenBy();
+        if (message.Sender.Id == _context.People.MyId)
+        {
+            // Own messages always stick to the latest bubble.
+            RequestScrollToLatest();
+            return;
+        }
+
         MessageAppended?.Invoke();
     }
 
@@ -663,6 +677,7 @@ public partial class MessageThreadViewModel : ViewModelBase
             var sent = _context.Realtime.IsConnected
                 ? await _context.Realtime.SendMessageAsync(request)
                 : await _context.Api.SendMessageAsync(request);
+            // Append forces scroll-to-latest for own messages.
             Append(sent);
         }
         catch (Exception ex)
@@ -754,11 +769,18 @@ public partial class MessageThreadViewModel : ViewModelBase
     public void ClearNewMessagesHint() => ShowNewMessagesHint = false;
 
     [RelayCommand]
-    private void JumpToLatest()
+    private void JumpToLatest() => RequestScrollToLatest();
+
+    /// <summary>Ask the view to stick to the newest message (open, send, or “New messages” chip).</summary>
+    public void RequestScrollToLatest()
     {
         ShowNewMessagesHint = false;
+        PendingScrollToLatest = true;
         ScrollToLatestRequested?.Invoke();
     }
+
+    /// <summary>Called by the view after it has scrolled to the end.</summary>
+    public void AcknowledgeScrollToLatest() => PendingScrollToLatest = false;
 
     [RelayCommand]
     private async Task OpenRepliesAsync(MessageViewModel message)

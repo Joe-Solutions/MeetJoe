@@ -306,7 +306,9 @@ public record GuestJoinDto(
     string Token,
     bool InLobby,
     string DisplayName,
-    Guid GuestUserId);
+    Guid GuestUserId,
+    /// <summary>False after leave/reject — guest may rejoin the lobby from the invite link.</summary>
+    bool IsPresent = true);
 
 public record RespondInviteRequest(InviteStatus Status);
 
