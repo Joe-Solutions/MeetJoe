@@ -37,8 +37,7 @@ public sealed class RecordingOsNotificationService : IOsNotificationService
 }
 
 /// <summary>
-/// Posts OS-level alerts via <c>osascript</c> (macOS) or a Windows toast / balloon tip.
-/// These appear outside MeetJoe — like Terminal/Cursor waiting alerts.
+/// Posts OS-level alerts via Notification Center (macOS) or a Windows toast / balloon tip.
 /// </summary>
 public sealed class OsNotificationService : IOsNotificationService
 {
@@ -72,12 +71,15 @@ public sealed class OsNotificationService : IOsNotificationService
 
     private static void ShowMac(string title, string body, Uri? actionUri)
     {
-        // Notification Center banner. Clicking it focuses MeetJoe when the pending chat is consumed on Activated.
-        var subtitle = actionUri is null ? "MeetJoe" : "Click MeetJoe or this alert to open";
-        var script =
-            $"display notification {AppleScriptString(body)} with title {AppleScriptString(title)} " +
-            $"subtitle {AppleScriptString(subtitle)} sound name \"Glass\"";
-        Run("osascript", ["-e", script]);
+        // Must post as MeetJoe.app — bare osascript banners belong to Script Editor,
+        // so Show/click opens Script Editor instead of MeetJoe + the group chat.
+        if (OsNotificationHooks.ShowMac is { } show)
+        {
+            show(title, body, actionUri);
+            return;
+        }
+
+        // Headless / tests without a Desktop host: no Script Editor side effects.
     }
 
     private static void ShowWindows(string title, string body, Uri? actionUri, string actionLabel)
@@ -135,14 +137,6 @@ public sealed class OsNotificationService : IOsNotificationService
     {
         if (TryRun("notify-send", ["--app-name=MeetJoe", title, body])) return;
         TryRun("zenity", ["--notification", $"--text={title}\n{body}"]);
-    }
-
-    private static string AppleScriptString(string value)
-    {
-        var escaped = value
-            .Replace("\\", "\\\\")
-            .Replace("\"", "\\\"");
-        return $"\"{escaped}\"";
     }
 
     private static string EscapePs(string value) =>
