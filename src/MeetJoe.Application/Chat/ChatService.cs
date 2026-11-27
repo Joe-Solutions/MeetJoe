@@ -201,10 +201,10 @@ public sealed class ChatService(IAppDbContext db, IRealtimePublisher realtime, T
     {
         await db.ResolveTargetAsync(userId, conversationId, channelId, ct);
 
-        // Main history is root messages only; replies are loaded via GetRepliesAsync.
+        // Full stream (roots + replies) so Messenger-style quoted replies appear inline.
         var query = conversationId is { } cid
-            ? db.Messages.AsNoTracking().Where(m => m.ConversationId == cid && m.ParentMessageId == null)
-            : db.Messages.AsNoTracking().Where(m => m.ChannelId == channelId && m.ParentMessageId == null);
+            ? db.Messages.AsNoTracking().Where(m => m.ConversationId == cid)
+            : db.Messages.AsNoTracking().Where(m => m.ChannelId == channelId);
         if (before is { } cutoff)
         {
             var utc = cutoff.ToUniversalTime();
@@ -267,8 +267,6 @@ public sealed class ChatService(IAppDbContext db, IRealtimePublisher realtime, T
             parent = await db.Messages.FirstOrDefaultAsync(m => m.Id == parentId, ct)
                      ?? throw AppException.NotFound("Message");
             if (parent.IsDeleted) throw AppException.Validation("That message was deleted.");
-            if (parent.ParentMessageId is not null)
-                throw AppException.Validation("Replies can only be added to a top-level message.");
             if (parent.ConversationId != request.ConversationId
                 || parent.ChannelId != request.ChannelId
                 || parent.MeetingId != request.MeetingId)
@@ -299,10 +297,11 @@ public sealed class ChatService(IAppDbContext db, IRealtimePublisher realtime, T
 
         if (parent is not null) parent.AddReply();
 
-        if (target.Conversation is { } conversation && parent is null)
+        if (target.Conversation is { } conversation)
         {
             conversation.RecordMessage(message);
-            conversation.Members.First(m => m.UserId == userId).MarkRead(now);
+            if (parent is null)
+                conversation.Members.First(m => m.UserId == userId).MarkRead(now);
         }
 
         var activityRecipients = await BuildActivityAsync(userId, message, parent, target, now, ct);
@@ -315,7 +314,7 @@ public sealed class ChatService(IAppDbContext db, IRealtimePublisher realtime, T
             await realtime.MessageCreatedAsync(target.MemberIds, dto, ct);
         if (activityRecipients.Count > 0)
             await realtime.ActivityChangedAsync(activityRecipients, ct);
-        if (target.Conversation is not null && parent is null)
+        if (target.Conversation is not null)
             await realtime.ConversationsChangedAsync(target.MemberIds, ct);
         return dto;
     }
@@ -333,7 +332,6 @@ public sealed class ChatService(IAppDbContext db, IRealtimePublisher realtime, T
         message.Edit(request.Body, now);
 
         if (target.Conversation is { } conversation
-            && message.ParentMessageId is null
             && conversation.LastMessageAt == message.CreatedAt)
         {
             conversation.RecordMessage(message);
@@ -364,7 +362,6 @@ public sealed class ChatService(IAppDbContext db, IRealtimePublisher realtime, T
         }
 
         if (target.Conversation is { } conversation
-            && message.ParentMessageId is null
             && conversation.LastMessageAt == message.CreatedAt)
         {
             conversation.RecordMessage(message);
@@ -644,6 +641,15 @@ public sealed class ChatService(IAppDbContext db, IRealtimePublisher realtime, T
                 m.LinkPreviewUrl,
                 m.LinkPreviewTitle,
                 m.LinkPreviewDescription,
+                ParentSenderId = m.Parent == null ? (Guid?)null : m.Parent.SenderId,
+                ParentSenderName = m.Parent == null ? null : m.Parent.Sender.DisplayName,
+                ParentSenderAvatarKey = m.Parent == null ? null : m.Parent.Sender.AvatarStorageKey,
+                ParentSenderAvatarUpdatedAt = m.Parent == null ? (DateTimeOffset?)null : m.Parent.Sender.AvatarUpdatedAt,
+                ParentBody = m.Parent == null
+                    ? null
+                    : m.Parent.DeletedAt == null ? m.Parent.Body : string.Empty,
+                ParentCreatedAt = m.Parent == null ? (DateTimeOffset?)null : m.Parent.CreatedAt,
+                ParentIsDeleted = m.Parent != null && m.Parent.DeletedAt != null,
             })
             .ToListAsync(ct);
 
@@ -666,7 +672,16 @@ public sealed class ChatService(IAppDbContext db, IRealtimePublisher realtime, T
                 m.MeetingId,
                 m.LinkPreviewUrl == null
                     ? null
-                    : new LinkPreviewDto(m.LinkPreviewUrl, m.LinkPreviewTitle, m.LinkPreviewDescription)))
+                    : new LinkPreviewDto(m.LinkPreviewUrl, m.LinkPreviewTitle, m.LinkPreviewDescription),
+                m.ParentSenderId is { } parentSenderId
+                    ? new UserSummaryDto(
+                        parentSenderId,
+                        m.ParentSenderName ?? "Someone",
+                        Mapping.AvatarUrl(parentSenderId, m.ParentSenderAvatarKey, m.ParentSenderAvatarUpdatedAt))
+                    : null,
+                m.ParentBody,
+                m.ParentCreatedAt,
+                m.ParentIsDeleted))
             .ToList();
     }
 

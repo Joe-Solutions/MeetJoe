@@ -168,7 +168,7 @@ internal sealed class FakeApi : IMeetJoeApi
     {
         var key = conversationId ?? channelId!.Value;
         var all = Messages.TryGetValue(key, out var list) ? list : [];
-        var page = all.Where(m => m.ParentMessageId is null && (before is null || m.CreatedAt < before)).TakeLast(50).ToList();
+        var page = all.Where(m => before is null || m.CreatedAt < before).TakeLast(50).ToList();
         return Task.FromResult<IReadOnlyList<MessageDto>>(page);
     }
 
@@ -214,20 +214,38 @@ internal sealed class FakeApi : IMeetJoeApi
         }
 
         Sent.Add(request);
-        var message = new MessageDto(
-            Guid.NewGuid(), request.ConversationId, request.ChannelId, MeSummary, request.Body ?? string.Empty,
-            DateTimeOffset.Now, [], request.ParentMessageId);
+        UserSummaryDto? parentSender = null;
+        string? parentBody = null;
+        DateTimeOffset? parentCreatedAt = null;
+        var parentIsDeleted = false;
         if (request.ParentMessageId is { } parentId)
         {
-            if (!Replies.TryGetValue(parentId, out var list)) Replies[parentId] = list = [];
-            list.Add(message);
+            var parent = FindMessage(parentId);
+            if (parent is not null)
+            {
+                parentSender = parent.Sender;
+                parentBody = parent.IsDeleted ? null : parent.Body;
+                parentCreatedAt = parent.CreatedAt;
+                parentIsDeleted = parent.IsDeleted;
+            }
         }
-        else
+
+        var message = new MessageDto(
+            Guid.NewGuid(), request.ConversationId, request.ChannelId, MeSummary, request.Body ?? string.Empty,
+            DateTimeOffset.Now, [], request.ParentMessageId,
+            ParentSender: parentSender,
+            ParentBody: parentBody,
+            ParentCreatedAt: parentCreatedAt,
+            ParentIsDeleted: parentIsDeleted);
+        if (request.ParentMessageId is { } replyParentId)
         {
-            var key = request.ConversationId ?? request.ChannelId!.Value;
-            if (!Messages.TryGetValue(key, out var list)) Messages[key] = list = [];
-            list.Add(message);
+            if (!Replies.TryGetValue(replyParentId, out var replyList)) Replies[replyParentId] = replyList = [];
+            replyList.Add(message);
         }
+
+        var key = request.ConversationId ?? request.ChannelId!.Value;
+        if (!Messages.TryGetValue(key, out var list)) Messages[key] = list = [];
+        list.Add(message);
 
         return Task.FromResult(message);
     }

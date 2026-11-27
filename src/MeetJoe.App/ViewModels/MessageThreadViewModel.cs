@@ -129,6 +129,7 @@ public partial class MessageViewModel : ObservableObject
     {
         _thread = thread;
         Id = message.Id;
+        ParentMessageId = message.ParentMessageId;
         CreatedAt = message.CreatedAt;
         Sender = context.People.Get(message.Sender);
         IsMine = message.Sender.Id == context.People.MyId;
@@ -138,6 +139,7 @@ public partial class MessageViewModel : ObservableObject
     }
 
     public Guid Id { get; }
+    public Guid? ParentMessageId { get; }
     public DateTimeOffset CreatedAt { get; }
     public PersonViewModel Sender { get; }
     public bool IsMine { get; }
@@ -162,6 +164,31 @@ public partial class MessageViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasReplies), nameof(RepliesLabel))]
     private int _replyCount;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasQuote), nameof(QuotedDisplayBody))]
+    private string? _quotedSenderName;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasQuote))]
+    private string? _quotedTimeText;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasQuote), nameof(QuotedDisplayBody))]
+    private string? _quotedBody;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(QuotedDisplayBody))]
+    private bool _quotedIsDeleted;
+
+    /// <summary>Messenger-style nested quote of the message this reply references.</summary>
+    public bool HasQuote => ParentMessageId is not null
+                            && (!string.IsNullOrEmpty(QuotedSenderName) || QuotedIsDeleted);
+
+    public string QuotedDisplayBody =>
+        QuotedIsDeleted
+            ? "This message was deleted."
+            : string.IsNullOrWhiteSpace(QuotedBody) ? "Attachment" : QuotedBody;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasReactions))]
@@ -216,6 +243,38 @@ public partial class MessageViewModel : ObservableObject
         Reactions = (message.Reactions ?? []).Select(r => new ReactionChipViewModel(Id, r)).ToList();
         LinkPreview = message.LinkPreview;
         EditDraft = null;
+        ApplyQuote(message);
+    }
+
+    private void ApplyQuote(MessageDto message)
+    {
+        if (message.ParentMessageId is null)
+        {
+            QuotedSenderName = null;
+            QuotedTimeText = null;
+            QuotedBody = null;
+            QuotedIsDeleted = false;
+            return;
+        }
+
+        if (message.ParentSender is { } parentSender)
+        {
+            QuotedSenderName = parentSender.DisplayName;
+            QuotedIsDeleted = message.ParentIsDeleted;
+            QuotedBody = message.ParentIsDeleted ? null : message.ParentBody;
+            QuotedTimeText = message.ParentCreatedAt is { } at
+                ? at.ToLocalTime().ToString("M/d/yy h:mm tt")
+                : null;
+            return;
+        }
+
+        // Live/local fallback: resolve the parent already shown in this thread.
+        var parent = _thread?.Messages.FirstOrDefault(m => m.Id == message.ParentMessageId);
+        if (parent is null) return;
+        QuotedSenderName = parent.Sender.DisplayName;
+        QuotedIsDeleted = parent.IsDeleted;
+        QuotedBody = parent.IsDeleted ? null : parent.Body;
+        QuotedTimeText = parent.CreatedAt.ToLocalTime().ToString("M/d/yy h:mm tt");
     }
 
     [RelayCommand]
@@ -569,18 +628,18 @@ public partial class MessageThreadViewModel : ViewModelBase
         }
     }
 
-    /// <summary>Adds a root message that arrived live. Safe to call for one already shown.</summary>
+    /// <summary>Adds a message that arrived live (root or inline reply). Safe for duplicates.</summary>
     public void Append(MessageDto message)
     {
+        if (!Add(message, atEnd: true)) return;
+
         if (message.ParentMessageId is { } parentId)
         {
             var parent = Messages.FirstOrDefault(m => m.Id == parentId);
             if (parent is not null) parent.ReplyCount++;
             if (OpenThread?.Id == parentId) AddReply(message);
-            return;
         }
 
-        if (!Add(message, atEnd: true)) return;
         OnPropertyChanged(nameof(IsEmpty));
         RefreshSeenBy();
         if (message.Sender.Id == _context.People.MyId)
@@ -595,6 +654,9 @@ public partial class MessageThreadViewModel : ViewModelBase
 
     public void ApplyUpdate(MessageDto message)
     {
+        var existing = Messages.FirstOrDefault(m => m.Id == message.Id);
+        if (existing is not null) existing.Apply(message);
+
         if (message.ParentMessageId is { } parentId)
         {
             if (OpenThread?.Id == parentId)
@@ -606,11 +668,8 @@ public partial class MessageThreadViewModel : ViewModelBase
 
             var parent = Messages.FirstOrDefault(m => m.Id == parentId);
             if (parent is not null && message.IsDeleted && parent.ReplyCount > 0) parent.ReplyCount--;
-            return;
         }
 
-        var existing = Messages.FirstOrDefault(m => m.Id == message.Id);
-        if (existing is not null) existing.Apply(message);
         if (OpenThread?.Id == message.Id)
         {
             OpenThread.Apply(message);
@@ -754,9 +813,9 @@ public partial class MessageThreadViewModel : ViewModelBase
     private void BeginReply(MessageViewModel message)
     {
         if (message.IsDeleted) return;
+        // Inline quote reply in the main stream — do not open the old thread sidebar.
         ReplyTarget = message;
-        OpenThread = message;
-        _ = OpenRepliesAsync(message);
+        CloseThread();
         FocusComposerRequested?.Invoke();
     }
 
@@ -896,14 +955,17 @@ public partial class MessageThreadViewModel : ViewModelBase
         if (!_knownIds.Add(message.Id)) return false;
 
         var item = new MessageViewModel(message, _context, this);
+        // Quoted replies always start a visual group so the nested quote is readable.
         if (atEnd)
         {
-            item.StartsGroup = !Continues(Messages.LastOrDefault(), item);
+            item.StartsGroup = item.HasQuote || !Continues(Messages.LastOrDefault(), item);
             Messages.Add(item);
         }
         else
         {
-            if (Messages.Count > 0) Messages[0].StartsGroup = !Continues(item, Messages[0]);
+            item.StartsGroup = item.HasQuote || !Continues(null, item);
+            if (Messages.Count > 0 && !Messages[0].HasQuote)
+                Messages[0].StartsGroup = !Continues(item, Messages[0]);
             Messages.Insert(0, item);
         }
 
