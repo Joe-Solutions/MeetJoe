@@ -97,7 +97,7 @@ PSTN / Teams Phone, Teams Rooms hardware, PowerPoint Live parity, Loop/Office de
 
 ## Phase 7 — Mobile
 
-- [ ] `MeetJoe.iOS` / `MeetJoe.Android` hosts sharing `MeetJoe.App`
+- [x] `MeetJoe.iOS` / `MeetJoe.Android` hosts sharing `MeetJoe.App` (M0 scaffold)
 - [ ] Adaptive layouts (rail → bottom tab bar)
 - [ ] Push notifications
 - [ ] Mobile A/V via LiveKit
