@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- Shared UI and view models. Platform hosts (Desktop now, iOS/Android later) reference this. -->
   <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
   <ItemGroup>
